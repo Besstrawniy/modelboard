@@ -1,0 +1,366 @@
+import {
+  addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
+  Background,
+  BackgroundVariant,
+  Controls,
+  MarkerType,
+  MiniMap,
+  Panel,
+  ReactFlow,
+  ReactFlowProvider,
+  ViewportPortal,
+  type Connection,
+  type Edge,
+  type EdgeChange,
+  type Node,
+  type NodeChange,
+  type ReactFlowInstance,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import { HocuspocusProvider } from '@hocuspocus/provider';
+import * as Y from 'yjs';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Database, MessageSquare, MousePointer2, Shapes, StickyNote, Type } from 'lucide-react';
+import type { AuthSession, BoardMeta, TableNodeData } from '@modelboard/shared';
+import { canEditBoard } from '@modelboard/shared';
+import { BoardActionsProvider } from './BoardContext';
+import { TableNode } from './TableNode';
+import { StickyNode } from './StickyNode';
+import { TextNode } from './TextNode';
+import { ShapeNode } from './ShapeNode';
+import { CommentsPanel } from './CommentsPanel';
+
+type PresenceState = {
+  user?: { id: string; name: string; role: string };
+  cursor?: { x: number; y: number } | null;
+};
+
+const nodeTypes = {
+  table: TableNode,
+  sticky: StickyNode,
+  text: TextNode,
+  shape: ShapeNode,
+};
+
+const initialTableData = (title: string): TableNodeData => ({
+  title,
+  columns: [
+    { id: 'id', name: 'id', dataType: 'INTEGER', key: 'PK' },
+    { id: 'name', name: 'name', dataType: 'TEXT' },
+    { id: 'ref_id', name: 'ref_id', dataType: 'INTEGER', key: 'FK' },
+  ],
+  rows: [
+    { id: crypto.randomUUID(), values: { id: 1, name: 'First row', ref_id: 1 } },
+    { id: crypto.randomUUID(), values: { id: 2, name: 'Second row', ref_id: 2 } },
+  ],
+});
+
+function seedDocument(nodesMap: Y.Map<any>, edgesMap: Y.Map<any>) {
+  const usersId = 'seed-users';
+  const rolesId = 'seed-roles';
+  const stickyId = 'seed-sticky';
+
+  const users: Node = {
+    id: usersId,
+    type: 'table',
+    position: { x: 180, y: 170 },
+    style: { width: 520, height: 260 },
+    data: {
+      title: 'users',
+      columns: [
+        { id: 'id', name: 'id', dataType: 'INTEGER', key: 'PK' },
+        { id: 'name', name: 'name', dataType: 'TEXT' },
+        { id: 'role_id', name: 'role_id', dataType: 'INTEGER', key: 'FK' },
+      ],
+      rows: [
+        { id: crypto.randomUUID(), values: { id: 1, name: 'Alex', role_id: 1 } },
+        { id: crypto.randomUUID(), values: { id: 2, name: 'Ivan', role_id: 2 } },
+      ],
+    },
+  };
+
+  const roles: Node = {
+    id: rolesId,
+    type: 'table',
+    position: { x: 860, y: 220 },
+    style: { width: 430, height: 240 },
+    data: {
+      title: 'roles',
+      columns: [
+        { id: 'id', name: 'id', dataType: 'INTEGER', key: 'PK' },
+        { id: 'name', name: 'name', dataType: 'TEXT' },
+      ],
+      rows: [
+        { id: crypto.randomUUID(), values: { id: 1, name: 'Admin' } },
+        { id: crypto.randomUUID(), values: { id: 2, name: 'User' } },
+      ],
+    },
+  };
+
+  const sticky: Node = {
+    id: stickyId,
+    type: 'sticky',
+    position: { x: 570, y: 520 },
+    style: { width: 260, height: 170 },
+    data: { text: 'This note is collaborative. Try opening the board in a second browser window.' },
+  };
+
+  nodesMap.set(usersId, users);
+  nodesMap.set(rolesId, roles);
+  nodesMap.set(stickyId, sticky);
+
+  const edgeId = 'seed-users-role-fk';
+  edgesMap.set(edgeId, {
+    id: edgeId,
+    source: usersId,
+    target: rolesId,
+    sourceHandle: 'source:role_id',
+    targetHandle: 'target:id',
+    type: 'smoothstep',
+    label: 'FK  N:1',
+    markerEnd: { type: MarkerType.ArrowClosed },
+    data: { relationType: 'FOREIGN_KEY', cardinality: 'N:1' },
+  } satisfies Edge);
+}
+
+function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }) {
+  const readOnly = !canEditBoard(meta.role);
+  const ydoc = useMemo(() => new Y.Doc(), [meta.id, session.user.id]);
+  const nodesMap = useMemo(() => ydoc.getMap<any>('nodes'), [ydoc]);
+  const edgesMap = useMemo(() => ydoc.getMap<any>('edges'), [ydoc]);
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const nodesRef = useRef<Node[]>([]);
+  const edgesRef = useRef<Edge[]>([]);
+  const [status, setStatus] = useState('connecting');
+  const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
+  const [presence, setPresence] = useState<Array<[number, PresenceState]>>([]);
+  const [rf, setRf] = useState<ReactFlowInstance | null>(null);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+
+  useEffect(() => {
+    const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
+    const instance = new HocuspocusProvider({
+      url: collabUrl,
+      name: `board:${meta.id}`,
+      document: ydoc,
+      token: session.token,
+      flushDelay: 40,
+      onStatus: ({ status }) => setStatus(status),
+      onSynced: () => {
+        if (!readOnly && nodesMap.size === 0) {
+          ydoc.transact(() => seedDocument(nodesMap, edgesMap));
+        }
+      },
+      onAwarenessChange: ({ states }) => {
+        setPresence(Array.from(states.entries()) as Array<[number, PresenceState]>);
+      },
+    });
+
+    instance.awareness.setLocalStateField('user', {
+      id: session.user.id,
+      name: session.user.displayName,
+      role: meta.role,
+    });
+    setProvider(instance);
+
+    const syncNodes = () => setNodes(Array.from(nodesMap.values()));
+    const syncEdges = () => setEdges(Array.from(edgesMap.values()));
+    nodesMap.observe(syncNodes);
+    edgesMap.observe(syncEdges);
+    syncNodes();
+    syncEdges();
+
+    return () => {
+      nodesMap.unobserve(syncNodes);
+      edgesMap.unobserve(syncEdges);
+      instance.destroy();
+      ydoc.destroy();
+    };
+  }, [ydoc, nodesMap, edgesMap, meta.id, meta.role, readOnly, session.token, session.user.id, session.user.displayName]);
+
+  const persistNodeChanges = useCallback((changes: NodeChange[]) => {
+    setNodes((current) => {
+      const next = applyNodeChanges(changes, current);
+      const changedIds = new Set(changes.map((change: any) => change.id).filter(Boolean));
+      ydoc.transact(() => {
+        for (const change of changes as any[]) {
+          if (change.type === 'remove') nodesMap.delete(change.id);
+          if (change.type === 'add') nodesMap.set(change.item.id, change.item);
+        }
+        for (const id of changedIds) {
+          const change = changes.find((entry: any) => entry.id === id) as any;
+          if (change?.type === 'select' || change?.type === 'remove') continue;
+          const node = next.find((entry) => entry.id === id);
+          if (node) nodesMap.set(id, node);
+        }
+      });
+      return next;
+    });
+  }, [nodesMap, ydoc]);
+
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    if (readOnly) {
+      setNodes((current) => applyNodeChanges(changes.filter((c: any) => c.type === 'select'), current));
+      return;
+    }
+    persistNodeChanges(changes);
+  }, [persistNodeChanges, readOnly]);
+
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+    if (readOnly) return;
+    setEdges((current) => {
+      const next = applyEdgeChanges(changes, current);
+      ydoc.transact(() => {
+        for (const change of changes as any[]) {
+          if (change.type === 'remove') edgesMap.delete(change.id);
+          if (change.type === 'add') edgesMap.set(change.item.id, change.item);
+        }
+      });
+      return next;
+    });
+  }, [edgesMap, readOnly, ydoc]);
+
+  const onConnect = useCallback((connection: Connection) => {
+    if (readOnly) return;
+    const edge: Edge = {
+      ...connection,
+      id: crypto.randomUUID(),
+      type: 'smoothstep',
+      label: connection.sourceHandle?.includes('source:') ? 'REFERENCE' : undefined,
+      markerEnd: { type: MarkerType.ArrowClosed },
+      data: { relationType: 'REFERENCE' },
+    };
+    setEdges((current) => addEdge(edge, current));
+    edgesMap.set(edge.id, edge);
+  }, [edgesMap, readOnly]);
+
+  const updateNodeData = useCallback((nodeId: string, patch: Record<string, unknown>) => {
+    if (readOnly) return;
+    const current = nodesMap.get(nodeId) as Node | undefined;
+    if (!current) return;
+    nodesMap.set(nodeId, { ...current, data: { ...(current.data as any), ...patch } });
+  }, [nodesMap, readOnly]);
+
+  const addNode = useCallback((type: string) => {
+    if (readOnly) return;
+    const id = crypto.randomUUID();
+    const base = { id, type, position: { x: 360 + Math.random() * 140, y: 220 + Math.random() * 140 } };
+    let node: Node;
+    if (type === 'table') {
+      node = { ...base, style: { width: 520, height: 260 }, data: initialTableData('new_table') };
+    } else if (type === 'sticky') {
+      node = { ...base, style: { width: 240, height: 160 }, data: { text: 'New note' } };
+    } else if (type === 'shape') {
+      node = { ...base, style: { width: 220, height: 110 }, data: { text: 'Process' } };
+    } else {
+      node = { ...base, data: { text: 'Text' } };
+    }
+    nodesMap.set(id, node);
+  }, [nodesMap, readOnly]);
+
+  const onPointerMove = useCallback((event: React.PointerEvent) => {
+    if (!provider || !rf) return;
+    const point = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    provider.awareness.setLocalStateField('cursor', point);
+  }, [provider, rf]);
+
+  const remotePresence = presence.filter(([clientId, state]) =>
+    clientId !== ydoc.clientID && state.user,
+  );
+
+  return (
+    <BoardActionsProvider value={{ readOnly, updateNodeData }}>
+      <div className="board-shell" onPointerMove={onPointerMove} onPointerLeave={() => provider?.awareness.setLocalStateField('cursor', null)}>
+        <header className="topbar">
+          <div className="brand"><span className="brand-mark">M</span> ModelBoard</div>
+          <div className="board-title">
+            <strong>{meta.name}</strong>
+            <span>{meta.workspaceName}</span>
+          </div>
+          <div className="presence-strip">
+            {remotePresence.slice(0, 5).map(([clientId, state]) => (
+              <span className="avatar" key={clientId} title={`${state.user?.name} · ${state.user?.role}`}>
+                {state.user?.name.slice(0, 1).toUpperCase()}
+              </span>
+            ))}
+            <span className={`connection-status connection-status--${status}`}>{status}</span>
+            <span className="role-pill">{meta.role}</span>
+          </div>
+        </header>
+
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onInit={setRf}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          nodesDraggable={!readOnly}
+          nodesConnectable={!readOnly}
+          elementsSelectable
+          deleteKeyCode={readOnly ? null : ['Backspace', 'Delete']}
+          fitView
+          panOnScroll
+          selectionOnDrag
+          panOnDrag={[1, 2]}
+          minZoom={0.15}
+          maxZoom={2.5}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
+          <Controls />
+          <MiniMap pannable zoomable />
+
+          <Panel position="center-left" className="toolbar-panel">
+            <div className="toolbar">
+              <button title="Select"><MousePointer2 size={19} /></button>
+              <div className="toolbar-separator" />
+              <button disabled={readOnly} onClick={() => addNode('table')} title="Data table"><Database size={19} /></button>
+              <button disabled={readOnly} onClick={() => addNode('sticky')} title="Sticky note"><StickyNote size={19} /></button>
+              <button disabled={readOnly} onClick={() => addNode('text')} title="Text"><Type size={19} /></button>
+              <button disabled={readOnly} onClick={() => addNode('shape')} title="Shape"><Shapes size={19} /></button>
+              <div className="toolbar-separator" />
+              <button onClick={() => setCommentsOpen(true)} title="Comments"><MessageSquare size={19} /></button>
+            </div>
+          </Panel>
+
+          <ViewportPortal>
+            {remotePresence.map(([clientId, state]) => state.cursor ? (
+              <div
+                key={clientId}
+                className="remote-cursor"
+                style={{ transform: `translate(${state.cursor.x}px, ${state.cursor.y}px)` }}
+              >
+                <svg width="18" height="24" viewBox="0 0 18 24" aria-hidden="true">
+                  <path d="M2 1L16 14H9L6 22L2 1Z" fill="currentColor" stroke="white" strokeWidth="1.5" />
+                </svg>
+                <span>{state.user?.name}</span>
+              </div>
+            ) : null)}
+          </ViewportPortal>
+        </ReactFlow>
+
+        {readOnly && <div className="readonly-banner">Board editing is read-only for {meta.role}. Comments follow the role policy.</div>}
+        {commentsOpen && <CommentsPanel boardId={meta.id} token={session.token} role={meta.role} onClose={() => setCommentsOpen(false)} />}
+      </div>
+    </BoardActionsProvider>
+  );
+}
+
+export function CollaborativeBoard(props: { meta: BoardMeta; session: AuthSession }) {
+  return (
+    <ReactFlowProvider>
+      <BoardInner {...props} />
+    </ReactFlowProvider>
+  );
+}

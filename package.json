@@ -1,0 +1,21 @@
+{
+  "name": "modelboard",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@10.9.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n web,api,collab \"npm:dev:web\" \"npm:dev:api\" \"npm:dev:collab\"",
+    "dev:web": "npm run dev --workspace @modelboard/web",
+    "dev:api": "npm run dev --workspace @modelboard/api",
+    "dev:collab": "npm run dev --workspace @modelboard/collab",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

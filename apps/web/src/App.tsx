@@ -1,0 +1,51 @@
+import { useEffect, useState } from 'react';
+import { DEMO_BOARD_ID, type AuthSession, type BoardMeta } from '@modelboard/shared';
+import { api, type DevUser } from './lib/api';
+import { CollaborativeBoard } from './components/CollaborativeBoard';
+
+export default function App() {
+  const [users, setUsers] = useState<DevUser[]>([]);
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [meta, setMeta] = useState<BoardMeta | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.devUsers().then(setUsers).catch((err) => setError(String(err)));
+  }, []);
+
+  const login = async (userId: string) => {
+    try {
+      setError('');
+      const next = await api.devLogin(userId);
+      const board = await api.board(DEMO_BOARD_ID, next.token);
+      setSession(next);
+      setMeta(board);
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  if (!session || !meta) {
+    return (
+      <main className="login-page">
+        <section className="login-card">
+          <div className="brand brand--large"><span className="brand-mark">M</span> ModelBoard</div>
+          <h1>Collaborative canvas for data + diagrams</h1>
+          <p>Choose a seeded identity to test the v0.1 permission model.</p>
+          <div className="demo-users">
+            {users.map((user) => (
+              <button key={user.id} onClick={() => login(user.id)}>
+                <span>{user.displayName}</span>
+                <small>{user.role}</small>
+              </button>
+            ))}
+          </div>
+          {error && <pre className="error-box">{error}</pre>}
+          <p className="muted small">Open Owner and Editor in separate windows to verify realtime editing. Commenter can add comments but cannot mutate the board; Viewer is fully read-only.</p>
+        </section>
+      </main>
+    );
+  }
+
+  return <CollaborativeBoard meta={meta} session={session} />;
+}
