@@ -4,20 +4,28 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
+  Check,
   Database,
   Pencil,
   Plus,
   Search,
+  Sigma,
   Trash2,
   X,
 } from 'lucide-react';
 import type {
   DatasetCellValue,
   DatasetColumn,
+  DatasetFormula,
   DatasetRow,
 } from '@modelboard/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
+import {
+  compileFormula,
+  formatFormula,
+  formulaKey,
+} from '../lib/formulas';
 
 const PAGE_SIZE = 200;
 
@@ -48,7 +56,7 @@ function compareValues(a: DatasetCellValue, b: DatasetCellValue) {
 function normalizeInput(value: string, column: DatasetColumn): DatasetCellValue {
   if (value === '') return null;
 
-  if (column.dataType === 'BOOLEAN') {
+  if (column.dataType === 'BOOLEAN' && !formulaActive) {
     if (value.toLowerCase() === 'true') return true;
     if (value.toLowerCase() === 'false') return false;
     return value;
@@ -180,11 +188,15 @@ function SheetCell({
   column,
   readOnly,
   onChange,
+  onFocus,
+  formulaActive = false,
 }: {
   row: DatasetRow;
   column: DatasetColumn;
   readOnly: boolean;
   onChange: (value: DatasetCellValue) => void;
+  onFocus?: () => void;
+  formulaActive?: boolean;
 }) {
   const raw = row.values[column.id];
 
@@ -194,6 +206,7 @@ function SheetCell({
         className="dataset-sheet__cell-editor"
         disabled={readOnly}
         value={raw === null || raw === undefined ? '' : String(raw)}
+        onFocus={onFocus}
         onChange={(event) => {
           const value = event.target.value;
           onChange(
@@ -217,6 +230,7 @@ function SheetCell({
       className="dataset-sheet__cell-editor"
       disabled={readOnly}
       value={raw === null || raw === undefined ? '' : String(raw)}
+      onFocus={onFocus}
       onChange={(event) =>
         onChange(normalizeInput(event.target.value, column))
       }
@@ -241,6 +255,8 @@ export function DatasetSheet({
     dataset,
     status,
     setCell,
+    setFormula,
+    clearFormula,
     addColumn,
     renameColumn,
     convertColumn,
@@ -273,6 +289,12 @@ export function DatasetSheet({
     useState<DatasetColumn | null>(null);
   const [convertType, setConvertType] =
     useState<DatasetColumn['dataType']>('TEXT');
+  const [selectedCell, setSelectedCell] = useState<{
+    rowId: string;
+    columnId: string;
+  } | null>(null);
+  const [formulaInput, setFormulaInput] = useState('');
+  const [formulaError, setFormulaError] = useState('');
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -308,6 +330,109 @@ export function DatasetSheet({
     sort?.columnId,
     sort?.direction,
   ]);
+
+  const formulaByCell = useMemo(
+    () =>
+      new Map(
+        (dataset?.formulas ?? []).map((formula) => [
+          formulaKey(formula.rowId, formula.columnId),
+          formula,
+        ]),
+      ),
+    [dataset?.formulas],
+  );
+
+  const selectedColumn = selectedCell
+    ? dataset?.columns.find(
+        (column) => column.id === selectedCell.columnId,
+      )
+    : undefined;
+
+  const selectedRow = selectedCell
+    ? dataset?.rows.find((row) => row.id === selectedCell.rowId)
+    : undefined;
+
+  const selectedFormula: DatasetFormula | undefined =
+    selectedCell
+      ? formulaByCell.get(
+          formulaKey(
+            selectedCell.rowId,
+            selectedCell.columnId,
+          ),
+        )
+      : undefined;
+
+  useEffect(() => {
+    if (!selectedCell || !selectedColumn || !selectedRow) {
+      setFormulaInput('');
+      setFormulaError('');
+      return;
+    }
+
+    setFormulaInput(
+      selectedFormula
+        ? formatFormula(
+            selectedFormula.expression,
+            dataset?.columns ?? [],
+          )
+        : String(
+            selectedRow.values[selectedColumn.id] ?? '',
+          ),
+    );
+    setFormulaError('');
+  }, [
+    dataset?.columns,
+    selectedCell?.columnId,
+    selectedCell?.rowId,
+    selectedColumn?.id,
+    selectedFormula?.expression,
+    selectedRow?.id,
+    selectedRow?.values,
+  ]);
+
+  const commitFormulaBar = () => {
+    if (
+      readOnly ||
+      !selectedCell ||
+      !selectedColumn
+    ) {
+      return;
+    }
+
+    setFormulaError('');
+
+    try {
+      const trimmed = formulaInput.trim();
+
+      if (trimmed.startsWith('=')) {
+        const canonical = compileFormula(
+          trimmed,
+          dataset?.columns ?? [],
+        );
+        setFormula(
+          selectedCell.rowId,
+          selectedCell.columnId,
+          canonical,
+        );
+      } else {
+        clearFormula(
+          selectedCell.rowId,
+          selectedCell.columnId,
+        );
+        setCell(
+          selectedCell.rowId,
+          selectedCell.columnId,
+          normalizeInput(trimmed, selectedColumn),
+        );
+      }
+    } catch (error) {
+      setFormulaError(
+        error instanceof Error
+          ? error.message
+          : String(error),
+      );
+    }
+  };
 
   const visibleRows = useMemo(() => {
     if (!dataset) return [];
@@ -733,6 +858,46 @@ export function DatasetSheet({
         </button>
       </header>
 
+      <div className="dataset-sheet__formula-bar">
+        <div className="dataset-sheet__formula-cell">
+          {selectedCell && selectedColumn && selectedRow
+            ? `${selectedColumn.name} · строка ${selectedRow.ordinal + 1}`
+            : 'Ячейка не выбрана'}
+        </div>
+
+        <div className="dataset-sheet__formula-input-wrap">
+          <Sigma size={15} />
+          <input
+            value={formulaInput}
+            disabled={!selectedCell || readOnly}
+            placeholder="Значение или формула: =[price]*[quantity]"
+            onChange={(event) =>
+              setFormulaInput(event.target.value)
+            }
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                commitFormulaBar();
+              }
+            }}
+          />
+          {!readOnly && selectedCell && (
+            <button
+              onClick={commitFormulaBar}
+              title="Применить (Enter)"
+            >
+              <Check size={14} />
+            </button>
+          )}
+        </div>
+
+        {formulaError && (
+          <div className="dataset-sheet__formula-error">
+            {formulaError}
+          </div>
+        )}
+      </div>
+
       <div className="dataset-sheet__toolbar">
         <label className="dataset-sheet__search">
           <Search size={15} />
@@ -953,18 +1118,56 @@ export function DatasetSheet({
                     )}
                   </th>
 
-                  {dataset.columns.map((column) => (
-                    <td key={column.id}>
-                      <SheetCell
-                        row={row}
-                        column={column}
-                        readOnly={readOnly}
-                        onChange={(value) =>
-                          setCell(row.id, column.id, value)
+                  {dataset.columns.map((column) => {
+                    const key = formulaKey(row.id, column.id);
+                    const formula = formulaByCell.get(key);
+                    const selected =
+                      selectedCell?.rowId === row.id &&
+                      selectedCell?.columnId === column.id;
+
+                    return (
+                      <td
+                        key={column.id}
+                        className={[
+                          selected ? 'is-selected-cell' : '',
+                          formula ? 'has-formula' : '',
+                        ].filter(Boolean).join(' ')}
+                        onMouseDown={() =>
+                          setSelectedCell({
+                            rowId: row.id,
+                            columnId: column.id,
+                          })
                         }
-                      />
-                    </td>
-                  ))}
+                      >
+                        {formula && (
+                          <span
+                            className="dataset-sheet__formula-badge"
+                            title={formatFormula(
+                              formula.expression,
+                              dataset.columns,
+                            )}
+                          >
+                            fx
+                          </span>
+                        )}
+                        <SheetCell
+                          row={row}
+                          column={column}
+                          readOnly={readOnly}
+                          formulaActive={Boolean(formula)}
+                          onFocus={() =>
+                            setSelectedCell({
+                              rowId: row.id,
+                              columnId: column.id,
+                            })
+                          }
+                          onChange={(value) =>
+                            setCell(row.id, column.id, value)
+                          }
+                        />
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
 

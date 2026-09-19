@@ -2,6 +2,7 @@ import { HocuspocusProvider } from '@hocuspocus/provider';
 import type {
   DatasetColumn,
   DatasetCellValue,
+  DatasetFormula,
   DatasetKind,
   DatasetRow,
   DatasetSnapshot,
@@ -9,6 +10,10 @@ import type {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Y from 'yjs';
 import { api } from './api';
+import {
+  evaluateDatasetFormulas,
+  formulaKey,
+} from './formulas';
 
 type DatasetState = DatasetSnapshot & {
   status: string;
@@ -23,6 +28,10 @@ export function useCollaborativeDataset(
   const metaMap = useMemo(() => ydoc.getMap<any>('meta'), [ydoc]);
   const columnsMap = useMemo(() => ydoc.getMap<DatasetColumn>('columns'), [ydoc]);
   const rowsMap = useMemo(() => ydoc.getMap<DatasetRow>('rows'), [ydoc]);
+  const formulasMap = useMemo(
+    () => ydoc.getMap<DatasetFormula>('formulas'),
+    [ydoc],
+  );
   const [status, setStatus] = useState('connecting');
   const [dataset, setDataset] = useState<DatasetState | null>(null);
 
@@ -43,11 +52,68 @@ export function useCollaborativeDataset(
       onStatus: ({ status }) => setStatus(status),
     });
 
+    let recalculating = false;
+
     const sync = () => {
       const columns = Array.from(columnsMap.values()).sort(
         (a, b) => a.ordinal - b.ordinal,
       );
       const rows = Array.from(rowsMap.values()).sort(
+        (a, b) => a.ordinal - b.ordinal,
+      );
+      const formulas = Array.from(formulasMap.values());
+
+      if (!recalculating && formulas.length > 0) {
+        recalculating = true;
+        const calculated = evaluateDatasetFormulas(
+          rows,
+          formulas,
+        );
+
+        const updates: Array<{
+          row: DatasetRow;
+          columnId: string;
+          value: DatasetCellValue;
+        }> = [];
+
+        for (const formula of formulas) {
+          const key = formulaKey(
+            formula.rowId,
+            formula.columnId,
+          );
+          const value = calculated.get(key) ?? null;
+          const row = rowsMap.get(formula.rowId);
+
+          if (
+            row &&
+            row.values[formula.columnId] !== value
+          ) {
+            updates.push({
+              row,
+              columnId: formula.columnId,
+              value,
+            });
+          }
+        }
+
+        if (updates.length > 0) {
+          ydoc.transact(() => {
+            for (const update of updates) {
+              rowsMap.set(update.row.id, {
+                ...update.row,
+                values: {
+                  ...update.row.values,
+                  [update.columnId]: update.value,
+                },
+              });
+            }
+          });
+        }
+
+        recalculating = false;
+      }
+
+      const freshRows = Array.from(rowsMap.values()).sort(
         (a, b) => a.ordinal - b.ordinal,
       );
 
@@ -62,7 +128,8 @@ export function useCollaborativeDataset(
         name,
         kind,
         columns,
-        rows,
+        rows: freshRows,
+        formulas,
         status,
       });
     };
@@ -70,36 +137,77 @@ export function useCollaborativeDataset(
     metaMap.observe(sync);
     columnsMap.observe(sync);
     rowsMap.observe(sync);
+    formulasMap.observe(sync);
     sync();
 
     return () => {
       metaMap.unobserve(sync);
       columnsMap.unobserve(sync);
       rowsMap.unobserve(sync);
+      formulasMap.unobserve(sync);
       provider.destroy();
       ydoc.destroy();
     };
-  }, [columnsMap, datasetId, metaMap, rowsMap, token, ydoc]);
+  }, [
+    columnsMap,
+    datasetId,
+    formulasMap,
+    metaMap,
+    rowsMap,
+    token,
+    ydoc,
+  ]);
 
   useEffect(() => {
     setDataset((current) => (current ? { ...current, status } : current));
   }, [status]);
 
   const setCell = useCallback(
-    (rowId: string, columnId: string, value: string | number | boolean | null) => {
+    (
+      rowId: string,
+      columnId: string,
+      value: string | number | boolean | null,
+    ) => {
       if (readOnly) return;
       const row = rowsMap.get(rowId);
       if (!row) return;
 
-      rowsMap.set(rowId, {
-        ...row,
-        values: {
-          ...row.values,
-          [columnId]: value,
-        },
+      ydoc.transact(() => {
+        formulasMap.delete(formulaKey(rowId, columnId));
+        rowsMap.set(rowId, {
+          ...row,
+          values: {
+            ...row.values,
+            [columnId]: value,
+          },
+        });
       });
     },
-    [readOnly, rowsMap],
+    [formulasMap, readOnly, rowsMap, ydoc],
+  );
+
+  const setFormula = useCallback(
+    (rowId: string, columnId: string, expression: string) => {
+      if (readOnly) return;
+
+      formulasMap.set(
+        formulaKey(rowId, columnId),
+        {
+          rowId,
+          columnId,
+          expression,
+        },
+      );
+    },
+    [formulasMap, readOnly],
+  );
+
+  const clearFormula = useCallback(
+    (rowId: string, columnId: string) => {
+      if (readOnly) return;
+      formulasMap.delete(formulaKey(rowId, columnId));
+    },
+    [formulasMap, readOnly],
   );
 
   const addColumn = useCallback(
@@ -245,6 +353,8 @@ export function useCollaborativeDataset(
     dataset,
     status,
     setCell,
+    setFormula,
+    clearFormula,
     addColumn,
     renameColumn,
     convertColumn,

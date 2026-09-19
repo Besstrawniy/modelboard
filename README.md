@@ -53,6 +53,10 @@
 - переименование колонок без изменения стабильного columnId и без поломки relations/bindings;
 - безопасное удаление колонок: relation/Object Binding блокируют удаление, значения удаляются и из PostgreSQL, и из Yjs;
 - контролируемое изменение типа колонки с preview конвертации и блокировкой при ошибочных значениях;
+- formula bar в spreadsheet и формулы со стабильными ссылками на columnId;
+- формулы переживают переименование колонок;
+- поддержаны арифметика, сравнения и SUM/AVG/MIN/MAX/ROUND/IF/CONCAT;
+- циклические зависимости отображаются как #CYCLE!;
 - переход из привязанного Shape/Device прямо к его строке Dataset с подсветкой;
 - PostgreSQL для метаданных и persisted Yjs state;
 - realtime Dataset автоматически проецируется обратно в PostgreSQL;
@@ -267,7 +271,7 @@ npm run build
 - production Docker image для всего приложения;
 - нормальная регистрация/логин;
 - production-ready миграционная политика и rollback-команды;
-- формулы и autofill;
+- диапазоны, межстрочные ссылки и drag-autofill для формул;
 - выделение, перемещение и изменение отдельных freehand strokes;
 - CELL binding и многошаговые Relation View (одношаговый Relation View уже работает);
 - категории и наборы SVG-библиотек;

@@ -673,6 +673,23 @@ export class AppController {
       );
     }
 
+    const formula = await query<{ row_id: string }>(
+      `SELECT row_id
+       FROM dataset_formulas
+       WHERE dataset_id = $1
+         AND (
+           column_id = $2 OR
+           position('@{' || $2::text || '}' in expression) > 0
+         )
+       LIMIT 1`,
+      [datasetId, columnId],
+    );
+    if (formula.rows[0]) {
+      throw new ConflictException(
+        'Column is used by a formula. Remove or change the formula first.',
+      );
+    }
+
     const binding = await query<{ id: string }>(
       `SELECT id
        FROM object_bindings

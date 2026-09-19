@@ -2357,3 +2357,104 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   place-items: center;
   color: #fff;
 }
+
+
+/* Spreadsheet formula bar */
+.dataset-sheet {
+  grid-template-rows: 58px 42px 48px minmax(0, 1fr) 50px;
+}
+.dataset-sheet__formula-bar {
+  min-width: 0;
+  padding: 5px 10px;
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  border-bottom: 1px solid #e7eaee;
+  background: #fff;
+}
+.dataset-sheet__formula-cell {
+  height: 31px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid #e1e4e8;
+  border-radius: 7px;
+  background: #f8f9fb;
+  color: #68717d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 8px;
+  font-weight: 700;
+}
+.dataset-sheet__formula-input-wrap {
+  min-width: 0;
+  height: 31px;
+  padding-left: 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid #dce0e6;
+  border-radius: 7px;
+  background: #fff;
+  color: #667085;
+}
+.dataset-sheet__formula-input-wrap:focus-within {
+  border-color: #6578e5;
+  box-shadow: 0 0 0 3px rgba(101,120,229,.1);
+}
+.dataset-sheet__formula-input-wrap input {
+  min-width: 0;
+  height: 29px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #303640;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+}
+.dataset-sheet__formula-input-wrap button {
+  width: 30px;
+  height: 29px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid #e6e8ec;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  color: #5363c8;
+}
+.dataset-sheet__formula-error {
+  grid-column: 2;
+  margin-top: -3px;
+  color: #a04444;
+  font-size: 8px;
+}
+.dataset-sheet__table td {
+  position: relative;
+}
+.dataset-sheet__table td.is-selected-cell {
+  box-shadow: inset 0 0 0 2px #5068df;
+  z-index: 2;
+}
+.dataset-sheet__formula-badge {
+  position: absolute;
+  z-index: 3;
+  right: 3px;
+  top: 2px;
+  padding: 1px 3px;
+  border-radius: 4px;
+  background: #eef0ff;
+  color: #5363c8;
+  font-size: 6px;
+  font-weight: 900;
+  pointer-events: none;
+}
+
+@media (max-width: 760px) {
+  .dataset-sheet__formula-bar {
+    grid-template-columns: 100px minmax(0, 1fr);
+  }
+}
