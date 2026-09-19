@@ -3,7 +3,7 @@ import { Database } from '@hocuspocus/extension-database';
 import { Logger } from '@hocuspocus/extension-logger';
 import jwt from 'jsonwebtoken';
 import * as Y from 'yjs';
-import { query } from '@modelboard/db';
+import { pool, query } from '@modelboard/db';
 import { canEditBoard, type WorkspaceRole } from '@modelboard/shared';
 
 const jwtSecret = process.env.JWT_SECRET ?? 'change-me-in-production';
@@ -21,6 +21,104 @@ function parseDocumentName(documentName: string): DocumentRef | null {
     kind: match[1].toLowerCase() as 'board' | 'dataset',
     id: match[2],
   };
+}
+
+async function projectDatasetStateToPostgres(
+  datasetId: string,
+  state: Uint8Array,
+) {
+  const doc = new Y.Doc();
+
+  try {
+    Y.applyUpdate(doc, state);
+
+    const columns = Array.from(
+      doc.getMap<any>('columns').values(),
+    ).map((column: any) => ({
+      id: String(column.id),
+      name: String(column.name),
+      dataType: String(column.dataType),
+      ordinal: Number(column.ordinal ?? 0),
+      properties: column.key
+        ? { key: String(column.key) }
+        : {},
+    }));
+
+    const rows = Array.from(
+      doc.getMap<any>('rows').values(),
+    ).map((row: any) => ({
+      id: String(row.id),
+      ordinal: Number(row.ordinal ?? 0),
+      values:
+        row.values && typeof row.values === 'object'
+          ? row.values
+          : {},
+    }));
+
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      if (columns.length > 0) {
+        await client.query(
+          `UPDATE dataset_columns AS target
+           SET
+             name = source.name,
+             data_type = source.data_type,
+             ordinal = source.ordinal,
+             properties = source.properties
+           FROM jsonb_to_recordset($2::jsonb) AS source(
+             id uuid,
+             name text,
+             data_type text,
+             ordinal integer,
+             properties jsonb
+           )
+           WHERE target.dataset_id = $1
+             AND target.id = source.id`,
+          [
+            datasetId,
+            JSON.stringify(
+              columns.map((column) => ({
+                id: column.id,
+                name: column.name,
+                data_type: column.dataType,
+                ordinal: column.ordinal,
+                properties: column.properties,
+              })),
+            ),
+          ],
+        );
+      }
+
+      if (rows.length > 0) {
+        await client.query(
+          `UPDATE dataset_rows AS target
+           SET
+             ordinal = source.ordinal,
+             values = source.values
+           FROM jsonb_to_recordset($2::jsonb) AS source(
+             id uuid,
+             ordinal integer,
+             values jsonb
+           )
+           WHERE target.dataset_id = $1
+             AND target.id = source.id`,
+          [datasetId, JSON.stringify(rows)],
+        );
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } finally {
+    doc.destroy();
+  }
 }
 
 async function bootstrapDataset(datasetId: string) {
@@ -200,6 +298,13 @@ const server = new Server({
            DO UPDATE SET state = EXCLUDED.state, updated_at = now()`,
           [documentName, Buffer.from(state)],
         );
+
+        if (ref.kind === 'dataset') {
+          await projectDatasetStateToPostgres(
+            ref.id,
+            state,
+          );
+        }
       },
     }),
     new Logger({
