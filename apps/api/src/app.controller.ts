@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   ForbiddenException,
@@ -150,6 +151,113 @@ export class AppController {
       kind: access.dataset_kind,
       role: access.role,
     };
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('datasets/:id/rows')
+  async createDatasetRow(
+    @Param('id') datasetId: string,
+    @Req() req: any,
+    @Body() body: { values?: DatasetRow['values'] },
+  ) {
+    const access = await getDatasetAccess(datasetId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    const values = body.values ?? {};
+    const columns = await query<{ id: string }>(
+      'SELECT id FROM dataset_columns WHERE dataset_id = $1',
+      [datasetId],
+    );
+    const columnIds = new Set(columns.rows.map((column) => column.id));
+
+    const unknownColumn = Object.keys(values).find(
+      (columnId) => !columnIds.has(columnId),
+    );
+    if (unknownColumn) {
+      throw new BadRequestException(
+        `Row references an unknown column: ${unknownColumn}`,
+      );
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT id FROM datasets WHERE id = $1 FOR UPDATE',
+        [datasetId],
+      );
+
+      const ordinalResult = await client.query<{ ordinal: number }>(
+        `SELECT COALESCE(MAX(ordinal), -1) + 1 AS ordinal
+         FROM dataset_rows
+         WHERE dataset_id = $1`,
+        [datasetId],
+      );
+
+      const row: DatasetRow = {
+        id: randomUUID(),
+        ordinal: ordinalResult.rows[0]?.ordinal ?? 0,
+        values,
+      };
+
+      await client.query(
+        `INSERT INTO dataset_rows (id, dataset_id, ordinal, values)
+         VALUES ($1, $2, $3, $4::jsonb)`,
+        [row.id, datasetId, row.ordinal, JSON.stringify(row.values)],
+      );
+
+      await client.query('COMMIT');
+      return row;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  @UseGuards(AuthGuard)
+  @Delete('datasets/:id/rows/:rowId')
+  async deleteDatasetRow(
+    @Param('id') datasetId: string,
+    @Param('rowId') rowId: string,
+    @Req() req: any,
+  ) {
+    const access = await getDatasetAccess(datasetId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    const binding = await query<{ id: string }>(
+      `SELECT id
+       FROM object_bindings
+       WHERE row_id = $1
+       LIMIT 1`,
+      [rowId],
+    );
+
+    if (binding.rows[0]) {
+      throw new ConflictException(
+        'Row is used by an object binding. Unbind the canvas object first.',
+      );
+    }
+
+    const result = await query<{ id: string }>(
+      `DELETE FROM dataset_rows
+       WHERE id = $1 AND dataset_id = $2
+       RETURNING id`,
+      [rowId, datasetId],
+    );
+
+    if (!result.rows[0]) {
+      throw new NotFoundException('Dataset row not found');
+    }
+
+    return { ok: true as const };
   }
 
   @UseGuards(AuthGuard)

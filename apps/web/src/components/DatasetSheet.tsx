@@ -5,7 +5,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Database,
+  Plus,
   Search,
+  Trash2,
   X,
 } from 'lucide-react';
 import type {
@@ -120,7 +122,13 @@ export function DatasetSheet({
   focusRowId?: string;
   onClose: () => void;
 }) {
-  const { dataset, status, setCell } = useCollaborativeDataset(
+  const {
+    dataset,
+    status,
+    setCell,
+    addRow,
+    deleteRow,
+  } = useCollaborativeDataset(
     datasetId,
     token,
     readOnly,
@@ -128,6 +136,8 @@ export function DatasetSheet({
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
+  const [rowAction, setRowAction] = useState<string | null>(null);
+  const [rowError, setRowError] = useState('');
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -253,6 +263,35 @@ export function DatasetSheet({
           />
         </label>
 
+        {!readOnly && (
+          <button
+            className="dataset-sheet__add-row"
+            disabled={rowAction === 'add'}
+            onClick={async () => {
+              setRowAction('add');
+              setRowError('');
+              try {
+                setQuery('');
+                setSort(null);
+                const nextPage = Math.floor(
+                  (dataset?.rows.length ?? 0) / PAGE_SIZE,
+                );
+                await addRow();
+                setPage(nextPage);
+              } catch (error) {
+                setRowError(
+                  error instanceof Error ? error.message : String(error),
+                );
+              } finally {
+                setRowAction(null);
+              }
+            }}
+          >
+            <Plus size={14} />
+            Добавить строку
+          </button>
+        )}
+
         <div className="dataset-sheet__page-info">
           Показано {pageRows.length} из {visibleRows.length}
         </div>
@@ -306,7 +345,33 @@ export function DatasetSheet({
                   className={row.id === focusRowId ? 'is-focused' : ''}
                 >
                   <th className="dataset-sheet__row-number">
-                    {safePage * PAGE_SIZE + rowIndex + 1}
+                    <span>
+                      {safePage * PAGE_SIZE + rowIndex + 1}
+                    </span>
+                    {!readOnly && (
+                      <button
+                        className="dataset-sheet__delete-row"
+                        disabled={rowAction === row.id}
+                        onClick={async () => {
+                          setRowAction(row.id);
+                          setRowError('');
+                          try {
+                            await deleteRow(row.id);
+                          } catch (error) {
+                            setRowError(
+                              error instanceof Error
+                                ? error.message
+                                : String(error),
+                            );
+                          } finally {
+                            setRowAction(null);
+                          }
+                        }}
+                        title="Удалить строку"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
                   </th>
 
                   {dataset.columns.map((column) => (
@@ -338,6 +403,12 @@ export function DatasetSheet({
           </table>
         )}
       </div>
+
+      {rowError && (
+        <div className="dataset-sheet__error">
+          {rowError}
+        </div>
+      )}
 
       <footer className="dataset-sheet__footer">
         <div>

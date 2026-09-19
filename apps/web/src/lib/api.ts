@@ -6,6 +6,7 @@ import type {
   CreateWorkspaceObjectTemplateInput,
   DatasetMeta,
   DatasetRelation,
+  DatasetRow,
   ObjectBindingRecord,
   UpsertObjectBindingInput,
   WorkspaceObjectTemplate,
@@ -72,6 +73,33 @@ export const api = {
       },
       body: JSON.stringify(input),
     }),
+
+  createDatasetRow: (
+    datasetId: string,
+    token: string,
+    values: DatasetRow['values'] = {},
+  ) =>
+    json<DatasetRow>(`/datasets/${datasetId}/rows`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders(token),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ values }),
+    }),
+
+  deleteDatasetRow: (
+    datasetId: string,
+    rowId: string,
+    token: string,
+  ) =>
+    json<{ ok: true }>(
+      `/datasets/${datasetId}/rows/${rowId}`,
+      {
+        method: 'DELETE',
+        headers: authHeaders(token),
+      },
+    ),
 
   templates: (workspaceId: string, token: string) =>
     json<WorkspaceObjectTemplate[]>(`/workspaces/${workspaceId}/templates`, {

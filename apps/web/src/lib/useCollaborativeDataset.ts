@@ -7,6 +7,7 @@ import type {
 } from '@modelboard/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Y from 'yjs';
+import { api } from './api';
 
 type DatasetState = DatasetSnapshot & {
   status: string;
@@ -100,9 +101,37 @@ export function useCollaborativeDataset(
     [readOnly, rowsMap],
   );
 
+  const addRow = useCallback(
+    async (values: DatasetRow['values'] = {}) => {
+      if (readOnly || !datasetId || !token) return null;
+
+      const row = await api.createDatasetRow(
+        datasetId,
+        token,
+        values,
+      );
+      rowsMap.set(row.id, row);
+      return row;
+    },
+    [datasetId, readOnly, rowsMap, token],
+  );
+
+  const deleteRow = useCallback(
+    async (rowId: string) => {
+      if (readOnly || !datasetId || !token) return false;
+
+      await api.deleteDatasetRow(datasetId, rowId, token);
+      rowsMap.delete(rowId);
+      return true;
+    },
+    [datasetId, readOnly, rowsMap, token],
+  );
+
   return {
     dataset,
     status,
     setCell,
+    addRow,
+    deleteRow,
   };
 }
