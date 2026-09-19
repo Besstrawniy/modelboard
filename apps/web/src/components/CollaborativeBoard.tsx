@@ -48,6 +48,7 @@ import { parseCsvFile, type ParsedCsv } from '../lib/csv';
 import { api } from '../lib/api';
 import { RelationDialog, type PendingRelation } from './RelationDialog';
 import { InspectorPanel } from './InspectorPanel';
+import { DatasetSheet } from './DatasetSheet';
 
 type PresenceState = {
   user?: { id: string; name: string; role: string };
@@ -165,6 +166,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>('select');
   const [historyTick, setHistoryTick] = useState(0);
+  const [sheetDatasetId, setSheetDatasetId] = useState<string | null>(null);
 
   useEffect(() => {
     const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
@@ -778,6 +780,11 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onNodeDoubleClick={(_, node) => {
+            if (node.type !== 'table') return;
+            const datasetId = (node.data as any)?.datasetId as string | undefined;
+            if (datasetId) setSheetDatasetId(datasetId);
+          }}
           onSelectionChange={({ nodes: selectedNodes }) =>
             setSelectedNodeId(selectedNodes[0]?.id ?? null)
           }
@@ -856,6 +863,15 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
             ) : null)}
           </ViewportPortal>
         </ReactFlow>
+
+        {sheetDatasetId && (
+          <DatasetSheet
+            datasetId={sheetDatasetId}
+            token={session.token}
+            readOnly={readOnly}
+            onClose={() => setSheetDatasetId(null)}
+          />
+        )}
 
         {dropActive && !readOnly && (
           <div className="csv-drop-overlay">
