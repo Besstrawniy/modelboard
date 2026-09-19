@@ -171,7 +171,7 @@ export function InspectorPanel({
             </label>
           )}
 
-          {(node.type === 'device' || node.type === 'template') && node.type === 'device' && (
+          {node.type === 'device' && (
             <>
               <label>
                 Тип устройства
@@ -205,6 +205,21 @@ export function InspectorPanel({
                 />
               </label>
             </>
+          )}
+
+          {node.type === 'template' && (
+            <label>
+              Подпись
+              <input
+                disabled={readOnly}
+                value={String((node.data as any)?.label ?? '')}
+                onChange={(event) =>
+                  onUpdateNodeData(node.id, {
+                    label: event.target.value,
+                  })
+                }
+              />
+            </label>
           )}
         </section>
 

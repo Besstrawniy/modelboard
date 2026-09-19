@@ -225,10 +225,26 @@ export function DevicePalette({
       {workspaceTemplates.length > 0 ? (
         <div className="device-palette__grid device-palette__grid--custom">
           {workspaceTemplates.map((template) => (
-            <button
+            <div
               key={template.id}
-              disabled={readOnly || busy}
-              onClick={() => onAddTemplate(template.id)}
+              role="button"
+              tabIndex={readOnly || busy ? -1 : 0}
+              aria-disabled={readOnly || busy}
+              onClick={() => {
+                if (!readOnly && !busy) {
+                  onAddTemplate(template.id);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (
+                  !readOnly &&
+                  !busy &&
+                  (event.key === 'Enter' || event.key === ' ')
+                ) {
+                  event.preventDefault();
+                  onAddTemplate(template.id);
+                }
+              }}
               title={template.name}
               className="device-palette__template"
             >
@@ -247,7 +263,7 @@ export function DevicePalette({
                   <Trash2 size={12} />
                 </button>
               )}
-            </button>
+            </div>
           ))}
         </div>
       ) : (
