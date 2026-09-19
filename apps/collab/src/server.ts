@@ -100,7 +100,9 @@ const server = new Server({
   debounce: 1000,
   maxDebounce: 5000,
 
-  async onAuthenticate({ token, documentName, connection }) {
+  async onAuthenticate(data) {
+    const { token, documentName } = data;
+    const connection = (data as any).connection;
     if (!token) throw new Error('Missing auth token');
 
     const payload = jwt.verify(token, jwtSecret) as {

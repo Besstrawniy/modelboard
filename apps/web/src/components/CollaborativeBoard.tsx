@@ -47,7 +47,7 @@ const USERS_ROLE_ID_COLUMN = '41000000-0000-0000-0000-000000000003';
 const ROLES_ID_COLUMN = '42000000-0000-0000-0000-000000000001';
 const DEMO_RELATION_ID = '43000000-0000-0000-0000-000000000001';
 
-const nodeTypes = {
+const nodeTypes: any = {
   table: TableNode,
   sticky: StickyNode,
   text: TextNode,
@@ -157,7 +157,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
       },
     });
 
-    instance.awareness.setLocalStateField('user', {
+    instance.awareness?.setLocalStateField('user', {
       id: session.user.id,
       name: session.user.displayName,
       role: meta.role,
@@ -288,7 +288,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const onPointerMove = useCallback((event: React.PointerEvent) => {
     if (!provider || !rf) return;
     const point = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    provider.awareness.setLocalStateField('cursor', point);
+    provider.awareness?.setLocalStateField('cursor', point);
   }, [provider, rf]);
 
   const remotePresence = presence.filter(([clientId, state]) =>
@@ -306,7 +306,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
       <div
         className="board-shell"
         onPointerMove={onPointerMove}
-        onPointerLeave={() => provider?.awareness.setLocalStateField('cursor', null)}
+        onPointerLeave={() => provider?.awareness?.setLocalStateField('cursor', null)}
       >
         <header className="topbar">
           <div className="brand"><span className="brand-mark">M</span> ModelBoard</div>
