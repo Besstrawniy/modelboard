@@ -10,6 +10,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -30,6 +31,7 @@ import {
   type CreateWorkspaceObjectTemplateInput,
   type UpsertObjectBindingInput,
   type WorkspaceRole,
+  type WorkspaceSearchResult,
 } from '@modelboard/shared';
 import { validateWorkspaceSvg } from './svg.js';
 import {
@@ -1053,6 +1055,165 @@ export class AppController {
   }
 
 
+
+  @UseGuards(AuthGuard)
+  @Get('workspaces/:id/search')
+  async searchWorkspace(
+    @Param('id') workspaceId: string,
+    @Query('q') queryText: string | undefined,
+    @Req() req: any,
+  ): Promise<WorkspaceSearchResult[]> {
+    const access = await getWorkspaceAccess(
+      workspaceId,
+      req.user.sub,
+    );
+    if (!access) throw new ForbiddenException();
+
+    const term = queryText?.trim();
+    if (!term || term.length < 2) {
+      return [];
+    }
+
+    const pattern = `%${term.replace(/[%_\\]/g, '\\  @UseGuards(AuthGuard)
+  @Get('workspaces/:id/templates')')}%`;
+
+    const result = await query<{
+      kind: 'BOARD' | 'DATASET' | 'OBJECT';
+      id: string;
+      title: string;
+      subtitle: string;
+      board_id: string | null;
+      board_name: string | null;
+      object_id: string | null;
+      object_type: string | null;
+      dataset_id: string | null;
+      row_id: string | null;
+      column_id: string | null;
+      rank: number;
+    }>(
+      `
+      SELECT *
+      FROM (
+        SELECT
+          'BOARD'::text AS kind,
+          board.id::text AS id,
+          board.name AS title,
+          'Board'::text AS subtitle,
+          board.id AS board_id,
+          board.name AS board_name,
+          NULL::text AS object_id,
+          NULL::text AS object_type,
+          NULL::uuid AS dataset_id,
+          NULL::uuid AS row_id,
+          NULL::uuid AS column_id,
+          1 AS rank
+        FROM boards AS board
+        WHERE board.workspace_id = $1
+          AND board.name ILIKE $2 ESCAPE '\\'
+
+        UNION ALL
+
+        SELECT
+          'DATASET'::text AS kind,
+          dataset.id::text AS id,
+          dataset.name AS title,
+          ('Dataset · ' || dataset.kind)::text AS subtitle,
+          NULL::uuid AS board_id,
+          NULL::text AS board_name,
+          NULL::text AS object_id,
+          NULL::text AS object_type,
+          dataset.id AS dataset_id,
+          NULL::uuid AS row_id,
+          NULL::uuid AS column_id,
+          2 AS rank
+        FROM datasets AS dataset
+        WHERE dataset.workspace_id = $1
+          AND dataset.name ILIKE $2 ESCAPE '\\'
+
+        UNION ALL
+
+        SELECT
+          'OBJECT'::text AS kind,
+          (index.board_id::text || ':' || index.object_id) AS id,
+          COALESCE(
+            NULLIF(index.properties ->> 'label', ''),
+            NULLIF(index.properties ->> 'text', ''),
+            dataset.name,
+            index.object_type
+          ) AS title,
+          (
+            board.name || ' · ' || index.object_type ||
+            CASE
+              WHEN dataset.name IS NOT NULL
+                THEN ' · ' || dataset.name
+              ELSE ''
+            END
+          )::text AS subtitle,
+          index.board_id,
+          board.name AS board_name,
+          index.object_id,
+          index.object_type,
+          index.dataset_id,
+          index.row_id,
+          index.column_id,
+          3 AS rank
+        FROM board_object_index AS index
+        JOIN boards AS board
+          ON board.id = index.board_id
+        LEFT JOIN datasets AS dataset
+          ON dataset.id = index.dataset_id
+        LEFT JOIN dataset_rows AS row
+          ON row.id = index.row_id
+        WHERE board.workspace_id = $1
+          AND (
+            index.properties::text ILIKE $2 ESCAPE '\\'
+            OR dataset.name ILIKE $2 ESCAPE '\\'
+            OR row.values::text ILIKE $2 ESCAPE '\\'
+            OR index.object_type ILIKE $2 ESCAPE '\\'
+          )
+      ) AS matches
+      ORDER BY rank, lower(title), id
+      LIMIT 50
+      `,
+      [workspaceId, pattern],
+    );
+
+    return result.rows.map((row) => {
+      if (row.kind === 'BOARD') {
+        return {
+          kind: 'BOARD' as const,
+          id: row.id,
+          title: row.title,
+          subtitle: row.subtitle,
+          boardId: row.board_id!,
+        };
+      }
+
+      if (row.kind === 'DATASET') {
+        return {
+          kind: 'DATASET' as const,
+          id: row.id,
+          title: row.title,
+          subtitle: row.subtitle,
+          datasetId: row.dataset_id!,
+        };
+      }
+
+      return {
+        kind: 'OBJECT' as const,
+        id: row.id,
+        title: row.title,
+        subtitle: row.subtitle,
+        boardId: row.board_id!,
+        boardName: row.board_name!,
+        objectId: row.object_id!,
+        objectType: row.object_type!,
+        datasetId: row.dataset_id,
+        rowId: row.row_id,
+        columnId: row.column_id,
+      };
+    });
+  }
 
   @UseGuards(AuthGuard)
   @Get('workspaces/:id/templates')

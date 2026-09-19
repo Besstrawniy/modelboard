@@ -40,6 +40,35 @@ export type BoardDatasetLocation = {
   properties?: Record<string, unknown>;
 };
 
+export type WorkspaceSearchResult =
+  | {
+      kind: 'BOARD';
+      id: string;
+      title: string;
+      subtitle: string;
+      boardId: string;
+    }
+  | {
+      kind: 'DATASET';
+      id: string;
+      title: string;
+      subtitle: string;
+      datasetId: string;
+    }
+  | {
+      kind: 'OBJECT';
+      id: string;
+      title: string;
+      subtitle: string;
+      boardId: string;
+      boardName: string;
+      objectId: string;
+      objectType: string;
+      datasetId?: string | null;
+      rowId?: string | null;
+      columnId?: string | null;
+    };
+
 export type DatasetKind = 'MANUAL' | 'CSV' | 'SQL' | 'API';
 export type DatasetDataType = 'TEXT' | 'INTEGER' | 'BOOLEAN' | 'DATE' | 'UUID';
 export type DatasetCellValue = string | number | boolean | null;

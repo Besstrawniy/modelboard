@@ -15,6 +15,7 @@ import type {
   UpsertObjectBindingInput,
   WorkspaceObjectTemplate,
   WorkspaceRole,
+  WorkspaceSearchResult,
 } from '@modelboard/shared';
 
 const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3001/api';
@@ -215,6 +216,16 @@ export const api = {
         method: 'DELETE',
         headers: authHeaders(token),
       },
+    ),
+
+  searchWorkspace: (
+    workspaceId: string,
+    token: string,
+    queryText: string,
+  ) =>
+    json<WorkspaceSearchResult[]>(
+      `/workspaces/${workspaceId}/search?q=${encodeURIComponent(queryText)}`,
+      { headers: authHeaders(token) },
     ),
 
   templates: (workspaceId: string, token: string) =>

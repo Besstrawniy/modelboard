@@ -22,7 +22,7 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ClipboardPaste, Copy, Database, Eraser, Grid3X3, Hand, LayoutDashboard, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X } from 'lucide-react';
+import { ChevronDown, ClipboardPaste, Copy, Database, Eraser, Grid3X3, Hand, LayoutDashboard, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X } from 'lucide-react';
 import {
   DEMO_BOARD_ID,
   DEMO_ROLES_DATASET_ID,
@@ -61,6 +61,7 @@ import { DeviceNode } from './DeviceNode';
 import { DevicePalette } from './DevicePalette';
 import { TemplateNode } from './TemplateNode';
 import { RelationViewNode } from './RelationViewNode';
+import { WorkspaceSearch } from './WorkspaceSearch';
 
 type PresenceState = {
   user?: { id: string; name: string; role: string };
@@ -268,6 +269,7 @@ function BoardInner({
     location: BoardDatasetLocation;
     rowId?: string;
   } | null>(null);
+  const [workspaceSearchOpen, setWorkspaceSearchOpen] = useState(false);
 
   useEffect(() => {
     setSelectedNodeId(null);
@@ -622,6 +624,12 @@ function BoardInner({
 
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
+
+      if (mod && key === 'k') {
+        event.preventDefault();
+        setWorkspaceSearchOpen(true);
+        return;
+      }
 
       if (!readOnly && mod && key === 'z') {
         event.preventDefault();
@@ -1822,6 +1830,16 @@ function BoardInner({
           </div>
 
           <div className="presence-strip">
+            <button
+              className="global-search-trigger"
+              onClick={() => setWorkspaceSearchOpen(true)}
+              title="Поиск по Workspace (Ctrl+K)"
+            >
+              <Search size={14} />
+              <span>Поиск</span>
+              <kbd>Ctrl K</kbd>
+            </button>
+
             {remotePresence.slice(0, 5).map(([clientId, state]) => (
               <span className="avatar" key={clientId} title={`${state.user?.name} · ${state.user?.role}`}>
                 {state.user?.name.slice(0, 1).toUpperCase()}
@@ -2053,6 +2071,19 @@ function BoardInner({
               <output>{penWidth.toFixed(1)} px</output>
             </label>
           </div>
+        )}
+
+        {workspaceSearchOpen && (
+          <WorkspaceSearch
+            workspaceId={meta.workspaceId}
+            token={session.token}
+            onClose={() => setWorkspaceSearchOpen(false)}
+            onSwitchBoard={onSwitchBoard}
+            onOpenDataset={(datasetId, rowId) =>
+              setSheetTarget({ datasetId, rowId })
+            }
+            onNavigateObject={navigateToDatasetLocation}
+          />
         )}
 
         {sheetTarget && (
