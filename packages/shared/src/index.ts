@@ -210,6 +210,19 @@ export type RelationViewNodeData = {
   binding: ObjectBindingRecord;
 };
 
+export type FreehandPoint = {
+  x: number;
+  y: number;
+};
+
+export type FreehandStroke = {
+  id: string;
+  points: FreehandPoint[];
+  width: number;
+  color: string;
+  createdBy: string;
+};
+
 // Backward-compatible aliases while v0.1 code is being migrated.
 export type TableColumn = DatasetColumn;
 export type TableRow = DatasetRow;

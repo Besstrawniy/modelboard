@@ -22,7 +22,7 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Database, Hand, MessageSquare, MousePointer2, Network, Redo2, Shapes, StickyNote, Type, Undo2, UploadCloud, X } from 'lucide-react';
+import { Database, Hand, MessageSquare, MousePointer2, Network, PenLine, Redo2, Shapes, StickyNote, Type, Undo2, UploadCloud, X } from 'lucide-react';
 import {
   DEMO_ROLES_DATASET_ID,
   DEMO_USERS_DATASET_ID,
@@ -36,6 +36,8 @@ import {
   type DatasetRow,
   type DatasetSnapshot,
   type DeviceKind,
+  type FreehandPoint,
+  type FreehandStroke,
   type VisualTemplateRef,
   type WorkspaceObjectTemplate,
 } from '@modelboard/shared';
@@ -67,7 +69,7 @@ type CsvDropState = {
   position: { x: number; y: number };
 };
 
-type ToolMode = 'select' | 'hand';
+type ToolMode = 'select' | 'hand' | 'pen';
 
 const USERS_ROLE_ID_COLUMN = '41000000-0000-0000-0000-000000000003';
 const ROLES_ID_COLUMN = '42000000-0000-0000-0000-000000000001';
@@ -82,6 +84,32 @@ const nodeTypes: any = {
   template: TemplateNode,
   relationView: RelationViewNode,
 };
+
+function freehandPath(points: FreehandPoint[]) {
+  if (points.length === 0) return '';
+  if (points.length === 1) {
+    const point = points[0];
+    return `M ${point.x} ${point.y} l 0.01 0.01`;
+  }
+
+  let path = `M ${points[0].x} ${points[0].y}`;
+
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    const midX = (current.x + next.x) / 2;
+    const midY = (current.y + next.y) / 2;
+    path += ` Q ${current.x} ${current.y} ${midX} ${midY}`;
+  }
+
+  const last = points[points.length - 1];
+  path += ` L ${last.x} ${last.y}`;
+  return path;
+}
+
+function pointDistance(left: FreehandPoint, right: FreehandPoint) {
+  return Math.hypot(left.x - right.x, left.y - right.y);
+}
 
 function seedDocument(nodesMap: Y.Map<any>, edgesMap: Y.Map<any>) {
   const usersId = 'seed-users';
@@ -156,13 +184,24 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const ydoc = useMemo(() => new Y.Doc(), [meta.id, session.user.id]);
   const nodesMap = useMemo(() => ydoc.getMap<any>('nodes'), [ydoc]);
   const edgesMap = useMemo(() => ydoc.getMap<any>('edges'), [ydoc]);
+  const strokesMap = useMemo(
+    () => ydoc.getMap<FreehandStroke>('strokes'),
+    [ydoc],
+  );
   const undoManager = useMemo(
-    () => new Y.UndoManager([nodesMap, edgesMap], { captureTimeout: 350 }),
-    [edgesMap, nodesMap],
+    () =>
+      new Y.UndoManager(
+        [nodesMap, edgesMap, strokesMap],
+        { captureTimeout: 350 },
+      ),
+    [edgesMap, nodesMap, strokesMap],
   );
   const initialSyncDone = useRef(false);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+  const [strokes, setStrokes] = useState<FreehandStroke[]>([]);
+  const [draftStroke, setDraftStroke] =
+    useState<FreehandStroke | null>(null);
   const [status, setStatus] = useState('connecting');
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
   const [presence, setPresence] = useState<Array<[number, PresenceState]>>([]);
@@ -236,14 +275,19 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
 
     const syncNodes = () => setNodes(Array.from(nodesMap.values()));
     const syncEdges = () => setEdges(Array.from(edgesMap.values()));
+    const syncStrokes = () =>
+      setStrokes(Array.from(strokesMap.values()));
     nodesMap.observe(syncNodes);
     edgesMap.observe(syncEdges);
+    strokesMap.observe(syncStrokes);
     syncNodes();
     syncEdges();
+    syncStrokes();
 
     return () => {
       nodesMap.unobserve(syncNodes);
       edgesMap.unobserve(syncEdges);
+      strokesMap.unobserve(syncStrokes);
       instance.destroy();
       ydoc.destroy();
     };
@@ -256,6 +300,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     session.token,
     session.user.displayName,
     session.user.id,
+    strokesMap,
     undoManager,
     ydoc,
   ]);
@@ -314,6 +359,10 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
 
       if (event.key === 'v') setToolMode('select');
       if (event.key === 'h') setToolMode('hand');
+      if (!readOnly && event.key === 'p') {
+        setSelectedNodeId(null);
+        setToolMode('pen');
+      }
     };
 
     window.addEventListener('keydown', onKeyDown);
@@ -944,6 +993,71 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     workspaceTemplates,
   ]);
 
+  const beginFreehand = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (readOnly || toolMode !== 'pen' || !rf) return;
+
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const point = rf.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      setDraftStroke({
+        id: crypto.randomUUID(),
+        points: [point],
+        width: 2.6,
+        color: '#344054',
+        createdBy: session.user.id,
+      });
+    },
+    [readOnly, rf, session.user.id, toolMode],
+  );
+
+  const moveFreehand = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (toolMode !== 'pen' || !rf) return;
+
+      const point = rf.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      setDraftStroke((current) => {
+        if (!current) return current;
+        const previous = current.points[current.points.length - 1];
+        if (previous && pointDistance(previous, point) < 1.8) {
+          return current;
+        }
+
+        return {
+          ...current,
+          points: [...current.points, point],
+        };
+      });
+    },
+    [rf, toolMode],
+  );
+
+  const finishFreehand = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (toolMode !== 'pen') return;
+
+      setDraftStroke((current) => {
+        if (current && current.points.length > 1) {
+          strokesMap.set(current.id, current);
+        }
+        return null;
+      });
+
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    },
+    [strokesMap, toolMode],
+  );
+
   const onPointerMove = useCallback((event: React.PointerEvent) => {
     if (!provider || !rf) return;
     const point = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
@@ -1100,6 +1214,17 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
               >
                 <Hand size={19} />
               </button>
+              <button
+                className={toolMode === 'pen' ? 'is-active' : ''}
+                disabled={readOnly}
+                title="Перо / свободное рисование (P)"
+                onClick={() => {
+                  setSelectedNodeId(null);
+                  setToolMode('pen');
+                }}
+              >
+                <PenLine size={19} />
+              </button>
               <div className="toolbar-separator" />
               <button
                 title="Отменить (Ctrl+Z)"
@@ -1127,6 +1252,25 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
           </Panel>
 
           <ViewportPortal>
+            <svg
+              className="freehand-layer"
+              aria-hidden="true"
+            >
+              {[...strokes, ...(draftStroke ? [draftStroke] : [])].map(
+                (stroke) => (
+                  <path
+                    key={stroke.id}
+                    d={freehandPath(stroke.points)}
+                    fill="none"
+                    stroke={stroke.color}
+                    strokeWidth={stroke.width}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                ),
+              )}
+            </svg>
+
             {remotePresence.map(([clientId, state]) => state.cursor ? (
               <div
                 key={clientId}
@@ -1141,6 +1285,16 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
             ) : null)}
           </ViewportPortal>
         </ReactFlow>
+
+        {toolMode === 'pen' && !readOnly && (
+          <div
+            className="freehand-capture"
+            onPointerDown={beginFreehand}
+            onPointerMove={moveFreehand}
+            onPointerUp={finishFreehand}
+            onPointerCancel={finishFreehand}
+          />
+        )}
 
         {sheetTarget && (
           <DatasetSheet

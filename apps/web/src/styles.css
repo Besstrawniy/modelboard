@@ -2006,3 +2006,29 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   font-size: 8px;
   text-align: center;
 }
+
+
+/* Collaborative freehand drawing layer */
+.freehand-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+.freehand-capture {
+  position: absolute;
+  z-index: 14;
+  inset: 58px 0 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+.toolbar-panel {
+  z-index: 30 !important;
+}
+.canvas-flow--pen .react-flow__pane,
+.canvas-flow--pen .react-flow__node {
+  cursor: crosshair;
+}
