@@ -1,4 +1,6 @@
 export const DEMO_BOARD_ID = '30000000-0000-0000-0000-000000000001';
+export const DEMO_USERS_DATASET_ID = '40000000-0000-0000-0000-000000000001';
+export const DEMO_ROLES_DATASET_ID = '40000000-0000-0000-0000-000000000002';
 
 export type WorkspaceRole = 'OWNER' | 'EDITOR' | 'COMMENTER' | 'VIEWER';
 
@@ -27,20 +29,58 @@ export type BoardMeta = {
   role: WorkspaceRole;
 };
 
-export type TableColumn = {
+export type DatasetKind = 'MANUAL' | 'CSV' | 'SQL' | 'API';
+
+export type DatasetMeta = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  kind: DatasetKind;
+  role?: WorkspaceRole;
+};
+
+export type DatasetColumn = {
   id: string;
   name: string;
   dataType: 'TEXT' | 'INTEGER' | 'BOOLEAN' | 'DATE' | 'UUID';
+  ordinal: number;
   key?: 'PK' | 'FK';
 };
 
-export type TableRow = {
+export type DatasetRow = {
   id: string;
+  ordinal: number;
   values: Record<string, string | number | boolean | null>;
 };
 
-export type TableNodeData = {
-  title: string;
-  columns: TableColumn[];
-  rows: TableRow[];
+export type DatasetSnapshot = DatasetMeta & {
+  columns: DatasetColumn[];
+  rows: DatasetRow[];
 };
+
+export type TableNodeData = {
+  datasetId: string;
+  view?: {
+    maxRows?: number;
+    labelOverride?: string;
+  };
+};
+
+export type ObjectBindingType =
+  | 'DATASET'
+  | 'ROW'
+  | 'COLUMN'
+  | 'CELL'
+  | 'RELATION_VIEW';
+
+export type ObjectBinding = {
+  type: ObjectBindingType;
+  datasetId: string;
+  rowId?: string;
+  columnId?: string;
+  relationPath?: string[];
+};
+
+// Backward-compatible aliases while v0.1 code is being migrated.
+export type TableColumn = DatasetColumn;
+export type TableRow = DatasetRow;

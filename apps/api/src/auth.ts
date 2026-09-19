@@ -42,6 +42,22 @@ export class AuthGuard implements CanActivate {
   }
 }
 
+export async function getWorkspaceAccess(workspaceId: string, userId: string) {
+  const result = await query<{
+    workspace_id: string;
+    workspace_name: string;
+    role: WorkspaceRole;
+  }>(
+    `SELECT w.id AS workspace_id, w.name AS workspace_name, wm.role
+     FROM workspaces w
+     JOIN workspace_members wm ON wm.workspace_id = w.id
+     WHERE w.id = $1 AND wm.user_id = $2`,
+    [workspaceId, userId],
+  );
+
+  return result.rows[0] ?? null;
+}
+
 export async function getBoardAccess(boardId: string, userId: string) {
   const result = await query<{
     board_id: string;
@@ -61,6 +77,32 @@ export async function getBoardAccess(boardId: string, userId: string) {
      JOIN workspace_members wm ON wm.workspace_id = w.id
      WHERE b.id = $1 AND wm.user_id = $2`,
     [boardId, userId],
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function getDatasetAccess(datasetId: string, userId: string) {
+  const result = await query<{
+    dataset_id: string;
+    dataset_name: string;
+    dataset_kind: string;
+    workspace_id: string;
+    workspace_name: string;
+    role: WorkspaceRole;
+  }>(
+    `SELECT
+       d.id AS dataset_id,
+       d.name AS dataset_name,
+       d.kind AS dataset_kind,
+       w.id AS workspace_id,
+       w.name AS workspace_name,
+       wm.role
+     FROM datasets d
+     JOIN workspaces w ON w.id = d.workspace_id
+     JOIN workspace_members wm ON wm.workspace_id = w.id
+     WHERE d.id = $1 AND wm.user_id = $2`,
+    [datasetId, userId],
   );
 
   return result.rows[0] ?? null;

@@ -21,21 +21,31 @@ import {
 import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Database, MessageSquare, MousePointer2, Shapes, StickyNote, Type } from 'lucide-react';
-import type { AuthSession, BoardMeta, TableNodeData } from '@modelboard/shared';
-import { canEditBoard } from '@modelboard/shared';
+import {
+  DEMO_ROLES_DATASET_ID,
+  DEMO_USERS_DATASET_ID,
+  canEditBoard,
+  type AuthSession,
+  type BoardMeta,
+} from '@modelboard/shared';
 import { BoardActionsProvider } from './BoardContext';
 import { TableNode } from './TableNode';
 import { StickyNode } from './StickyNode';
 import { TextNode } from './TextNode';
 import { ShapeNode } from './ShapeNode';
 import { CommentsPanel } from './CommentsPanel';
+import { DatasetsPanel } from './DatasetsPanel';
 
 type PresenceState = {
   user?: { id: string; name: string; role: string };
   cursor?: { x: number; y: number } | null;
 };
+
+const USERS_ROLE_ID_COLUMN = '41000000-0000-0000-0000-000000000003';
+const ROLES_ID_COLUMN = '42000000-0000-0000-0000-000000000001';
+const DEMO_RELATION_ID = '43000000-0000-0000-0000-000000000001';
 
 const nodeTypes = {
   table: TableNode,
@@ -44,85 +54,72 @@ const nodeTypes = {
   shape: ShapeNode,
 };
 
-const initialTableData = (title: string): TableNodeData => ({
-  title,
-  columns: [
-    { id: 'id', name: 'id', dataType: 'INTEGER', key: 'PK' },
-    { id: 'name', name: 'name', dataType: 'TEXT' },
-    { id: 'ref_id', name: 'ref_id', dataType: 'INTEGER', key: 'FK' },
-  ],
-  rows: [
-    { id: crypto.randomUUID(), values: { id: 1, name: 'First row', ref_id: 1 } },
-    { id: crypto.randomUUID(), values: { id: 2, name: 'Second row', ref_id: 2 } },
-  ],
-});
-
 function seedDocument(nodesMap: Y.Map<any>, edgesMap: Y.Map<any>) {
   const usersId = 'seed-users';
   const rolesId = 'seed-roles';
   const stickyId = 'seed-sticky';
 
-  const users: Node = {
+  nodesMap.set(usersId, {
     id: usersId,
     type: 'table',
     position: { x: 180, y: 170 },
     style: { width: 520, height: 260 },
-    data: {
-      title: 'users',
-      columns: [
-        { id: 'id', name: 'id', dataType: 'INTEGER', key: 'PK' },
-        { id: 'name', name: 'name', dataType: 'TEXT' },
-        { id: 'role_id', name: 'role_id', dataType: 'INTEGER', key: 'FK' },
-      ],
-      rows: [
-        { id: crypto.randomUUID(), values: { id: 1, name: 'Alex', role_id: 1 } },
-        { id: crypto.randomUUID(), values: { id: 2, name: 'Ivan', role_id: 2 } },
-      ],
-    },
-  };
+    data: { datasetId: DEMO_USERS_DATASET_ID },
+  } satisfies Node);
 
-  const roles: Node = {
+  nodesMap.set(rolesId, {
     id: rolesId,
     type: 'table',
     position: { x: 860, y: 220 },
     style: { width: 430, height: 240 },
-    data: {
-      title: 'roles',
-      columns: [
-        { id: 'id', name: 'id', dataType: 'INTEGER', key: 'PK' },
-        { id: 'name', name: 'name', dataType: 'TEXT' },
-      ],
-      rows: [
-        { id: crypto.randomUUID(), values: { id: 1, name: 'Admin' } },
-        { id: crypto.randomUUID(), values: { id: 2, name: 'User' } },
-      ],
-    },
-  };
+    data: { datasetId: DEMO_ROLES_DATASET_ID },
+  } satisfies Node);
 
-  const sticky: Node = {
+  nodesMap.set(stickyId, {
     id: stickyId,
     type: 'sticky',
     position: { x: 570, y: 520 },
     style: { width: 260, height: 170 },
-    data: { text: 'This note is collaborative. Try opening the board in a second browser window.' },
-  };
-
-  nodesMap.set(usersId, users);
-  nodesMap.set(rolesId, roles);
-  nodesMap.set(stickyId, sticky);
+    data: {
+      text: 'The tables now reference independent datasets. Place users twice from Datasets and edit either copy.',
+    },
+  } satisfies Node);
 
   const edgeId = 'seed-users-role-fk';
   edgesMap.set(edgeId, {
     id: edgeId,
     source: usersId,
     target: rolesId,
-    sourceHandle: 'source:role_id',
-    targetHandle: 'target:id',
+    sourceHandle: `source:${USERS_ROLE_ID_COLUMN}`,
+    targetHandle: `target:${ROLES_ID_COLUMN}`,
     type: 'smoothstep',
     label: 'FK  N:1',
     markerEnd: { type: MarkerType.ArrowClosed },
-    data: { relationType: 'FOREIGN_KEY', cardinality: 'N:1' },
+    data: {
+      relationType: 'FOREIGN_KEY',
+      cardinality: 'N:1',
+      relationId: DEMO_RELATION_ID,
+    },
   } satisfies Edge);
+}
+
+function migrateKnownDemoNodes(nodesMap: Y.Map<any>) {
+  const users = nodesMap.get('seed-users') as Node | undefined;
+  const roles = nodesMap.get('seed-roles') as Node | undefined;
+
+  if (users && !(users.data as any)?.datasetId) {
+    nodesMap.set('seed-users', {
+      ...users,
+      data: { datasetId: DEMO_USERS_DATASET_ID },
+    });
+  }
+
+  if (roles && !(roles.data as any)?.datasetId) {
+    nodesMap.set('seed-roles', {
+      ...roles,
+      data: { datasetId: DEMO_ROLES_DATASET_ID },
+    });
+  }
 }
 
 function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }) {
@@ -132,20 +129,12 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const edgesMap = useMemo(() => ydoc.getMap<any>('edges'), [ydoc]);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
-  const nodesRef = useRef<Node[]>([]);
-  const edgesRef = useRef<Edge[]>([]);
   const [status, setStatus] = useState('connecting');
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
   const [presence, setPresence] = useState<Array<[number, PresenceState]>>([]);
   const [rf, setRf] = useState<ReactFlowInstance | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
-
-  useEffect(() => {
-    nodesRef.current = nodes;
-  }, [nodes]);
-  useEffect(() => {
-    edgesRef.current = edges;
-  }, [edges]);
+  const [datasetsOpen, setDatasetsOpen] = useState(false);
 
   useEffect(() => {
     const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
@@ -159,6 +148,8 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
       onSynced: () => {
         if (!readOnly && nodesMap.size === 0) {
           ydoc.transact(() => seedDocument(nodesMap, edgesMap));
+        } else if (!readOnly) {
+          ydoc.transact(() => migrateKnownDemoNodes(nodesMap));
         }
       },
       onAwarenessChange: ({ states }) => {
@@ -186,7 +177,17 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
       instance.destroy();
       ydoc.destroy();
     };
-  }, [ydoc, nodesMap, edgesMap, meta.id, meta.role, readOnly, session.token, session.user.id, session.user.displayName]);
+  }, [
+    edgesMap,
+    meta.id,
+    meta.role,
+    nodesMap,
+    readOnly,
+    session.token,
+    session.user.displayName,
+    session.user.id,
+    ydoc,
+  ]);
 
   const persistNodeChanges = useCallback((changes: NodeChange[]) => {
     setNodes((current) => {
@@ -251,20 +252,36 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     nodesMap.set(nodeId, { ...current, data: { ...(current.data as any), ...patch } });
   }, [nodesMap, readOnly]);
 
+  const placeDataset = useCallback((datasetId: string) => {
+    if (readOnly) return;
+    const id = crypto.randomUUID();
+    nodesMap.set(id, {
+      id,
+      type: 'table',
+      position: { x: 360 + Math.random() * 180, y: 220 + Math.random() * 180 },
+      style: { width: 520, height: 260 },
+      data: { datasetId },
+    } satisfies Node);
+  }, [nodesMap, readOnly]);
+
   const addNode = useCallback((type: string) => {
     if (readOnly) return;
     const id = crypto.randomUUID();
-    const base = { id, type, position: { x: 360 + Math.random() * 140, y: 220 + Math.random() * 140 } };
+    const base = {
+      id,
+      type,
+      position: { x: 360 + Math.random() * 140, y: 220 + Math.random() * 140 },
+    };
     let node: Node;
-    if (type === 'table') {
-      node = { ...base, style: { width: 520, height: 260 }, data: initialTableData('new_table') };
-    } else if (type === 'sticky') {
+
+    if (type === 'sticky') {
       node = { ...base, style: { width: 240, height: 160 }, data: { text: 'New note' } };
     } else if (type === 'shape') {
       node = { ...base, style: { width: 220, height: 110 }, data: { text: 'Process' } };
     } else {
       node = { ...base, data: { text: 'Text' } };
     }
+
     nodesMap.set(id, node);
   }, [nodesMap, readOnly]);
 
@@ -279,8 +296,18 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   );
 
   return (
-    <BoardActionsProvider value={{ readOnly, updateNodeData }}>
-      <div className="board-shell" onPointerMove={onPointerMove} onPointerLeave={() => provider?.awareness.setLocalStateField('cursor', null)}>
+    <BoardActionsProvider
+      value={{
+        readOnly,
+        sessionToken: session.token,
+        updateNodeData,
+      }}
+    >
+      <div
+        className="board-shell"
+        onPointerMove={onPointerMove}
+        onPointerLeave={() => provider?.awareness.setLocalStateField('cursor', null)}
+      >
         <header className="topbar">
           <div className="brand"><span className="brand-mark">M</span> ModelBoard</div>
           <div className="board-title">
@@ -325,7 +352,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
             <div className="toolbar">
               <button title="Select"><MousePointer2 size={19} /></button>
               <div className="toolbar-separator" />
-              <button disabled={readOnly} onClick={() => addNode('table')} title="Data table"><Database size={19} /></button>
+              <button onClick={() => setDatasetsOpen(true)} title="Datasets"><Database size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('sticky')} title="Sticky note"><StickyNote size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('text')} title="Text"><Type size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('shape')} title="Shape"><Shapes size={19} /></button>
@@ -350,8 +377,30 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
           </ViewportPortal>
         </ReactFlow>
 
-        {readOnly && <div className="readonly-banner">Board editing is read-only for {meta.role}. Comments follow the role policy.</div>}
-        {commentsOpen && <CommentsPanel boardId={meta.id} token={session.token} role={meta.role} onClose={() => setCommentsOpen(false)} />}
+        {readOnly && (
+          <div className="readonly-banner">
+            Board editing is read-only for {meta.role}. Comments follow the role policy.
+          </div>
+        )}
+
+        {commentsOpen && (
+          <CommentsPanel
+            boardId={meta.id}
+            token={session.token}
+            role={meta.role}
+            onClose={() => setCommentsOpen(false)}
+          />
+        )}
+
+        {datasetsOpen && (
+          <DatasetsPanel
+            workspaceId={meta.workspaceId}
+            token={session.token}
+            readOnly={readOnly}
+            onPlace={placeDataset}
+            onClose={() => setDatasetsOpen(false)}
+          />
+        )}
       </div>
     </BoardActionsProvider>
   );

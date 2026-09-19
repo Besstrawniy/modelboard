@@ -1,37 +1,51 @@
 import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react';
 import type { TableNodeData } from '@modelboard/shared';
 import { useBoardActions } from './BoardContext';
+import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
 
-type TableCanvasNode = {
-  id: string;
-  data: TableNodeData;
-  selected?: boolean;
-};
+export function TableNode({ data, selected }: NodeProps<any>) {
+  const { readOnly, sessionToken } = useBoardActions();
+  const view = data as TableNodeData;
+  const { dataset, status, setCell } = useCollaborativeDataset(
+    view.datasetId,
+    sessionToken,
+    readOnly,
+  );
 
-export function TableNode({ id, data, selected }: NodeProps<any>) {
-  const { readOnly, updateNodeData } = useBoardActions();
-  const table = data as TableNodeData;
-
-  const setCell = (rowId: string, columnId: string, value: string) => {
-    const rows = table.rows.map((row) =>
-      row.id === rowId
-        ? { ...row, values: { ...row.values, [columnId]: value } }
-        : row,
+  if (!view.datasetId) {
+    return (
+      <div className="table-node table-node--error">
+        <div className="table-node__title"><strong>Legacy table</strong></div>
+        <p>This v0.1 table has no datasetId. Recreate it from the Datasets panel.</p>
+      </div>
     );
-    updateNodeData(id, { rows });
-  };
+  }
+
+  if (!dataset || dataset.columns.length === 0) {
+    return (
+      <div className="table-node table-node--loading">
+        <div className="table-node__title">
+          <span className="table-node__kind">DATASET</span>
+          <strong>{status === 'connected' ? 'Empty dataset' : 'Loading dataset…'}</strong>
+        </div>
+      </div>
+    );
+  }
+
+  const rows = dataset.rows.slice(0, view.view?.maxRows ?? 20);
 
   return (
     <div className={`table-node ${selected ? 'is-selected' : ''}`}>
       {!readOnly && <NodeResizer minWidth={360} minHeight={180} isVisible={selected} />}
       <div className="table-node__title">
-        <span className="table-node__kind">DATA</span>
-        <strong>{table.title}</strong>
+        <span className="table-node__kind">DATASET</span>
+        <strong>{view.view?.labelOverride || dataset.name}</strong>
+        <span className="dataset-status">{status}</span>
       </div>
 
       <div className="table-grid">
         <div className="table-grid__header table-grid__row">
-          {table.columns.map((column) => (
+          {dataset.columns.map((column) => (
             <div className="table-grid__cell table-grid__column" key={column.id}>
               <Handle
                 id={`target:${column.id}`}
@@ -56,9 +70,9 @@ export function TableNode({ id, data, selected }: NodeProps<any>) {
           ))}
         </div>
 
-        {table.rows.map((row) => (
+        {rows.map((row) => (
           <div className="table-grid__row" key={row.id}>
-            {table.columns.map((column) => (
+            {dataset.columns.map((column) => (
               <div className="table-grid__cell" key={column.id}>
                 <input
                   className="nodrag nowheel"
@@ -71,6 +85,12 @@ export function TableNode({ id, data, selected }: NodeProps<any>) {
           </div>
         ))}
       </div>
+
+      {dataset.rows.length > rows.length && (
+        <div className="table-node__more">
+          +{dataset.rows.length - rows.length} more rows
+        </div>
+      )}
     </div>
   );
 }

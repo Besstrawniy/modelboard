@@ -1,4 +1,9 @@
-import type { AuthSession, BoardMeta, WorkspaceRole } from '@modelboard/shared';
+import type {
+  AuthSession,
+  BoardMeta,
+  DatasetMeta,
+  WorkspaceRole,
+} from '@modelboard/shared';
 
 const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3001/api';
 
@@ -12,10 +17,15 @@ export type DevUser = {
 async function json<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${baseUrl}${url}`, options);
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    const detail = await response.text().catch(() => '');
+    throw new Error(`${response.status} ${response.statusText}${detail ? `: ${detail}` : ''}`);
   }
   return response.json();
 }
+
+const authHeaders = (token: string) => ({
+  authorization: `Bearer ${token}`,
+});
 
 export const api = {
   devUsers: () => json<DevUser[]>('/auth/dev-users'),
@@ -29,19 +39,39 @@ export const api = {
 
   board: (boardId: string, token: string) =>
     json<BoardMeta>(`/boards/${boardId}`, {
-      headers: { authorization: `Bearer ${token}` },
+      headers: authHeaders(token),
+    }),
+
+  datasets: (workspaceId: string, token: string) =>
+    json<DatasetMeta[]>(`/workspaces/${workspaceId}/datasets`, {
+      headers: authHeaders(token),
+    }),
+
+  dataset: (datasetId: string, token: string) =>
+    json<DatasetMeta>(`/datasets/${datasetId}`, {
+      headers: authHeaders(token),
+    }),
+
+  createDataset: (workspaceId: string, token: string, name?: string) =>
+    json<DatasetMeta>(`/workspaces/${workspaceId}/datasets`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders(token),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name }),
     }),
 
   comments: (boardId: string, token: string) =>
     json<any[]>(`/boards/${boardId}/comments`, {
-      headers: { authorization: `Bearer ${token}` },
+      headers: authHeaders(token),
     }),
 
   addComment: (boardId: string, token: string, body: string) =>
     json<any>(`/boards/${boardId}/comments`, {
       method: 'POST',
       headers: {
-        authorization: `Bearer ${token}`,
+        ...authHeaders(token),
         'content-type': 'application/json',
       },
       body: JSON.stringify({ body }),
