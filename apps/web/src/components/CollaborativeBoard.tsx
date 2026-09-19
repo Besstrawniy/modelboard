@@ -24,6 +24,7 @@ import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Database, Eraser, Hand, LayoutDashboard, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X } from 'lucide-react';
 import {
+  DEMO_BOARD_ID,
   DEMO_ROLES_DATASET_ID,
   DEMO_USERS_DATASET_ID,
   canEditBoard,
