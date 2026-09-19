@@ -304,6 +304,89 @@ export class AppController {
   }
 
   @UseGuards(AuthGuard)
+  @Delete('datasets/:id/columns/:columnId')
+  async deleteDatasetColumn(
+    @Param('id') datasetId: string,
+    @Param('columnId') columnId: string,
+    @Req() req: any,
+  ) {
+    const access = await getDatasetAccess(datasetId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    const columnCount = await query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM dataset_columns WHERE dataset_id = $1',
+      [datasetId],
+    );
+    if (Number(columnCount.rows[0]?.count ?? 0) <= 1) {
+      throw new ConflictException(
+        'A dataset must keep at least one column',
+      );
+    }
+
+    const relation = await query<{ id: string }>(
+      `SELECT id
+       FROM dataset_relations
+       WHERE source_column_id = $1 OR target_column_id = $1
+       LIMIT 1`,
+      [columnId],
+    );
+    if (relation.rows[0]) {
+      throw new ConflictException(
+        'Column is used by a dataset relation. Remove the relation first.',
+      );
+    }
+
+    const binding = await query<{ id: string }>(
+      `SELECT id
+       FROM object_bindings
+       WHERE column_id = $1
+          OR presentation ->> 'titleColumnId' = $1
+          OR presentation ->> 'subtitleColumnId' = $1
+       LIMIT 1`,
+      [columnId],
+    );
+    if (binding.rows[0]) {
+      throw new ConflictException(
+        'Column is used by an object binding. Change or remove the binding first.',
+      );
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const deleted = await client.query<{ id: string }>(
+        `DELETE FROM dataset_columns
+         WHERE id = $1 AND dataset_id = $2
+         RETURNING id`,
+        [columnId, datasetId],
+      );
+
+      if (!deleted.rows[0]) {
+        throw new NotFoundException('Dataset column not found');
+      }
+
+      await client.query(
+        `UPDATE dataset_rows
+         SET values = values - $2
+         WHERE dataset_id = $1`,
+        [datasetId, columnId],
+      );
+
+      await client.query('COMMIT');
+      return { ok: true as const };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  @UseGuards(AuthGuard)
   @Post('datasets/:id/rows')
   async createDatasetRow(
     @Param('id') datasetId: string,

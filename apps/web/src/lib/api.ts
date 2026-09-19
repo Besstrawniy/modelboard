@@ -107,6 +107,19 @@ export const api = {
       },
     ),
 
+  deleteDatasetColumn: (
+    datasetId: string,
+    columnId: string,
+    token: string,
+  ) =>
+    json<{ ok: true }>(
+      `/datasets/${datasetId}/columns/${columnId}`,
+      {
+        method: 'DELETE',
+        headers: authHeaders(token),
+      },
+    ),
+
   createDatasetRow: (
     datasetId: string,
     token: string,

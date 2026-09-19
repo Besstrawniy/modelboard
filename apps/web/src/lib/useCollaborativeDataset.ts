@@ -135,6 +135,42 @@ export function useCollaborativeDataset(
     [columnsMap, datasetId, readOnly, token],
   );
 
+  const deleteColumn = useCallback(
+    async (columnId: string) => {
+      if (readOnly || !datasetId || !token) return false;
+
+      await api.deleteDatasetColumn(
+        datasetId,
+        columnId,
+        token,
+      );
+
+      ydoc.transact(() => {
+        columnsMap.delete(columnId);
+
+        for (const [rowId, row] of rowsMap.entries()) {
+          if (!(columnId in row.values)) continue;
+          const values = { ...row.values };
+          delete values[columnId];
+          rowsMap.set(rowId, {
+            ...row,
+            values,
+          });
+        }
+      });
+
+      return true;
+    },
+    [
+      columnsMap,
+      datasetId,
+      readOnly,
+      rowsMap,
+      token,
+      ydoc,
+    ],
+  );
+
   const addRow = useCallback(
     async (values: DatasetRow['values'] = {}) => {
       if (readOnly || !datasetId || !token) return null;
@@ -167,6 +203,7 @@ export function useCollaborativeDataset(
     setCell,
     addColumn,
     renameColumn,
+    deleteColumn,
     addRow,
     deleteRow,
   };

@@ -129,6 +129,7 @@ export function DatasetSheet({
     setCell,
     addColumn,
     renameColumn,
+    deleteColumn,
     addRow,
     deleteRow,
   } = useCollaborativeDataset(
@@ -151,6 +152,8 @@ export function DatasetSheet({
     useState<DatasetColumn['dataType']>('TEXT');
   const [columnBusy, setColumnBusy] = useState(false);
   const [columnError, setColumnError] = useState('');
+  const [deleteColumnTarget, setDeleteColumnTarget] =
+    useState<DatasetColumn | null>(null);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -346,6 +349,70 @@ export function DatasetSheet({
           </section>
         </div>
       )}
+      {deleteColumnTarget && (
+        <div className="dataset-sheet__dialog-backdrop">
+          <section className="dataset-sheet__column-dialog">
+            <header>
+              <strong>Удалить колонку</strong>
+              <button
+                className="icon-button"
+                onClick={() => setDeleteColumnTarget(null)}
+              >
+                <X size={16} />
+              </button>
+            </header>
+
+            <div className="dataset-sheet__column-dialog-body">
+              <p className="dataset-sheet__delete-warning">
+                Колонка <strong>{deleteColumnTarget.name}</strong> будет
+                удалена из структуры Dataset и из всех строк.
+                Если она используется relation или Object Binding,
+                сервер запретит операцию.
+              </p>
+
+              {columnError && (
+                <div className="dataset-sheet__column-error">
+                  {columnError}
+                </div>
+              )}
+            </div>
+
+            <footer>
+              <button
+                className="secondary-button"
+                disabled={columnBusy}
+                onClick={() => setDeleteColumnTarget(null)}
+              >
+                Отмена
+              </button>
+              <button
+                className="danger-button"
+                disabled={columnBusy}
+                onClick={async () => {
+                  setColumnBusy(true);
+                  setColumnError('');
+                  try {
+                    await deleteColumn(deleteColumnTarget.id);
+                    setDeleteColumnTarget(null);
+                  } catch (error) {
+                    setColumnError(
+                      error instanceof Error
+                        ? error.message
+                        : String(error),
+                    );
+                  } finally {
+                    setColumnBusy(false);
+                  }
+                }}
+              >
+                <Trash2 size={14} />
+                {columnBusy ? 'Удаление…' : 'Удалить'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
       <header className="dataset-sheet__topbar">
         <div className="dataset-sheet__identity">
           <span className="dataset-sheet__icon">
@@ -456,6 +523,7 @@ export function DatasetSheet({
                           <strong>
                             {column.name}
                             {!readOnly && (
+                              <>
                               <span
                                 className="dataset-sheet__rename-column"
                                 role="button"
@@ -488,6 +556,27 @@ export function DatasetSheet({
                               >
                                 <Pencil size={10} />
                               </span>
+                              <span
+                                className="dataset-sheet__delete-column"
+                                role="button"
+                                tabIndex={0}
+                                title="Удалить колонку"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setDeleteColumnTarget(column);
+                                  setColumnError('');
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') {
+                                    event.stopPropagation();
+                                    setDeleteColumnTarget(column);
+                                    setColumnError('');
+                                  }
+                                }}
+                              >
+                                <Trash2 size={10} />
+                              </span>
+                              </>
                             )}
                           </strong>
                           <small>

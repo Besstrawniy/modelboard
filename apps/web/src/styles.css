@@ -1649,3 +1649,30 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   gap: 7px;
   border-top: 1px solid #e9ebee;
 }
+
+
+.dataset-sheet__delete-column {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 4px;
+  color: #a06060;
+  opacity: 0;
+}
+.dataset-sheet__column-header:hover .dataset-sheet__delete-column {
+  opacity: 1;
+}
+.dataset-sheet__delete-column:hover {
+  background: #fff0f0;
+  color: #943e3e;
+}
+.dataset-sheet__delete-warning {
+  margin: 0;
+  color: #666e79;
+  font-size: 10px;
+  line-height: 1.55;
+}
+.dataset-sheet__delete-warning strong {
+  color: #323842;
+}
