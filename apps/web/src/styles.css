@@ -850,3 +850,28 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   font-size: 8px;
   line-height: 1.4;
 }
+
+
+.related-relation__actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+.related-relation__actions button.is-secondary {
+  border-color: #e2e5ea;
+  background: #fff;
+  color: #69717d;
+}
+.related-relation__actions button.is-secondary:hover:not(:disabled) {
+  background: #f6f7f9;
+  border-color: #d6dae0;
+}
+.related-relation__canvas-state {
+  margin: 0 8px 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #6470c6;
+  font-size: 8px;
+  font-weight: 700;
+}

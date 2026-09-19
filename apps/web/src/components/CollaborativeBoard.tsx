@@ -545,6 +545,70 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     ydoc,
   ]);
 
+  const materializedRelatedCount = useCallback((
+    parentNodeId: string,
+    relationId: string,
+  ) => {
+    let count = 0;
+
+    for (const node of nodesMap.values() as Iterable<Node>) {
+      const generatedFrom = (node.data as any)?.generatedFrom;
+      if (
+        generatedFrom?.parentNodeId === parentNodeId &&
+        generatedFrom?.relationId === relationId
+      ) {
+        count += 1;
+      }
+    }
+
+    return count;
+  }, [nodesMap]);
+
+  const hideMaterializedRelated = useCallback((
+    parentNodeId: string,
+    relationId: string,
+  ) => {
+    if (readOnly) return 0;
+
+    const childIds: string[] = [];
+
+    for (const node of nodesMap.values() as Iterable<Node>) {
+      const generatedFrom = (node.data as any)?.generatedFrom;
+      if (
+        generatedFrom?.parentNodeId === parentNodeId &&
+        generatedFrom?.relationId === relationId
+      ) {
+        childIds.push(node.id);
+      }
+    }
+
+    if (childIds.length === 0) return 0;
+
+    const childSet = new Set(childIds);
+
+    ydoc.transact(() => {
+      for (const childId of childIds) {
+        nodesMap.delete(childId);
+      }
+
+      for (const edge of edgesMap.values() as Iterable<Edge>) {
+        const generated = (edge.data as any)?.generated;
+        const edgeRelationId = (edge.data as any)?.relationId;
+
+        if (
+          generated &&
+          edgeRelationId === relationId &&
+          edge.source === parentNodeId &&
+          childSet.has(edge.target)
+        ) {
+          edgesMap.delete(edge.id);
+        }
+      }
+    });
+
+    return childIds.length;
+  }, [edgesMap, nodesMap, readOnly, ydoc]);
+
   const viewportCenter = useCallback(() => {
     if (!rf) return { x: 360, y: 220 };
     return rf.screenToFlowPosition({
@@ -675,6 +739,8 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
         workspaceId: meta.workspaceId,
         updateNodeData,
         materializeRelated,
+        hideMaterializedRelated,
+        materializedRelatedCount,
       }}
     >
       <div

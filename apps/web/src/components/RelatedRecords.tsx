@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Database, GitBranchPlus, Link2 } from 'lucide-react';
+import { ArrowLeftRight, Database, GitBranchPlus, Link2, Network, XCircle } from 'lucide-react';
 import type {
   DatasetRelation,
   DatasetRow,
@@ -41,7 +41,12 @@ function RelatedRelationSection({
   token: string;
   parentNodeId: string;
 }) {
-  const { readOnly, materializeRelated } = useBoardActions();
+  const {
+    readOnly,
+    materializeRelated,
+    hideMaterializedRelated,
+    materializedRelatedCount,
+  } = useBoardActions();
   const [materializing, setMaterializing] = useState(false);
   const [materializeMessage, setMaterializeMessage] = useState('');
 
@@ -81,6 +86,11 @@ function RelatedRelationSection({
 
   const remoteColumn = otherDataset?.columns.find(
     (column) => column.id === remoteColumnId,
+  );
+
+  const visibleOnCanvas = materializedRelatedCount(
+    parentNodeId,
+    relation.id,
   );
 
   const showOnCanvas = async () => {
@@ -151,6 +161,34 @@ function RelatedRelationSection({
               ? 'Добавление…'
               : `Показать на canvas (${Math.min(matches.length, 20)})`}
           </button>
+
+          {visibleOnCanvas > 0 && (
+            <button
+              className="is-secondary"
+              onClick={() => {
+                const hidden = hideMaterializedRelated(
+                  parentNodeId,
+                  relation.id,
+                );
+                setMaterializeMessage(
+                  hidden > 0
+                    ? `Скрыто объектов: ${hidden}`
+                    : 'На canvas нечего скрывать.',
+                );
+              }}
+              title="Убрать только визуальные дочерние объекты"
+            >
+              <XCircle size={13} />
+              Скрыть ({visibleOnCanvas})
+            </button>
+          )}
+        </div>
+      )}
+
+      {visibleOnCanvas > 0 && (
+        <div className="related-relation__canvas-state">
+          <Network size={12} />
+          На canvas: {visibleOnCanvas}
         </div>
       )}
 

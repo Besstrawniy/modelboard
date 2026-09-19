@@ -19,6 +19,14 @@ export type BoardActions = {
   workspaceId: string;
   updateNodeData: (nodeId: string, patch: Record<string, unknown>) => void;
   materializeRelated: (input: MaterializeRelatedInput) => Promise<number>;
+  hideMaterializedRelated: (
+    parentNodeId: string,
+    relationId: string,
+  ) => number;
+  materializedRelatedCount: (
+    parentNodeId: string,
+    relationId: string,
+  ) => number;
 };
 
 const BoardActionsContext = createContext<BoardActions>({
@@ -28,6 +36,8 @@ const BoardActionsContext = createContext<BoardActions>({
   workspaceId: '',
   updateNodeData: () => undefined,
   materializeRelated: async () => 0,
+  hideMaterializedRelated: () => 0,
+  materializedRelatedCount: () => 0,
 });
 
 export const BoardActionsProvider = BoardActionsContext.Provider;
