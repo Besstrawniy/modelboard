@@ -98,6 +98,76 @@ export class AppController {
   }
 
   @UseGuards(AuthGuard)
+  @Get('workspaces/:id/boards')
+  async boards(
+    @Param('id') workspaceId: string,
+    @Req() req: any,
+  ) {
+    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+
+    const result = await query<{
+      id: string;
+      name: string;
+    }>(
+      `SELECT id, name
+       FROM boards
+       WHERE workspace_id = $1
+       ORDER BY created_at, lower(name), id`,
+      [workspaceId],
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      workspaceId,
+      workspaceName: access.workspace_name,
+      role: access.role,
+    }));
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('workspaces/:id/boards')
+  async createBoard(
+    @Param('id') workspaceId: string,
+    @Req() req: any,
+    @Body() body: { name?: string },
+  ) {
+    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    const name = body.name?.trim();
+    if (!name) {
+      throw new BadRequestException('Board name is required');
+    }
+    if (name.length > 120) {
+      throw new BadRequestException(
+        'Board name is limited to 120 characters',
+      );
+    }
+
+    const boardId = randomUUID();
+    await query(
+      `INSERT INTO boards (
+         id, workspace_id, name, created_by
+       )
+       VALUES ($1, $2, $3, $4)`,
+      [boardId, workspaceId, name, req.user.sub],
+    );
+
+    return {
+      id: boardId,
+      name,
+      workspaceId,
+      workspaceName: access.workspace_name,
+      role: access.role,
+    };
+  }
+
+  @UseGuards(AuthGuard)
   @Get('boards/:id')
   async board(@Param('id') id: string, @Req() req: any) {
     const access = await getBoardAccess(id, req.user.sub);

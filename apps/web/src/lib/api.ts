@@ -53,6 +53,25 @@ export const api = {
       headers: authHeaders(token),
     }),
 
+  boards: (workspaceId: string, token: string) =>
+    json<BoardMeta[]>(`/workspaces/${workspaceId}/boards`, {
+      headers: authHeaders(token),
+    }),
+
+  createBoard: (
+    workspaceId: string,
+    token: string,
+    name: string,
+  ) =>
+    json<BoardMeta>(`/workspaces/${workspaceId}/boards`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders(token),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name }),
+    }),
+
   datasets: (workspaceId: string, token: string) =>
     json<DatasetMeta[]>(`/workspaces/${workspaceId}/datasets`, {
       headers: authHeaders(token),

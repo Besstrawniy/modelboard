@@ -2103,3 +2103,197 @@ button:disabled { cursor: not-allowed; opacity: .42; }
     width: 70px;
   }
 }
+
+
+/* Workspace board navigation */
+.board-switcher {
+  position: relative;
+  justify-self: center;
+}
+.board-switcher__trigger {
+  min-width: 220px;
+  max-width: min(420px, 46vw);
+  height: 42px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  color: #414852;
+  text-align: left;
+}
+.board-switcher__trigger:hover {
+  border-color: #e1e4e9;
+  background: #f7f8fa;
+}
+.board-switcher__trigger > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.board-switcher__trigger strong,
+.board-switcher__trigger small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-switcher__trigger strong {
+  color: #272c33;
+  font-size: 13px;
+}
+.board-switcher__trigger small {
+  margin-top: 2px;
+  color: #858b94;
+  font-size: 9px;
+}
+.board-switcher__menu {
+  position: absolute;
+  z-index: 80;
+  top: 49px;
+  left: 50%;
+  width: min(360px, calc(100vw - 30px));
+  transform: translateX(-50%);
+  overflow: hidden;
+  border: 1px solid #dce0e6;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 50px rgba(25,30,40,.18);
+}
+.board-switcher__menu-title {
+  padding: 9px 11px 6px;
+  color: #9097a0;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.board-switcher__list {
+  max-height: 260px;
+  overflow: auto;
+  padding: 3px 6px 7px;
+}
+.board-switcher__list > button {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #555d68;
+  text-align: left;
+  font-size: 10px;
+}
+.board-switcher__list > button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-switcher__list > button:hover {
+  background: #f4f5f7;
+}
+.board-switcher__list > button.is-active {
+  background: #eef0ff;
+  color: #5262c8;
+  font-weight: 750;
+}
+.board-switcher__create {
+  padding: 8px;
+  border-top: 1px solid #eceef1;
+}
+.board-switcher__create > button {
+  width: 100%;
+  min-height: 34px;
+  border: 1px dashed #ccd1da;
+  border-radius: 8px;
+  background: #fafbfc;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #59616c;
+  font-size: 9px;
+  font-weight: 750;
+}
+.board-switcher__create form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 6px;
+}
+.board-switcher__create input {
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid #dce0e6;
+  border-radius: 7px;
+  outline: none;
+  font-size: 10px;
+}
+.board-switcher__create input:focus {
+  border-color: #6578e5;
+  box-shadow: 0 0 0 3px rgba(101,120,229,.1);
+}
+.board-switcher__create form button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: #1f2329;
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+.board-switcher__error {
+  margin-top: 6px;
+  padding: 6px 7px;
+  border-radius: 6px;
+  background: #fff0f0;
+  color: #963e3e;
+  font-size: 8px;
+}
+.global-error-toast {
+  position: fixed;
+  z-index: 200;
+  right: 16px;
+  bottom: 16px;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 9px 10px 9px 12px;
+  border: 1px solid #efcece;
+  border-radius: 9px;
+  background: #fff6f6;
+  box-shadow: 0 10px 30px rgba(30,20,20,.14);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #913d3d;
+  font-size: 9px;
+}
+.global-error-toast button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+}
+
+@media (max-width: 760px) {
+  .topbar {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    padding: 0 8px;
+  }
+  .topbar > .brand {
+    font-size: 0;
+  }
+  .board-switcher__trigger {
+    min-width: 0;
+    width: 100%;
+  }
+}

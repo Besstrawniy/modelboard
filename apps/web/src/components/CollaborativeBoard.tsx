@@ -22,7 +22,7 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Database, Eraser, Hand, MessageSquare, MousePointer2, Network, PenLine, Redo2, Shapes, StickyNote, Type, Undo2, UploadCloud, X } from 'lucide-react';
+import { ChevronDown, Database, Eraser, Hand, LayoutDashboard, MessageSquare, MousePointer2, Network, PenLine, Plus, Redo2, Shapes, StickyNote, Type, Undo2, UploadCloud, X } from 'lucide-react';
 import {
   DEMO_ROLES_DATASET_ID,
   DEMO_USERS_DATASET_ID,
@@ -179,7 +179,19 @@ function migrateKnownDemoNodes(nodesMap: Y.Map<any>) {
   }
 }
 
-function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }) {
+function BoardInner({
+  meta,
+  session,
+  boards,
+  onSwitchBoard,
+  onCreateBoard,
+}: {
+  meta: BoardMeta;
+  session: AuthSession;
+  boards: BoardMeta[];
+  onSwitchBoard: (boardId: string) => void | Promise<void>;
+  onCreateBoard: (name: string) => Promise<void>;
+}) {
   const readOnly = !canEditBoard(meta.role);
   const ydoc = useMemo(() => new Y.Doc(), [meta.id, session.user.id]);
   const nodesMap = useMemo(() => ydoc.getMap<any>('nodes'), [ydoc]);
@@ -225,6 +237,11 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const [devicesOpen, setDevicesOpen] = useState(false);
   const [workspaceTemplates, setWorkspaceTemplates] =
     useState<WorkspaceObjectTemplate[]>([]);
+  const [boardMenuOpen, setBoardMenuOpen] = useState(false);
+  const [newBoardOpen, setNewBoardOpen] = useState(false);
+  const [newBoardName, setNewBoardName] = useState('');
+  const [newBoardBusy, setNewBoardBusy] = useState(false);
+  const [newBoardError, setNewBoardError] = useState('');
 
   const refreshWorkspaceTemplates = useCallback(async () => {
     const templates = await api.templates(
@@ -252,9 +269,16 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
       flushDelay: 40,
       onStatus: ({ status }) => setStatus(status),
       onSynced: () => {
-        if (!readOnly && nodesMap.size === 0) {
+        if (
+          !readOnly &&
+          meta.id === DEMO_BOARD_ID &&
+          nodesMap.size === 0
+        ) {
           ydoc.transact(() => seedDocument(nodesMap, edgesMap));
-        } else if (!readOnly) {
+        } else if (
+          !readOnly &&
+          meta.id === DEMO_BOARD_ID
+        ) {
           ydoc.transact(() => migrateKnownDemoNodes(nodesMap));
         }
 
@@ -1225,10 +1249,115 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
       >
         <header className="topbar">
           <div className="brand"><span className="brand-mark">M</span> ModelBoard</div>
-          <div className="board-title">
-            <strong>{meta.name}</strong>
-            <span>{meta.workspaceName}</span>
+
+          <div className="board-switcher">
+            <button
+              className="board-switcher__trigger"
+              onClick={() => {
+                setBoardMenuOpen((value) => !value);
+                setNewBoardOpen(false);
+                setNewBoardError('');
+              }}
+            >
+              <LayoutDashboard size={15} />
+              <span>
+                <strong>{meta.name}</strong>
+                <small>{meta.workspaceName}</small>
+              </span>
+              <ChevronDown size={14} />
+            </button>
+
+            {boardMenuOpen && (
+              <div className="board-switcher__menu">
+                <div className="board-switcher__menu-title">
+                  Доски Workspace
+                </div>
+
+                <div className="board-switcher__list">
+                  {boards.map((board) => (
+                    <button
+                      key={board.id}
+                      className={
+                        board.id === meta.id ? 'is-active' : ''
+                      }
+                      onClick={() => {
+                        setBoardMenuOpen(false);
+                        void onSwitchBoard(board.id);
+                      }}
+                    >
+                      <LayoutDashboard size={14} />
+                      <span>{board.name}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {!readOnly && (
+                  <div className="board-switcher__create">
+                    {!newBoardOpen ? (
+                      <button
+                        onClick={() => {
+                          setNewBoardOpen(true);
+                          setNewBoardName('');
+                          setNewBoardError('');
+                        }}
+                      >
+                        <Plus size={14} />
+                        Новая доска
+                      </button>
+                    ) : (
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const name = newBoardName.trim();
+                          if (!name || newBoardBusy) return;
+
+                          setNewBoardBusy(true);
+                          setNewBoardError('');
+                          void onCreateBoard(name)
+                            .then(() => {
+                              setBoardMenuOpen(false);
+                              setNewBoardOpen(false);
+                              setNewBoardName('');
+                            })
+                            .catch((error) =>
+                              setNewBoardError(
+                                error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                              ),
+                            )
+                            .finally(() => setNewBoardBusy(false));
+                        }}
+                      >
+                        <input
+                          autoFocus
+                          maxLength={120}
+                          value={newBoardName}
+                          placeholder="Название доски"
+                          onChange={(event) =>
+                            setNewBoardName(event.target.value)
+                          }
+                        />
+                        <button
+                          type="submit"
+                          disabled={!newBoardName.trim() || newBoardBusy}
+                        >
+                          <Plus size={14} />
+                        </button>
+                      </form>
+                    )}
+
+                    {newBoardError && (
+                      <div className="board-switcher__error">
+                        {newBoardError}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+
           <div className="presence-strip">
             {remotePresence.slice(0, 5).map(([clientId, state]) => (
               <span className="avatar" key={clientId} title={`${state.user?.name} · ${state.user?.role}`}>
@@ -1528,7 +1657,13 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   );
 }
 
-export function CollaborativeBoard(props: { meta: BoardMeta; session: AuthSession }) {
+export function CollaborativeBoard(props: {
+  meta: BoardMeta;
+  session: AuthSession;
+  boards: BoardMeta[];
+  onSwitchBoard: (boardId: string) => void | Promise<void>;
+  onCreateBoard: (name: string) => Promise<void>;
+}) {
   return (
     <ReactFlowProvider>
       <BoardInner {...props} />
