@@ -1247,6 +1247,43 @@ export class AppController {
       }
     }
 
+    if (body.type === 'RELATION_VIEW') {
+      if (!body.rowId) {
+        throw new BadRequestException(
+          'RELATION_VIEW requires an anchor row',
+        );
+      }
+
+      if (!body.relationPath || body.relationPath.length !== 1) {
+        throw new BadRequestException(
+          'RELATION_VIEW currently requires exactly one relation',
+        );
+      }
+
+      const relation = await query<{ id: string }>(
+        `SELECT id
+         FROM dataset_relations
+         WHERE id = $1
+           AND workspace_id = $2
+           AND (
+             source_dataset_id = $3 OR
+             target_dataset_id = $3
+           )
+         LIMIT 1`,
+        [
+          body.relationPath[0],
+          access.workspace_id,
+          body.datasetId,
+        ],
+      );
+
+      if (!relation.rows[0]) {
+        throw new BadRequestException(
+          'Relation does not belong to the workspace or anchor dataset',
+        );
+      }
+    }
+
     const presentationColumnIds = [
       body.presentation?.titleColumnId,
       body.presentation?.subtitleColumnId,

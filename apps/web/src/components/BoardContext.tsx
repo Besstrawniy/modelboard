@@ -7,6 +7,13 @@ import type {
 } from '@modelboard/shared';
 import { createContext, useContext } from 'react';
 
+export type CreateRelationViewInput = {
+  parentNodeId: string;
+  relation: DatasetRelation;
+  dataset: DatasetSnapshot;
+  row: DatasetRow;
+};
+
 export type MaterializeRelatedInput = {
   parentNodeId: string;
   relation: DatasetRelation;
@@ -24,10 +31,11 @@ export type BoardActions = {
   refreshWorkspaceTemplates: () => Promise<void>;
   updateNodeData: (nodeId: string, patch: Record<string, unknown>) => void;
   materializeRelated: (input: MaterializeRelatedInput) => Promise<number>;
+  createRelationView: (input: CreateRelationViewInput) => Promise<boolean>;
   hideMaterializedRelated: (
     parentNodeId: string,
     relationId: string,
-  ) => number;
+  ) => Promise<number>;
   materializedRelatedCount: (
     parentNodeId: string,
     relationId: string,
@@ -47,6 +55,7 @@ const BoardActionsContext = createContext<BoardActions>({
   refreshWorkspaceTemplates: async () => undefined,
   updateNodeData: () => undefined,
   materializeRelated: async () => 0,
+  createRelationView: async () => false,
   hideMaterializedRelated: () => 0,
   materializedRelatedCount: () => 0,
   openDatasetSheet: () => undefined,

@@ -55,6 +55,7 @@ import { DatasetSheet } from './DatasetSheet';
 import { DeviceNode } from './DeviceNode';
 import { DevicePalette } from './DevicePalette';
 import { TemplateNode } from './TemplateNode';
+import { RelationViewNode } from './RelationViewNode';
 
 type PresenceState = {
   user?: { id: string; name: string; role: string };
@@ -79,6 +80,7 @@ const nodeTypes: any = {
   shape: ShapeNode,
   device: DeviceNode,
   template: TemplateNode,
+  relationView: RelationViewNode,
 };
 
 function seedDocument(nodesMap: Y.Map<any>, edgesMap: Y.Map<any>) {
@@ -343,8 +345,27 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
       setNodes((current) => applyNodeChanges(changes.filter((c: any) => c.type === 'select'), current));
       return;
     }
+
+    for (const change of changes as any[]) {
+      if (change.type !== 'remove') continue;
+      const removedNode = nodesMap.get(change.id) as Node | undefined;
+      if ((removedNode?.data as any)?.binding) {
+        void api
+          .deleteObjectBinding(meta.id, change.id, session.token)
+          .catch((error) =>
+            console.error('Failed to delete object binding', error),
+          );
+      }
+    }
+
     persistNodeChanges(changes);
-  }, [persistNodeChanges, readOnly]);
+  }, [
+    meta.id,
+    nodesMap,
+    persistNodeChanges,
+    readOnly,
+    session.token,
+  ]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     if (readOnly) return;
@@ -631,6 +652,93 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     ydoc,
   ]);
 
+  const createRelationView = useCallback(async ({
+    parentNodeId,
+    relation,
+    dataset,
+    row,
+  }: {
+    parentNodeId: string;
+    relation: DatasetRelation;
+    dataset: DatasetSnapshot;
+    row: DatasetRow;
+  }) => {
+    if (readOnly) return false;
+
+    const parent = nodesMap.get(parentNodeId) as Node | undefined;
+    if (!parent) return false;
+
+    const nodeId = `relation-view:${parentNodeId}:${relation.id}`;
+    if (nodesMap.has(nodeId)) return false;
+
+    const binding = await api.upsertObjectBinding(
+      meta.id,
+      nodeId,
+      session.token,
+      {
+        type: 'RELATION_VIEW',
+        datasetId: dataset.id,
+        rowId: row.id,
+        relationPath: [relation.id],
+        presentation: {
+          maxRows: 8,
+        },
+      },
+    );
+
+    const node: Node = {
+      id: nodeId,
+      type: 'relationView',
+      position: {
+        x: parent.position.x + 60,
+        y: parent.position.y + 220,
+      },
+      style: {
+        width: 360,
+        height: 290,
+      },
+      data: {
+        relationId: relation.id,
+        parentNodeId,
+        binding,
+      },
+    };
+
+    const edgeId = `relation-view-edge:${parentNodeId}:${relation.id}`;
+    const edge: Edge = {
+      id: edgeId,
+      source: parentNodeId,
+      target: nodeId,
+      type: 'smoothstep',
+      label: 'RELATION VIEW',
+      markerEnd: { type: MarkerType.ArrowClosed },
+      style: {
+        strokeDasharray: '6 4',
+      },
+      data: {
+        relationId: relation.id,
+        relationType: relation.relationType,
+        generated: true,
+        relationView: true,
+      },
+    };
+
+    ydoc.transact(() => {
+      nodesMap.set(node.id, node);
+      edgesMap.set(edge.id, edge);
+    });
+
+    setSelectedNodeId(nodeId);
+    return true;
+  }, [
+    edgesMap,
+    meta.id,
+    nodesMap,
+    readOnly,
+    session.token,
+    ydoc,
+  ]);
+
   const materializedRelatedCount = useCallback((
     parentNodeId: string,
     relationId: string,
@@ -650,7 +758,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     return count;
   }, [nodesMap]);
 
-  const hideMaterializedRelated = useCallback((
+  const hideMaterializedRelated = useCallback(async (
     parentNodeId: string,
     relationId: string,
   ) => {
@@ -671,6 +779,16 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     if (childIds.length === 0) return 0;
 
     const childSet = new Set(childIds);
+
+    await Promise.all(
+      childIds.map((childId) =>
+        api.deleteObjectBinding(
+          meta.id,
+          childId,
+          session.token,
+        ),
+      ),
+    );
 
     ydoc.transact(() => {
       for (const childId of childIds) {
@@ -693,7 +811,14 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     });
 
     return childIds.length;
-  }, [edgesMap, nodesMap, readOnly, ydoc]);
+  }, [
+    edgesMap,
+    meta.id,
+    nodesMap,
+    readOnly,
+    session.token,
+    ydoc,
+  ]);
 
   const viewportCenter = useCallback(() => {
     if (!rf) return { x: 360, y: 220 };
@@ -890,6 +1015,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
         refreshWorkspaceTemplates,
         updateNodeData,
         materializeRelated,
+        createRelationView,
         hideMaterializedRelated,
         materializedRelatedCount,
         openDatasetSheet: (datasetId, rowId) =>

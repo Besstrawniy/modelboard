@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Database, GitBranchPlus, Link2, Network, XCircle } from 'lucide-react';
+import { ArrowLeftRight, Database, GitBranchPlus, LayoutList, Link2, Network, XCircle } from 'lucide-react';
 import type {
   DatasetRelation,
   DatasetRow,
@@ -46,6 +46,7 @@ function RelatedRelationSection({
   const {
     readOnly,
     materializeRelated,
+    createRelationView,
     hideMaterializedRelated,
     materializedRelatedCount,
     workspaceTemplates,
@@ -53,6 +54,7 @@ function RelatedRelationSection({
   const [materializing, setMaterializing] = useState(false);
   const [materializeMessage, setMaterializeMessage] = useState('');
   const [visualTemplateKey, setVisualTemplateKey] = useState('');
+  const [relationViewBusy, setRelationViewBusy] = useState(false);
 
   const currentIsSource = relation.sourceDatasetId === currentDataset.id;
   const otherDatasetId = currentIsSource
@@ -183,6 +185,44 @@ function RelatedRelationSection({
         Значение связи: <code>{String(localValue ?? 'NULL')}</code>
       </div>
 
+      {!readOnly && (
+        <div className="related-relation__view-action">
+          <button
+            disabled={relationViewBusy}
+            onClick={async () => {
+              setRelationViewBusy(true);
+              setMaterializeMessage('');
+              try {
+                const created = await createRelationView({
+                  parentNodeId,
+                  relation,
+                  dataset: currentDataset,
+                  row: currentRow,
+                });
+                setMaterializeMessage(
+                  created
+                    ? 'Relation View добавлен на canvas.'
+                    : 'Relation View для этой связи уже есть.',
+                );
+              } catch (error) {
+                setMaterializeMessage(
+                  error instanceof Error
+                    ? error.message
+                    : String(error),
+                );
+              } finally {
+                setRelationViewBusy(false);
+              }
+            }}
+          >
+            <LayoutList size={13} />
+            {relationViewBusy
+              ? 'Создание…'
+              : 'Добавить Relation View'}
+          </button>
+        </div>
+      )}
+
       {matches.length > 0 && otherDataset && !readOnly && (
         <>
           <div className="related-relation__template-picker">
@@ -235,15 +275,24 @@ function RelatedRelationSection({
             <button
               className="is-secondary"
               onClick={() => {
-                const hidden = hideMaterializedRelated(
+                void hideMaterializedRelated(
                   parentNodeId,
                   relation.id,
-                );
-                setMaterializeMessage(
-                  hidden > 0
-                    ? `Скрыто объектов: ${hidden}`
-                    : 'На canvas нечего скрывать.',
-                );
+                )
+                  .then((hidden) =>
+                    setMaterializeMessage(
+                      hidden > 0
+                        ? `Скрыто объектов: ${hidden}`
+                        : 'На canvas нечего скрывать.',
+                    ),
+                  )
+                  .catch((error) =>
+                    setMaterializeMessage(
+                      error instanceof Error
+                        ? error.message
+                        : String(error),
+                    ),
+                  );
               }}
               title="Убрать только визуальные дочерние объекты"
             >
