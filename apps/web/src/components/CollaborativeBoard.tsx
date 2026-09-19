@@ -22,7 +22,7 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Database, Eraser, Hand, LayoutDashboard, MessageSquare, MousePointer2, Network, PenLine, Plus, Redo2, Shapes, StickyNote, Type, Undo2, UploadCloud, X } from 'lucide-react';
+import { ChevronDown, Database, Eraser, Hand, LayoutDashboard, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X } from 'lucide-react';
 import {
   DEMO_ROLES_DATASET_ID,
   DEMO_USERS_DATASET_ID,
@@ -185,12 +185,16 @@ function BoardInner({
   boards,
   onSwitchBoard,
   onCreateBoard,
+  onRenameBoard,
+  onDeleteBoard,
 }: {
   meta: BoardMeta;
   session: AuthSession;
   boards: BoardMeta[];
   onSwitchBoard: (boardId: string) => void | Promise<void>;
   onCreateBoard: (name: string) => Promise<void>;
+  onRenameBoard: (boardId: string, name: string) => Promise<void>;
+  onDeleteBoard: (boardId: string) => Promise<void>;
 }) {
   const readOnly = !canEditBoard(meta.role);
   const ydoc = useMemo(() => new Y.Doc(), [meta.id, session.user.id]);
@@ -242,6 +246,10 @@ function BoardInner({
   const [newBoardName, setNewBoardName] = useState('');
   const [newBoardBusy, setNewBoardBusy] = useState(false);
   const [newBoardError, setNewBoardError] = useState('');
+  const [renameBoardOpen, setRenameBoardOpen] = useState(false);
+  const [renameBoardName, setRenameBoardName] = useState('');
+  const [boardActionBusy, setBoardActionBusy] = useState(false);
+  const [deleteBoardConfirm, setDeleteBoardConfirm] = useState(false);
 
   const refreshWorkspaceTemplates = useCallback(async () => {
     const templates = await api.templates(
@@ -1354,6 +1362,102 @@ function BoardInner({
                     )}
                   </div>
                 )}
+
+                {!readOnly && (
+                  <div className="board-switcher__manage">
+                    {!renameBoardOpen ? (
+                      <button
+                        disabled={boardActionBusy}
+                        onClick={() => {
+                          setRenameBoardOpen(true);
+                          setRenameBoardName(meta.name);
+                          setDeleteBoardConfirm(false);
+                          setNewBoardError('');
+                        }}
+                      >
+                        <Pencil size={13} />
+                        Переименовать текущую
+                      </button>
+                    ) : (
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const name = renameBoardName.trim();
+                          if (!name || boardActionBusy) return;
+
+                          setBoardActionBusy(true);
+                          setNewBoardError('');
+                          void onRenameBoard(meta.id, name)
+                            .then(() => {
+                              setRenameBoardOpen(false);
+                              setRenameBoardName('');
+                            })
+                            .catch((error) =>
+                              setNewBoardError(
+                                error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                              ),
+                            )
+                            .finally(() => setBoardActionBusy(false));
+                        }}
+                      >
+                        <input
+                          autoFocus
+                          maxLength={120}
+                          value={renameBoardName}
+                          onChange={(event) =>
+                            setRenameBoardName(event.target.value)
+                          }
+                        />
+                        <button
+                          type="submit"
+                          disabled={
+                            !renameBoardName.trim() ||
+                            boardActionBusy
+                          }
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      </form>
+                    )}
+
+                    {meta.role === 'OWNER' && boards.length > 1 && (
+                      <button
+                        className={deleteBoardConfirm ? 'is-danger-confirm' : 'is-danger'}
+                        disabled={boardActionBusy}
+                        onClick={() => {
+                          if (!deleteBoardConfirm) {
+                            setDeleteBoardConfirm(true);
+                            setRenameBoardOpen(false);
+                            return;
+                          }
+
+                          setBoardActionBusy(true);
+                          setNewBoardError('');
+                          void onDeleteBoard(meta.id)
+                            .then(() => {
+                              setBoardMenuOpen(false);
+                              setDeleteBoardConfirm(false);
+                            })
+                            .catch((error) =>
+                              setNewBoardError(
+                                error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                              ),
+                            )
+                            .finally(() => setBoardActionBusy(false));
+                        }}
+                      >
+                        <Trash2 size={13} />
+                        {deleteBoardConfirm
+                          ? 'Подтвердить удаление'
+                          : 'Удалить текущую'}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1663,6 +1767,8 @@ export function CollaborativeBoard(props: {
   boards: BoardMeta[];
   onSwitchBoard: (boardId: string) => void | Promise<void>;
   onCreateBoard: (name: string) => Promise<void>;
+  onRenameBoard: (boardId: string, name: string) => Promise<void>;
+  onDeleteBoard: (boardId: string) => Promise<void>;
 }) {
   return (
     <ReactFlowProvider>

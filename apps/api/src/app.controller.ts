@@ -168,6 +168,92 @@ export class AppController {
   }
 
   @UseGuards(AuthGuard)
+  @Put('boards/:id')
+  async renameBoard(
+    @Param('id') boardId: string,
+    @Req() req: any,
+    @Body() body: { name?: string },
+  ) {
+    const access = await getBoardAccess(boardId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    const name = body.name?.trim();
+    if (!name) {
+      throw new BadRequestException('Board name is required');
+    }
+    if (name.length > 120) {
+      throw new BadRequestException(
+        'Board name is limited to 120 characters',
+      );
+    }
+
+    await query(
+      `UPDATE boards
+       SET name = $1, updated_at = now()
+       WHERE id = $2`,
+      [name, boardId],
+    );
+
+    return {
+      id: boardId,
+      name,
+      workspaceId: access.workspace_id,
+      workspaceName: access.workspace_name,
+      role: access.role,
+    };
+  }
+
+  @UseGuards(AuthGuard)
+  @Delete('boards/:id')
+  async deleteBoard(
+    @Param('id') boardId: string,
+    @Req() req: any,
+  ) {
+    const access = await getBoardAccess(boardId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (access.role !== 'OWNER') {
+      throw new ForbiddenException('Only workspace OWNER can delete boards');
+    }
+
+    const count = await query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM boards
+       WHERE workspace_id = $1`,
+      [access.workspace_id],
+    );
+
+    if (Number(count.rows[0]?.count ?? 0) <= 1) {
+      throw new ConflictException(
+        'The last board in a workspace cannot be deleted',
+      );
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'DELETE FROM collab_documents WHERE document_name = $1',
+        [`board:${boardId}`],
+      );
+      await client.query(
+        'DELETE FROM boards WHERE id = $1',
+        [boardId],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return { ok: true as const };
+  }
+
+  @UseGuards(AuthGuard)
   @Get('boards/:id')
   async board(@Param('id') id: string, @Req() req: any) {
     const access = await getBoardAccess(id, req.user.sub);

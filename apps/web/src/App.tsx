@@ -80,6 +80,46 @@ export default function App() {
     localStorage.setItem(LAST_BOARD_KEY, board.id);
   };
 
+  const renameBoard = async (boardId: string, name: string) => {
+    if (!session) return;
+
+    const board = await api.renameBoard(
+      boardId,
+      session.token,
+      name,
+    );
+
+    setBoards((current) =>
+      current.map((item) =>
+        item.id === boardId ? board : item,
+      ),
+    );
+
+    if (meta?.id === boardId) {
+      setMeta(board);
+    }
+  };
+
+  const deleteBoard = async (boardId: string) => {
+    if (!session) return;
+
+    await api.deleteBoard(boardId, session.token);
+
+    const remaining = boards.filter(
+      (board) => board.id !== boardId,
+    );
+    setBoards(remaining);
+
+    if (meta?.id === boardId && remaining[0]) {
+      const next = await api.board(
+        remaining[0].id,
+        session.token,
+      );
+      setMeta(next);
+      localStorage.setItem(LAST_BOARD_KEY, next.id);
+    }
+  };
+
   if (!session || !meta) {
     return (
       <main className="login-page">
@@ -117,6 +157,8 @@ export default function App() {
         boards={boards}
         onSwitchBoard={switchBoard}
         onCreateBoard={createBoard}
+        onRenameBoard={renameBoard}
+        onDeleteBoard={deleteBoard}
       />
       {error && (
         <div className="global-error-toast">

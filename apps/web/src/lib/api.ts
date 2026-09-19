@@ -53,6 +53,26 @@ export const api = {
       headers: authHeaders(token),
     }),
 
+  renameBoard: (
+    boardId: string,
+    token: string,
+    name: string,
+  ) =>
+    json<BoardMeta>(`/boards/${boardId}`, {
+      method: 'PUT',
+      headers: {
+        ...authHeaders(token),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name }),
+    }),
+
+  deleteBoard: (boardId: string, token: string) =>
+    json<{ ok: true }>(`/boards/${boardId}`, {
+      method: 'DELETE',
+      headers: authHeaders(token),
+    }),
+
   boards: (workspaceId: string, token: string) =>
     json<BoardMeta[]>(`/workspaces/${workspaceId}/boards`, {
       headers: authHeaders(token),
