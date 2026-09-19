@@ -7,6 +7,7 @@ import type { Node } from '@xyflow/react';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
+import { RelatedRecords } from './RelatedRecords';
 
 function rowLabel(
   row: { id: string; values: Record<string, unknown> },
@@ -80,6 +81,12 @@ export function InspectorPanel({
     () => datasets.find((item) => item.id === datasetId),
     [datasetId, datasets],
   );
+
+  const boundRow =
+    existingBinding?.rowId &&
+    dataset?.id === existingBinding.datasetId
+      ? dataset.rows.find((row) => row.id === existingBinding.rowId)
+      : undefined;
 
   const saveBinding = async () => {
     if (!datasetId || !rowId) return;
@@ -282,6 +289,31 @@ export function InspectorPanel({
 
             {error && <div className="inspector-error">{error}</div>}
           </section>
+        )}
+
+        {node.type === 'shape' && existingBinding && dataset && boundRow && (
+          <>
+            <section className="inspector-section">
+              <h3><Database size={14} /> Текущие данные</h3>
+              <div className="bound-row-fields">
+                {dataset.columns.map((column) => (
+                  <div className="bound-row-field" key={column.id}>
+                    <small>{column.name}</small>
+                    <strong>
+                      {String(boundRow.values[column.id] ?? '—')}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <RelatedRecords
+              workspaceId={workspaceId}
+              token={token}
+              dataset={dataset}
+              row={boundRow}
+            />
+          </>
         )}
       </div>
     </aside>
