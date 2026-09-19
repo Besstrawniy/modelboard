@@ -3,6 +3,8 @@ import type {
   DatasetRelation,
   DatasetRow,
   DatasetSnapshot,
+  DeviceKind,
+  VisualTemplateRef,
 } from '@modelboard/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
@@ -46,9 +48,11 @@ function RelatedRelationSection({
     materializeRelated,
     hideMaterializedRelated,
     materializedRelatedCount,
+    workspaceTemplates,
   } = useBoardActions();
   const [materializing, setMaterializing] = useState(false);
   const [materializeMessage, setMaterializeMessage] = useState('');
+  const [visualTemplateKey, setVisualTemplateKey] = useState('');
 
   const currentIsSource = relation.sourceDatasetId === currentDataset.id;
   const otherDatasetId = currentIsSource
@@ -93,6 +97,35 @@ function RelatedRelationSection({
     relation.id,
   );
 
+  const inferredKind: DeviceKind =
+    /(^|[_\s-])(vm|machine|virtual)([_\s-]|$)/i.test(otherDataset?.name ?? '')
+      ? 'VM'
+      : /server|host/i.test(otherDataset?.name ?? '')
+        ? 'SERVER'
+        : /database|db|postgres|mysql|sql/i.test(otherDataset?.name ?? '')
+          ? 'DATABASE'
+          : /firewall|fw/i.test(otherDataset?.name ?? '')
+            ? 'FIREWALL'
+            : /switch/i.test(otherDataset?.name ?? '')
+              ? 'SWITCH'
+              : /router|gateway/i.test(otherDataset?.name ?? '')
+                ? 'ROUTER'
+                : 'VM';
+
+  const effectiveTemplateKey =
+    visualTemplateKey || `builtin:${inferredKind}`;
+
+  const visualTemplate: VisualTemplateRef =
+    effectiveTemplateKey.startsWith('workspace:')
+      ? {
+          source: 'WORKSPACE',
+          templateId: effectiveTemplateKey.slice('workspace:'.length),
+        }
+      : {
+          source: 'BUILTIN',
+          deviceKind: effectiveTemplateKey.slice('builtin:'.length) as DeviceKind,
+        };
+
   const showOnCanvas = async () => {
     if (!otherDataset || matches.length === 0 || readOnly) return;
 
@@ -104,6 +137,7 @@ function RelatedRelationSection({
         relation,
         dataset: otherDataset,
         rows: matches,
+        visualTemplate,
       });
       setMaterializeMessage(
         created > 0
@@ -150,7 +184,42 @@ function RelatedRelationSection({
       </div>
 
       {matches.length > 0 && otherDataset && !readOnly && (
-        <div className="related-relation__actions">
+        <>
+          <div className="related-relation__template-picker">
+            <label>
+              Шаблон дочерних объектов
+              <select
+                value={effectiveTemplateKey}
+                onChange={(event) =>
+                  setVisualTemplateKey(event.target.value)
+                }
+              >
+                <optgroup label="Встроенные">
+                  <option value="builtin:SERVER">Сервер</option>
+                  <option value="builtin:VM">Виртуальная машина</option>
+                  <option value="builtin:SWITCH">Коммутатор</option>
+                  <option value="builtin:ROUTER">Маршрутизатор</option>
+                  <option value="builtin:FIREWALL">Firewall</option>
+                  <option value="builtin:DATABASE">База данных</option>
+                  <option value="builtin:CLOUD">Cloud</option>
+                </optgroup>
+                {workspaceTemplates.length > 0 && (
+                  <optgroup label="Workspace SVG">
+                    {workspaceTemplates.map((template) => (
+                      <option
+                        key={template.id}
+                        value={`workspace:${template.id}`}
+                      >
+                        {template.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </label>
+          </div>
+
+          <div className="related-relation__actions">
           <button
             disabled={materializing}
             onClick={showOnCanvas}
@@ -182,7 +251,8 @@ function RelatedRelationSection({
               Скрыть ({visibleOnCanvas})
             </button>
           )}
-        </div>
+          </div>
+        </>
       )}
 
       {visibleOnCanvas > 0 && (

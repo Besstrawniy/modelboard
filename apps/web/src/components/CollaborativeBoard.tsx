@@ -36,6 +36,8 @@ import {
   type DatasetRow,
   type DatasetSnapshot,
   type DeviceKind,
+  type VisualTemplateRef,
+  type WorkspaceObjectTemplate,
 } from '@modelboard/shared';
 import { BoardActionsProvider } from './BoardContext';
 import { TableNode } from './TableNode';
@@ -52,6 +54,7 @@ import { InspectorPanel } from './InspectorPanel';
 import { DatasetSheet } from './DatasetSheet';
 import { DeviceNode } from './DeviceNode';
 import { DevicePalette } from './DevicePalette';
+import { TemplateNode } from './TemplateNode';
 
 type PresenceState = {
   user?: { id: string; name: string; role: string };
@@ -75,6 +78,7 @@ const nodeTypes: any = {
   text: TextNode,
   shape: ShapeNode,
   device: DeviceNode,
+  template: TemplateNode,
 };
 
 function seedDocument(nodesMap: Y.Map<any>, edgesMap: Y.Map<any>) {
@@ -175,6 +179,24 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     rowId?: string;
   } | null>(null);
   const [devicesOpen, setDevicesOpen] = useState(false);
+  const [workspaceTemplates, setWorkspaceTemplates] =
+    useState<WorkspaceObjectTemplate[]>([]);
+
+  const refreshWorkspaceTemplates = useCallback(async () => {
+    const templates = await api.templates(
+      meta.workspaceId,
+      session.token,
+    );
+    setWorkspaceTemplates(templates);
+  }, [meta.workspaceId, session.token]);
+
+  useEffect(() => {
+    void refreshWorkspaceTemplates().catch((error) =>
+      setDropError(
+        error instanceof Error ? error.message : String(error),
+      ),
+    );
+  }, [refreshWorkspaceTemplates]);
 
   useEffect(() => {
     const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
@@ -427,11 +449,13 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     relation,
     dataset,
     rows,
+    visualTemplate,
   }: {
     parentNodeId: string;
     relation: DatasetRelation;
     dataset: DatasetSnapshot;
     rows: DatasetRow[];
+    visualTemplate?: VisualTemplateRef;
   }) => {
     if (readOnly) return 0;
 
@@ -494,23 +518,74 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
       );
       const verticalOffset = (rowIndex - (rowsInColumn - 1) / 2) * 138;
 
-      createdNodes.push({
-        id: childId,
-        type: 'shape',
-        position: {
-          x: parent.position.x + 330 + columnIndex * 270,
-          y: parent.position.y + verticalOffset,
-        },
-        style: { width: 220, height: 105 },
-        data: {
-          binding,
-          generatedFrom: {
-            parentNodeId,
-            relationId: relation.id,
-            rowId: row.id,
+      const inferredKind: DeviceKind =
+        /(^|[_\s-])(vm|machine|virtual)([_\s-]|$)/i.test(dataset.name)
+          ? 'VM'
+          : /server|host/i.test(dataset.name)
+            ? 'SERVER'
+            : /database|db|postgres|mysql|sql/i.test(dataset.name)
+              ? 'DATABASE'
+              : /firewall|fw/i.test(dataset.name)
+                ? 'FIREWALL'
+                : /switch/i.test(dataset.name)
+                  ? 'SWITCH'
+                  : /router|gateway/i.test(dataset.name)
+                    ? 'ROUTER'
+                    : 'VM';
+
+      const templateRef = visualTemplate ?? {
+        source: 'BUILTIN' as const,
+        deviceKind: inferredKind,
+      };
+
+      const generatedFrom = {
+        parentNodeId,
+        relationId: relation.id,
+        rowId: row.id,
+      };
+
+      if (templateRef.source === 'WORKSPACE') {
+        const template = workspaceTemplates.find(
+          (item) => item.id === templateRef.templateId,
+        );
+
+        if (!template) {
+          throw new Error('Workspace SVG template not found');
+        }
+
+        createdNodes.push({
+          id: childId,
+          type: 'template',
+          position: {
+            x: parent.position.x + 330 + columnIndex * 270,
+            y: parent.position.y + verticalOffset,
           },
-        },
-      });
+          style: {
+            width: template.defaultWidth,
+            height: Math.max(100, template.defaultHeight + 54),
+          },
+          data: {
+            templateId: template.id,
+            binding,
+            generatedFrom,
+          },
+        });
+      } else {
+        createdNodes.push({
+          id: childId,
+          type: 'device',
+          position: {
+            x: parent.position.x + 330 + columnIndex * 270,
+            y: parent.position.y + verticalOffset,
+          },
+          style: { width: 220, height: 130 },
+          data: {
+            deviceKind: templateRef.deviceKind,
+            binding,
+            generatedFrom,
+          },
+        });
+      }
 
       if (!edgesMap.has(edgeId)) {
         createdEdges.push({
@@ -552,6 +627,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     nodesMap,
     readOnly,
     session.token,
+    workspaceTemplates,
     ydoc,
   ]);
 
@@ -705,6 +781,44 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     setToolMode('select');
   }, [nodesMap, readOnly, viewportCenter]);
 
+  const addTemplateNode = useCallback((templateId: string) => {
+    if (readOnly) return;
+
+    const template = workspaceTemplates.find(
+      (item) => item.id === templateId,
+    );
+    if (!template) return;
+
+    const id = crypto.randomUUID();
+    const center = viewportCenter();
+
+    nodesMap.set(id, {
+      id,
+      type: 'template',
+      position: {
+        x: center.x - template.defaultWidth / 2,
+        y: center.y - Math.max(100, template.defaultHeight + 54) / 2,
+      },
+      style: {
+        width: template.defaultWidth,
+        height: Math.max(100, template.defaultHeight + 54),
+      },
+      data: {
+        templateId: template.id,
+        label: template.name,
+      },
+    } satisfies Node);
+
+    setSelectedNodeId(id);
+    setDevicesOpen(false);
+    setToolMode('select');
+  }, [
+    nodesMap,
+    readOnly,
+    viewportCenter,
+    workspaceTemplates,
+  ]);
+
   const onPointerMove = useCallback((event: React.PointerEvent) => {
     if (!provider || !rf) return;
     const point = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
@@ -772,6 +886,8 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
         sessionToken: session.token,
         boardId: meta.id,
         workspaceId: meta.workspaceId,
+        workspaceTemplates,
+        refreshWorkspaceTemplates,
         updateNodeData,
         materializeRelated,
         hideMaterializedRelated,
@@ -966,6 +1082,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
           <DevicePalette
             readOnly={readOnly}
             onAdd={addDevice}
+            onAddTemplate={addTemplateNode}
             onClose={() => setDevicesOpen(false)}
           />
         )}

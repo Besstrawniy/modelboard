@@ -171,7 +171,7 @@ export function InspectorPanel({
             </label>
           )}
 
-          {node.type === 'device' && (
+          {(node.type === 'device' || node.type === 'template') && node.type === 'device' && (
             <>
               <label>
                 Тип устройства
@@ -218,7 +218,7 @@ export function InspectorPanel({
           </section>
         )}
 
-        {(node.type === 'shape' || node.type === 'device') && (
+        {(node.type === 'shape' || node.type === 'device' || node.type === 'template') && (
           <section className="inspector-section">
             <h3><Link2 size={14} /> Привязка данных</h3>
 
@@ -331,7 +331,7 @@ export function InspectorPanel({
           </section>
         )}
 
-        {(node.type === 'shape' || node.type === 'device') && existingBinding && dataset && boundRow && (
+        {(node.type === 'shape' || node.type === 'device' || node.type === 'template') && existingBinding && dataset && boundRow && (
           <>
             <section className="inspector-section">
               <h3><Database size={14} /> Текущие данные</h3>

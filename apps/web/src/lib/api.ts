@@ -3,10 +3,12 @@ import type {
   BoardMeta,
   CreateDatasetInput,
   CreateDatasetRelationInput,
+  CreateWorkspaceObjectTemplateInput,
   DatasetMeta,
   DatasetRelation,
   ObjectBindingRecord,
   UpsertObjectBindingInput,
+  WorkspaceObjectTemplate,
   WorkspaceRole,
 } from '@modelboard/shared';
 
@@ -70,6 +72,38 @@ export const api = {
       },
       body: JSON.stringify(input),
     }),
+
+  templates: (workspaceId: string, token: string) =>
+    json<WorkspaceObjectTemplate[]>(`/workspaces/${workspaceId}/templates`, {
+      headers: authHeaders(token),
+    }),
+
+  createTemplate: (
+    workspaceId: string,
+    token: string,
+    input: CreateWorkspaceObjectTemplateInput,
+  ) =>
+    json<WorkspaceObjectTemplate>(`/workspaces/${workspaceId}/templates`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders(token),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    }),
+
+  deleteTemplate: (
+    workspaceId: string,
+    templateId: string,
+    token: string,
+  ) =>
+    json<{ ok: true }>(
+      `/workspaces/${workspaceId}/templates/${templateId}`,
+      {
+        method: 'DELETE',
+        headers: authHeaders(token),
+      },
+    ),
 
   relations: (workspaceId: string, token: string) =>
     json<DatasetRelation[]>(`/workspaces/${workspaceId}/relations`, {

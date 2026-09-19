@@ -2,6 +2,8 @@ import type {
   DatasetRelation,
   DatasetRow,
   DatasetSnapshot,
+  VisualTemplateRef,
+  WorkspaceObjectTemplate,
 } from '@modelboard/shared';
 import { createContext, useContext } from 'react';
 
@@ -10,6 +12,7 @@ export type MaterializeRelatedInput = {
   relation: DatasetRelation;
   dataset: DatasetSnapshot;
   rows: DatasetRow[];
+  visualTemplate?: VisualTemplateRef;
 };
 
 export type BoardActions = {
@@ -17,6 +20,8 @@ export type BoardActions = {
   sessionToken: string;
   boardId: string;
   workspaceId: string;
+  workspaceTemplates: WorkspaceObjectTemplate[];
+  refreshWorkspaceTemplates: () => Promise<void>;
   updateNodeData: (nodeId: string, patch: Record<string, unknown>) => void;
   materializeRelated: (input: MaterializeRelatedInput) => Promise<number>;
   hideMaterializedRelated: (
@@ -38,6 +43,8 @@ const BoardActionsContext = createContext<BoardActions>({
   sessionToken: '',
   boardId: '',
   workspaceId: '',
+  workspaceTemplates: [],
+  refreshWorkspaceTemplates: async () => undefined,
   updateNodeData: () => undefined,
   materializeRelated: async () => 0,
   hideMaterializedRelated: () => 0,
