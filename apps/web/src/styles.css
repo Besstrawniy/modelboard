@@ -2458,3 +2458,40 @@ button:disabled { cursor: not-allowed; opacity: .42; }
     grid-template-columns: 100px minmax(0, 1fr);
   }
 }
+
+
+/* Spreadsheet drag autofill */
+.dataset-sheet__table td.is-range-selected {
+  background: #f7f9ff;
+}
+.dataset-sheet__table td.is-range-selected:not(.is-selected-cell) {
+  box-shadow:
+    inset 1px 0 0 #9eabe9,
+    inset -1px 0 0 #9eabe9;
+}
+.dataset-sheet__table td.is-fill-preview {
+  background: #eef3ff;
+  box-shadow:
+    inset 1px 0 0 #6d83e8,
+    inset -1px 0 0 #6d83e8;
+}
+.dataset-sheet__fill-handle {
+  position: absolute;
+  z-index: 7;
+  right: -4px;
+  bottom: -4px;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid #fff;
+  border-radius: 2px;
+  background: #5068df;
+  box-shadow: 0 0 0 1px #5068df;
+  cursor: crosshair;
+  touch-action: none;
+}
+.dataset-sheet__formula-hint {
+  grid-column: 2;
+  margin-top: -3px;
+  color: #8b929c;
+  font-size: 7px;
+}

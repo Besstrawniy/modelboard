@@ -210,6 +210,54 @@ export function useCollaborativeDataset(
     [formulasMap, readOnly],
   );
 
+  const applyCellBatch = useCallback(
+    (
+      writes: Array<{
+        rowId: string;
+        columnId: string;
+        value?: DatasetCellValue;
+        formulaExpression?: string | null;
+      }>,
+    ) => {
+      if (readOnly || writes.length === 0) return;
+
+      ydoc.transact(() => {
+        for (const write of writes) {
+          const row = rowsMap.get(write.rowId);
+          if (!row) continue;
+
+          const key = formulaKey(
+            write.rowId,
+            write.columnId,
+          );
+
+          if (write.formulaExpression !== undefined) {
+            if (write.formulaExpression === null) {
+              formulasMap.delete(key);
+            } else {
+              formulasMap.set(key, {
+                rowId: write.rowId,
+                columnId: write.columnId,
+                expression: write.formulaExpression,
+              });
+            }
+          }
+
+          if (write.value !== undefined) {
+            rowsMap.set(write.rowId, {
+              ...row,
+              values: {
+                ...row.values,
+                [write.columnId]: write.value,
+              },
+            });
+          }
+        }
+      });
+    },
+    [formulasMap, readOnly, rowsMap, ydoc],
+  );
+
   const addColumn = useCallback(
     async (
       name: string,
@@ -355,6 +403,7 @@ export function useCollaborativeDataset(
     setCell,
     setFormula,
     clearFormula,
+    applyCellBatch,
     addColumn,
     renameColumn,
     convertColumn,

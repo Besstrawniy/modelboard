@@ -34,6 +34,19 @@ type SortState = {
   direction: 'asc' | 'desc';
 } | null;
 
+type CellSelectionRange = {
+  columnId: string;
+  startRowId: string;
+  endRowId: string;
+};
+
+type AutofillDrag = {
+  columnId: string;
+  sourceStart: number;
+  sourceEnd: number;
+  targetEnd: number;
+};
+
 function compareValues(a: DatasetCellValue, b: DatasetCellValue) {
   if (a === b) return 0;
   if (a === null || a === undefined) return 1;
@@ -257,6 +270,7 @@ export function DatasetSheet({
     setCell,
     setFormula,
     clearFormula,
+    applyCellBatch,
     addColumn,
     renameColumn,
     convertColumn,
@@ -295,6 +309,10 @@ export function DatasetSheet({
   } | null>(null);
   const [formulaInput, setFormulaInput] = useState('');
   const [formulaError, setFormulaError] = useState('');
+  const [selectionRange, setSelectionRange] =
+    useState<CellSelectionRange | null>(null);
+  const [autofillDrag, setAutofillDrag] =
+    useState<AutofillDrag | null>(null);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -341,6 +359,38 @@ export function DatasetSheet({
       ),
     [dataset?.formulas],
   );
+
+  const rowIndexById = useMemo(
+    () =>
+      new Map(
+        (dataset?.rows ?? []).map((row, index) => [
+          row.id,
+          index,
+        ]),
+      ),
+    [dataset?.rows],
+  );
+
+  const selectionBounds = useMemo(() => {
+    if (!selectionRange || !dataset) return null;
+
+    const start = rowIndexById.get(
+      selectionRange.startRowId,
+    );
+    const end = rowIndexById.get(
+      selectionRange.endRowId,
+    );
+
+    if (start === undefined || end === undefined) {
+      return null;
+    }
+
+    return {
+      columnId: selectionRange.columnId,
+      start: Math.min(start, end),
+      end: Math.max(start, end),
+    };
+  }, [dataset, rowIndexById, selectionRange]);
 
   const selectedColumn = selectedCell
     ? dataset?.columns.find(
@@ -430,6 +480,233 @@ export function DatasetSheet({
         error instanceof Error
           ? error.message
           : String(error),
+      );
+    }
+  };
+
+  useEffect(() => {
+    if (query || sort) {
+      setAutofillDrag(null);
+      setSelectionRange(null);
+    }
+  }, [query, sort]);
+
+  const selectCell = (
+    event: React.MouseEvent,
+    rowId: string,
+    columnId: string,
+  ) => {
+    setSelectedCell({ rowId, columnId });
+
+    if (
+      event.shiftKey &&
+      selectionRange?.columnId === columnId
+    ) {
+      setSelectionRange({
+        ...selectionRange,
+        endRowId: rowId,
+      });
+      return;
+    }
+
+    setSelectionRange({
+      columnId,
+      startRowId: rowId,
+      endRowId: rowId,
+    });
+  };
+
+  const applyAutofill = (drag: AutofillDrag) => {
+    if (
+      !dataset ||
+      drag.targetEnd <= drag.sourceEnd
+    ) {
+      return;
+    }
+
+    const sourceRows = dataset.rows.slice(
+      drag.sourceStart,
+      drag.sourceEnd + 1,
+    );
+    const targetRows = dataset.rows.slice(
+      drag.sourceEnd + 1,
+      drag.targetEnd + 1,
+    );
+
+    if (
+      sourceRows.length === 0 ||
+      targetRows.length === 0
+    ) {
+      return;
+    }
+
+    const source = sourceRows.map((row) => ({
+      value: row.values[drag.columnId] ?? null,
+      formula: formulaByCell.get(
+        formulaKey(row.id, drag.columnId),
+      ),
+    }));
+
+    const numeric =
+      source.length >= 2 &&
+      source.every(
+        (item) =>
+          !item.formula &&
+          typeof item.value === 'number' &&
+          Number.isFinite(item.value),
+      );
+
+    let arithmetic = false;
+    let step = 0;
+
+    if (numeric) {
+      const values = source.map(
+        (item) => item.value as number,
+      );
+      step = values[1] - values[0];
+      arithmetic = values
+        .slice(2)
+        .every(
+          (value, index) =>
+            Math.abs(
+              value - values[index + 1] - step,
+            ) < 1e-9,
+        );
+    }
+
+    const writes = targetRows.map((row, index) => {
+      if (numeric && arithmetic) {
+        const last =
+          source[source.length - 1].value as number;
+        return {
+          rowId: row.id,
+          columnId: drag.columnId,
+          value: last + step * (index + 1),
+          formulaExpression: null,
+        };
+      }
+
+      const template = source[index % source.length];
+
+      if (template.formula) {
+        return {
+          rowId: row.id,
+          columnId: drag.columnId,
+          formulaExpression:
+            template.formula.expression,
+        };
+      }
+
+      return {
+        rowId: row.id,
+        columnId: drag.columnId,
+        value: template.value,
+        formulaExpression: null,
+      };
+    });
+
+    applyCellBatch(writes);
+
+    const targetRow =
+      dataset.rows[drag.targetEnd];
+
+    if (targetRow) {
+      setSelectionRange({
+        columnId: drag.columnId,
+        startRowId:
+          dataset.rows[drag.sourceStart].id,
+        endRowId: targetRow.id,
+      });
+      setSelectedCell({
+        rowId: targetRow.id,
+        columnId: drag.columnId,
+      });
+    }
+  };
+
+  const beginAutofill = (
+    event: React.PointerEvent<HTMLSpanElement>,
+  ) => {
+    if (
+      readOnly ||
+      !selectionBounds ||
+      query ||
+      sort
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(
+      event.pointerId,
+    );
+
+    setAutofillDrag({
+      columnId: selectionBounds.columnId,
+      sourceStart: selectionBounds.start,
+      sourceEnd: selectionBounds.end,
+      targetEnd: selectionBounds.end,
+    });
+  };
+
+  const moveAutofill = (
+    event: React.PointerEvent<HTMLSpanElement>,
+  ) => {
+    if (!autofillDrag) return;
+
+    const element = document.elementFromPoint(
+      event.clientX,
+      event.clientY,
+    ) as HTMLElement | null;
+    const cell = element?.closest(
+      'td[data-row-id][data-column-id]',
+    ) as HTMLTableCellElement | null;
+
+    if (
+      !cell ||
+      cell.dataset.columnId !==
+        autofillDrag.columnId
+    ) {
+      return;
+    }
+
+    const rowId = cell.dataset.rowId;
+    if (!rowId) return;
+
+    const index = rowIndexById.get(rowId);
+    if (
+      index === undefined ||
+      index < autofillDrag.sourceEnd
+    ) {
+      return;
+    }
+
+    setAutofillDrag((current) =>
+      current
+        ? {
+            ...current,
+            targetEnd: index,
+          }
+        : current,
+    );
+  };
+
+  const finishAutofill = (
+    event: React.PointerEvent<HTMLSpanElement>,
+  ) => {
+    if (!autofillDrag) return;
+
+    applyAutofill(autofillDrag);
+    setAutofillDrag(null);
+
+    if (
+      event.currentTarget.hasPointerCapture(
+        event.pointerId,
+      )
+    ) {
+      event.currentTarget.releasePointerCapture(
+        event.pointerId,
       );
     }
   };
@@ -891,9 +1168,14 @@ export function DatasetSheet({
           )}
         </div>
 
-        {formulaError && (
+        {formulaError ? (
           <div className="dataset-sheet__formula-error">
             {formulaError}
+          </div>
+        ) : (
+          <div className="dataset-sheet__formula-hint">
+            Shift-клик по второй ячейке колонки → потяните маркер вниз.
+            Числа продолжают последовательность, формулы копируются по строкам.
           </div>
         )}
       </div>
@@ -1124,19 +1406,40 @@ export function DatasetSheet({
                     const selected =
                       selectedCell?.rowId === row.id &&
                       selectedCell?.columnId === column.id;
+                    const rowIndex =
+                      rowIndexById.get(row.id) ?? -1;
+                    const inRange =
+                      selectionBounds?.columnId === column.id &&
+                      rowIndex >= selectionBounds.start &&
+                      rowIndex <= selectionBounds.end;
+                    const fillPreview =
+                      autofillDrag?.columnId === column.id &&
+                      rowIndex > autofillDrag.sourceEnd &&
+                      rowIndex <= autofillDrag.targetEnd;
+                    const fillHandle =
+                      !readOnly &&
+                      !query &&
+                      !sort &&
+                      selectionBounds?.columnId === column.id &&
+                      rowIndex === selectionBounds.end;
 
                     return (
                       <td
                         key={column.id}
+                        data-row-id={row.id}
+                        data-column-id={column.id}
                         className={[
                           selected ? 'is-selected-cell' : '',
+                          inRange ? 'is-range-selected' : '',
+                          fillPreview ? 'is-fill-preview' : '',
                           formula ? 'has-formula' : '',
                         ].filter(Boolean).join(' ')}
-                        onMouseDown={() =>
-                          setSelectedCell({
-                            rowId: row.id,
-                            columnId: column.id,
-                          })
+                        onMouseDown={(event) =>
+                          selectCell(
+                            event,
+                            row.id,
+                            column.id,
+                          )
                         }
                       >
                         {formula && (
@@ -1155,16 +1458,40 @@ export function DatasetSheet({
                           column={column}
                           readOnly={readOnly}
                           formulaActive={Boolean(formula)}
-                          onFocus={() =>
+                          onFocus={() => {
                             setSelectedCell({
                               rowId: row.id,
                               columnId: column.id,
-                            })
-                          }
+                            });
+                            if (
+                              selectionRange?.columnId !== column.id ||
+                              !selectionBounds ||
+                              rowIndex < selectionBounds.start ||
+                              rowIndex > selectionBounds.end
+                            ) {
+                              setSelectionRange({
+                                columnId: column.id,
+                                startRowId: row.id,
+                                endRowId: row.id,
+                              });
+                            }
+                          }}
                           onChange={(value) =>
                             setCell(row.id, column.id, value)
                           }
                         />
+                        {fillHandle && (
+                          <span
+                            className="dataset-sheet__fill-handle"
+                            title="Потянуть вниз для автозаполнения"
+                            onPointerDown={beginAutofill}
+                            onPointerMove={moveAutofill}
+                            onPointerUp={finishAutofill}
+                            onPointerCancel={() =>
+                              setAutofillDrag(null)
+                            }
+                          />
+                        )}
                       </td>
                     );
                   })}
