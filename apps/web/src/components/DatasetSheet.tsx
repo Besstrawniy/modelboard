@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Database,
+  Pencil,
   Plus,
   Search,
   Trash2,
@@ -126,6 +127,8 @@ export function DatasetSheet({
     dataset,
     status,
     setCell,
+    addColumn,
+    renameColumn,
     addRow,
     deleteRow,
   } = useCollaborativeDataset(
@@ -138,6 +141,16 @@ export function DatasetSheet({
   const [page, setPage] = useState(0);
   const [rowAction, setRowAction] = useState<string | null>(null);
   const [rowError, setRowError] = useState('');
+  const [columnDialog, setColumnDialog] = useState<{
+    mode: 'create' | 'rename';
+    columnId?: string;
+    initialName?: string;
+  } | null>(null);
+  const [columnName, setColumnName] = useState('');
+  const [columnType, setColumnType] =
+    useState<DatasetColumn['dataType']>('TEXT');
+  const [columnBusy, setColumnBusy] = useState(false);
+  const [columnError, setColumnError] = useState('');
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -225,6 +238,114 @@ export function DatasetSheet({
 
   return (
     <div className="dataset-sheet">
+      {columnDialog && (
+        <div className="dataset-sheet__dialog-backdrop">
+          <section className="dataset-sheet__column-dialog">
+            <header>
+              <strong>
+                {columnDialog.mode === 'create'
+                  ? 'Новая колонка'
+                  : 'Переименовать колонку'}
+              </strong>
+              <button
+                className="icon-button"
+                onClick={() => setColumnDialog(null)}
+              >
+                <X size={16} />
+              </button>
+            </header>
+
+            <div className="dataset-sheet__column-dialog-body">
+              <label>
+                Название
+                <input
+                  autoFocus
+                  maxLength={120}
+                  value={columnName}
+                  onChange={(event) =>
+                    setColumnName(event.target.value)
+                  }
+                />
+              </label>
+
+              {columnDialog.mode === 'create' && (
+                <label>
+                  Тип данных
+                  <select
+                    value={columnType}
+                    onChange={(event) =>
+                      setColumnType(
+                        event.target.value as DatasetColumn['dataType'],
+                      )
+                    }
+                  >
+                    <option value="TEXT">TEXT</option>
+                    <option value="INTEGER">INTEGER</option>
+                    <option value="BOOLEAN">BOOLEAN</option>
+                    <option value="DATE">DATE</option>
+                    <option value="UUID">UUID</option>
+                  </select>
+                </label>
+              )}
+
+              {columnError && (
+                <div className="dataset-sheet__column-error">
+                  {columnError}
+                </div>
+              )}
+            </div>
+
+            <footer>
+              <button
+                className="secondary-button"
+                disabled={columnBusy}
+                onClick={() => setColumnDialog(null)}
+              >
+                Отмена
+              </button>
+              <button
+                className="primary-button"
+                disabled={columnBusy || !columnName.trim()}
+                onClick={async () => {
+                  setColumnBusy(true);
+                  setColumnError('');
+                  try {
+                    if (
+                      columnDialog.mode === 'rename' &&
+                      columnDialog.columnId
+                    ) {
+                      await renameColumn(
+                        columnDialog.columnId,
+                        columnName.trim(),
+                      );
+                    } else {
+                      await addColumn(
+                        columnName.trim(),
+                        columnType,
+                      );
+                    }
+                    setColumnDialog(null);
+                  } catch (error) {
+                    setColumnError(
+                      error instanceof Error
+                        ? error.message
+                        : String(error),
+                    );
+                  } finally {
+                    setColumnBusy(false);
+                  }
+                }}
+              >
+                {columnBusy
+                  ? 'Сохранение…'
+                  : columnDialog.mode === 'create'
+                    ? 'Создать'
+                    : 'Сохранить'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
       <header className="dataset-sheet__topbar">
         <div className="dataset-sheet__identity">
           <span className="dataset-sheet__icon">
@@ -262,6 +383,21 @@ export function DatasetSheet({
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
+
+        {!readOnly && (
+          <button
+            className="dataset-sheet__add-column"
+            onClick={() => {
+              setColumnDialog({ mode: 'create' });
+              setColumnName('');
+              setColumnType('TEXT');
+              setColumnError('');
+            }}
+          >
+            <Plus size={14} />
+            Добавить колонку
+          </button>
+        )}
 
         {!readOnly && (
           <button
@@ -317,7 +453,43 @@ export function DatasetSheet({
                         onClick={() => toggleSort(column.id)}
                       >
                         <span>
-                          <strong>{column.name}</strong>
+                          <strong>
+                            {column.name}
+                            {!readOnly && (
+                              <span
+                                className="dataset-sheet__rename-column"
+                                role="button"
+                                tabIndex={0}
+                                title="Переименовать колонку"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setColumnDialog({
+                                    mode: 'rename',
+                                    columnId: column.id,
+                                    initialName: column.name,
+                                  });
+                                  setColumnName(column.name);
+                                  setColumnType(column.dataType);
+                                  setColumnError('');
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') {
+                                    event.stopPropagation();
+                                    setColumnDialog({
+                                      mode: 'rename',
+                                      columnId: column.id,
+                                      initialName: column.name,
+                                    });
+                                    setColumnName(column.name);
+                                    setColumnType(column.dataType);
+                                    setColumnError('');
+                                  }
+                                }}
+                              >
+                                <Pencil size={10} />
+                              </span>
+                            )}
+                          </strong>
                           <small>
                             {column.dataType}
                             {column.key ? ` · ${column.key}` : ''}

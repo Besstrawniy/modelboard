@@ -101,6 +101,40 @@ export function useCollaborativeDataset(
     [readOnly, rowsMap],
   );
 
+  const addColumn = useCallback(
+    async (
+      name: string,
+      dataType: DatasetColumn['dataType'] = 'TEXT',
+    ) => {
+      if (readOnly || !datasetId || !token) return null;
+
+      const column = await api.createDatasetColumn(
+        datasetId,
+        token,
+        { name, dataType },
+      );
+      columnsMap.set(column.id, column);
+      return column;
+    },
+    [columnsMap, datasetId, readOnly, token],
+  );
+
+  const renameColumn = useCallback(
+    async (columnId: string, name: string) => {
+      if (readOnly || !datasetId || !token) return null;
+
+      const column = await api.renameDatasetColumn(
+        datasetId,
+        columnId,
+        token,
+        name,
+      );
+      columnsMap.set(column.id, column);
+      return column;
+    },
+    [columnsMap, datasetId, readOnly, token],
+  );
+
   const addRow = useCallback(
     async (values: DatasetRow['values'] = {}) => {
       if (readOnly || !datasetId || !token) return null;
@@ -131,6 +165,8 @@ export function useCollaborativeDataset(
     dataset,
     status,
     setCell,
+    addColumn,
+    renameColumn,
     addRow,
     deleteRow,
   };

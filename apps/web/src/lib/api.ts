@@ -4,6 +4,7 @@ import type {
   CreateDatasetInput,
   CreateDatasetRelationInput,
   CreateWorkspaceObjectTemplateInput,
+  DatasetColumn,
   DatasetMeta,
   DatasetRelation,
   DatasetRow,
@@ -73,6 +74,38 @@ export const api = {
       },
       body: JSON.stringify(input),
     }),
+
+  createDatasetColumn: (
+    datasetId: string,
+    token: string,
+    input: Pick<DatasetColumn, 'name' | 'dataType'>,
+  ) =>
+    json<DatasetColumn>(`/datasets/${datasetId}/columns`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders(token),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    }),
+
+  renameDatasetColumn: (
+    datasetId: string,
+    columnId: string,
+    token: string,
+    name: string,
+  ) =>
+    json<DatasetColumn>(
+      `/datasets/${datasetId}/columns/${columnId}`,
+      {
+        method: 'PUT',
+        headers: {
+          ...authHeaders(token),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ name }),
+      },
+    ),
 
   createDatasetRow: (
     datasetId: string,

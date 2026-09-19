@@ -154,6 +154,156 @@ export class AppController {
   }
 
   @UseGuards(AuthGuard)
+  @Post('datasets/:id/columns')
+  async createDatasetColumn(
+    @Param('id') datasetId: string,
+    @Req() req: any,
+    @Body()
+    body: {
+      name?: string;
+      dataType?: DatasetColumn['dataType'];
+    },
+  ) {
+    const access = await getDatasetAccess(datasetId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    const name = body.name?.trim();
+    if (!name) {
+      throw new BadRequestException('Column name is required');
+    }
+    if (name.length > 120) {
+      throw new BadRequestException('Column name is limited to 120 characters');
+    }
+
+    const dataType = body.dataType ?? 'TEXT';
+    if (!['TEXT', 'INTEGER', 'BOOLEAN', 'DATE', 'UUID'].includes(dataType)) {
+      throw new BadRequestException('Unsupported column data type');
+    }
+
+    const duplicate = await query<{ id: string }>(
+      `SELECT id
+       FROM dataset_columns
+       WHERE dataset_id = $1 AND lower(name) = lower($2)
+       LIMIT 1`,
+      [datasetId, name],
+    );
+    if (duplicate.rows[0]) {
+      throw new ConflictException('A column with this name already exists');
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT id FROM datasets WHERE id = $1 FOR UPDATE',
+        [datasetId],
+      );
+
+      const ordinalResult = await client.query<{ ordinal: number }>(
+        `SELECT COALESCE(MAX(ordinal), -1) + 1 AS ordinal
+         FROM dataset_columns
+         WHERE dataset_id = $1`,
+        [datasetId],
+      );
+
+      const column: DatasetColumn = {
+        id: randomUUID(),
+        name,
+        dataType,
+        ordinal: ordinalResult.rows[0]?.ordinal ?? 0,
+      };
+
+      await client.query(
+        `INSERT INTO dataset_columns (
+           id, dataset_id, name, data_type, ordinal, properties
+         )
+         VALUES ($1, $2, $3, $4, $5, '{}'::jsonb)`,
+        [
+          column.id,
+          datasetId,
+          column.name,
+          column.dataType,
+          column.ordinal,
+        ],
+      );
+
+      await client.query('COMMIT');
+      return column;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  @UseGuards(AuthGuard)
+  @Put('datasets/:id/columns/:columnId')
+  async renameDatasetColumn(
+    @Param('id') datasetId: string,
+    @Param('columnId') columnId: string,
+    @Req() req: any,
+    @Body() body: { name?: string },
+  ) {
+    const access = await getDatasetAccess(datasetId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    const name = body.name?.trim();
+    if (!name) {
+      throw new BadRequestException('Column name is required');
+    }
+    if (name.length > 120) {
+      throw new BadRequestException('Column name is limited to 120 characters');
+    }
+
+    const duplicate = await query<{ id: string }>(
+      `SELECT id
+       FROM dataset_columns
+       WHERE dataset_id = $1
+         AND lower(name) = lower($2)
+         AND id <> $3
+       LIMIT 1`,
+      [datasetId, name, columnId],
+    );
+    if (duplicate.rows[0]) {
+      throw new ConflictException('A column with this name already exists');
+    }
+
+    const result = await query<{
+      id: string;
+      name: string;
+      data_type: DatasetColumn['dataType'];
+      ordinal: number;
+      properties: { key?: 'PK' | 'FK' } | null;
+    }>(
+      `UPDATE dataset_columns
+       SET name = $1
+       WHERE id = $2 AND dataset_id = $3
+       RETURNING id, name, data_type, ordinal, properties`,
+      [name, columnId, datasetId],
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      throw new NotFoundException('Dataset column not found');
+    }
+
+    return {
+      id: row.id,
+      name: row.name,
+      dataType: row.data_type,
+      ordinal: row.ordinal,
+      ...(row.properties?.key ? { key: row.properties.key } : {}),
+    } satisfies DatasetColumn;
+  }
+
+  @UseGuards(AuthGuard)
   @Post('datasets/:id/rows')
   async createDatasetRow(
     @Param('id') datasetId: string,
