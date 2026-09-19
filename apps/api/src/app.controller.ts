@@ -1074,7 +1074,163 @@ export class AppController {
       return [];
     }
 
-    const pattern = `%${term.replace(/[%_\\]/g, '\\  @UseGuards(AuthGuard)
+    const result = await query<{
+      kind: 'BOARD' | 'DATASET' | 'OBJECT';
+      id: string;
+      title: string;
+      subtitle: string;
+      board_id: string | null;
+      board_name: string | null;
+      object_id: string | null;
+      object_type: string | null;
+      dataset_id: string | null;
+      row_id: string | null;
+      column_id: string | null;
+      rank: number;
+    }>(
+      `
+      SELECT *
+      FROM (
+        SELECT
+          'BOARD'::text AS kind,
+          board.id::text AS id,
+          board.name AS title,
+          'Board'::text AS subtitle,
+          board.id AS board_id,
+          board.name AS board_name,
+          NULL::text AS object_id,
+          NULL::text AS object_type,
+          NULL::uuid AS dataset_id,
+          NULL::uuid AS row_id,
+          NULL::uuid AS column_id,
+          1 AS rank
+        FROM boards AS board
+        WHERE board.workspace_id = $1
+          AND position(lower($2) in lower(board.name)) > 0
+
+        UNION ALL
+
+        SELECT
+          'DATASET'::text AS kind,
+          dataset.id::text AS id,
+          dataset.name AS title,
+          ('Dataset · ' || dataset.kind)::text AS subtitle,
+          NULL::uuid AS board_id,
+          NULL::text AS board_name,
+          NULL::text AS object_id,
+          NULL::text AS object_type,
+          dataset.id AS dataset_id,
+          NULL::uuid AS row_id,
+          NULL::uuid AS column_id,
+          2 AS rank
+        FROM datasets AS dataset
+        WHERE dataset.workspace_id = $1
+          AND position(lower($2) in lower(dataset.name)) > 0
+
+        UNION ALL
+
+        SELECT
+          'OBJECT'::text AS kind,
+          (
+            object_index.board_id::text ||
+            ':' ||
+            object_index.object_id
+          ) AS id,
+          COALESCE(
+            NULLIF(object_index.properties ->> 'label', ''),
+            NULLIF(object_index.properties ->> 'text', ''),
+            dataset.name,
+            object_index.object_type
+          ) AS title,
+          (
+            board.name ||
+            ' · ' ||
+            object_index.object_type ||
+            CASE
+              WHEN dataset.name IS NOT NULL
+                THEN ' · ' || dataset.name
+              ELSE ''
+            END
+          )::text AS subtitle,
+          object_index.board_id,
+          board.name AS board_name,
+          object_index.object_id,
+          object_index.object_type,
+          object_index.dataset_id,
+          object_index.row_id,
+          object_index.column_id,
+          3 AS rank
+        FROM board_object_index AS object_index
+        JOIN boards AS board
+          ON board.id = object_index.board_id
+        LEFT JOIN datasets AS dataset
+          ON dataset.id = object_index.dataset_id
+        LEFT JOIN dataset_rows AS row
+          ON row.id = object_index.row_id
+        WHERE board.workspace_id = $1
+          AND (
+            position(
+              lower($2)
+              in lower(object_index.properties::text)
+            ) > 0
+            OR position(
+              lower($2)
+              in lower(COALESCE(dataset.name, ''))
+            ) > 0
+            OR position(
+              lower($2)
+              in lower(COALESCE(row.values::text, ''))
+            ) > 0
+            OR position(
+              lower($2)
+              in lower(object_index.object_type)
+            ) > 0
+          )
+      ) AS matches
+      ORDER BY rank, lower(title), id
+      LIMIT 50
+      `,
+      [workspaceId, term],
+    );
+
+    return result.rows.map((row) => {
+      if (row.kind === 'BOARD') {
+        return {
+          kind: 'BOARD' as const,
+          id: row.id,
+          title: row.title,
+          subtitle: row.subtitle,
+          boardId: row.board_id!,
+        };
+      }
+
+      if (row.kind === 'DATASET') {
+        return {
+          kind: 'DATASET' as const,
+          id: row.id,
+          title: row.title,
+          subtitle: row.subtitle,
+          datasetId: row.dataset_id!,
+        };
+      }
+
+      return {
+        kind: 'OBJECT' as const,
+        id: row.id,
+        title: row.title,
+        subtitle: row.subtitle,
+        boardId: row.board_id!,
+        boardName: row.board_name!,
+        objectId: row.object_id!,
+        objectType: row.object_type!,
+        datasetId: row.dataset_id,
+        rowId: row.row_id,
+        columnId: row.column_id,
+      };
+    });
+  }
+
+  @UseGuards(AuthGuard)
   @Get('workspaces/:id/templates')')}%`;
 
     const result = await query<{
