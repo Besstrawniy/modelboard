@@ -641,3 +641,20 @@ button:disabled { cursor: not-allowed; opacity: .42; }
     width: auto;
   }
 }
+
+
+/* Editor interaction modes */
+.toolbar button.is-active {
+  background: #eef0ff;
+  color: #4f61d2;
+  box-shadow: inset 0 0 0 1px #d9defd;
+}
+.canvas-flow--hand .react-flow__pane {
+  cursor: grab;
+}
+.canvas-flow--hand .react-flow__pane:active {
+  cursor: grabbing;
+}
+.canvas-flow--select .react-flow__pane {
+  cursor: default;
+}

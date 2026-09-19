@@ -21,8 +21,8 @@ import {
 import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Database, MessageSquare, MousePointer2, Shapes, StickyNote, Type, UploadCloud, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Database, Hand, MessageSquare, MousePointer2, Redo2, Shapes, StickyNote, Type, Undo2, UploadCloud, X } from 'lucide-react';
 import {
   DEMO_ROLES_DATASET_ID,
   DEMO_USERS_DATASET_ID,
@@ -55,6 +55,8 @@ type CsvDropState = {
   parsed: ParsedCsv;
   position: { x: number; y: number };
 };
+
+type ToolMode = 'select' | 'hand';
 
 const USERS_ROLE_ID_COLUMN = '41000000-0000-0000-0000-000000000003';
 const ROLES_ID_COLUMN = '42000000-0000-0000-0000-000000000001';
@@ -140,6 +142,11 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const ydoc = useMemo(() => new Y.Doc(), [meta.id, session.user.id]);
   const nodesMap = useMemo(() => ydoc.getMap<any>('nodes'), [ydoc]);
   const edgesMap = useMemo(() => ydoc.getMap<any>('edges'), [ydoc]);
+  const undoManager = useMemo(
+    () => new Y.UndoManager([nodesMap, edgesMap], { captureTimeout: 350 }),
+    [edgesMap, nodesMap],
+  );
+  const initialSyncDone = useRef(false);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [status, setStatus] = useState('connecting');
@@ -153,6 +160,8 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const [dropError, setDropError] = useState('');
   const [pendingRelation, setPendingRelation] = useState<PendingRelation | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [toolMode, setToolMode] = useState<ToolMode>('select');
+  const [historyTick, setHistoryTick] = useState(0);
 
   useEffect(() => {
     const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
@@ -168,6 +177,12 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
           ydoc.transact(() => seedDocument(nodesMap, edgesMap));
         } else if (!readOnly) {
           ydoc.transact(() => migrateKnownDemoNodes(nodesMap));
+        }
+
+        if (!initialSyncDone.current) {
+          undoManager.clear();
+          initialSyncDone.current = true;
+          setHistoryTick((value) => value + 1);
         }
       },
       onAwarenessChange: ({ states }) => {
@@ -204,8 +219,69 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     session.token,
     session.user.displayName,
     session.user.id,
+    undoManager,
     ydoc,
   ]);
+
+  useEffect(() => {
+    const refreshHistory = () => setHistoryTick((value) => value + 1);
+    undoManager.on('stack-item-added', refreshHistory);
+    undoManager.on('stack-item-popped', refreshHistory);
+    undoManager.on('stack-cleared', refreshHistory);
+    undoManager.on('stack-item-updated', refreshHistory);
+
+    return () => {
+      undoManager.off('stack-item-added', refreshHistory);
+      undoManager.off('stack-item-popped', refreshHistory);
+      undoManager.off('stack-cleared', refreshHistory);
+      undoManager.off('stack-item-updated', refreshHistory);
+    };
+  }, [undoManager]);
+
+  void historyTick;
+  const canUndo = undoManager.undoStack.length > 0;
+  const canRedo = undoManager.redoStack.length > 0;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable;
+
+      if (typing) return;
+
+      const mod = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+
+      if (!readOnly && mod && key === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) undoManager.redo();
+        else undoManager.undo();
+        return;
+      }
+
+      if (!readOnly && mod && key === 'y') {
+        event.preventDefault();
+        undoManager.redo();
+        return;
+      }
+
+      if (event.key === 'Escape') {
+        setSelectedNodeId(null);
+        setPendingRelation(null);
+        setToolMode('select');
+      }
+
+      if (event.key === 'v') setToolMode('select');
+      if (event.key === 'h') setToolMode('hand');
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [readOnly, undoManager]);
 
   const persistNodeChanges = useCallback((changes: NodeChange[]) => {
     setNodes((current) => {
@@ -333,44 +409,66 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     nodesMap.set(nodeId, { ...current, data: { ...(current.data as any), ...patch } });
   }, [nodesMap, readOnly]);
 
+  const viewportCenter = useCallback(() => {
+    if (!rf) return { x: 360, y: 220 };
+    return rf.screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+  }, [rf]);
+
   const placeDataset = useCallback((
     datasetId: string,
     position?: { x: number; y: number },
   ) => {
     if (readOnly) return;
     const id = crypto.randomUUID();
+    const center = position ?? viewportCenter();
     nodesMap.set(id, {
       id,
       type: 'table',
-      position: position ?? {
-        x: 360 + Math.random() * 180,
-        y: 220 + Math.random() * 180,
-      },
+      position: { x: center.x - 310, y: center.y - 150 },
       style: { width: 620, height: 300 },
       data: { datasetId },
     } satisfies Node);
-  }, [nodesMap, readOnly]);
+  }, [nodesMap, readOnly, viewportCenter]);
 
   const addNode = useCallback((type: string) => {
     if (readOnly) return;
     const id = crypto.randomUUID();
-    const base = {
-      id,
-      type,
-      position: { x: 360 + Math.random() * 140, y: 220 + Math.random() * 140 },
-    };
+    const center = viewportCenter();
+
     let node: Node;
 
     if (type === 'sticky') {
-      node = { ...base, style: { width: 240, height: 160 }, data: { text: 'New note' } };
+      node = {
+        id,
+        type,
+        position: { x: center.x - 120, y: center.y - 80 },
+        style: { width: 240, height: 160 },
+        data: { text: 'Новая заметка' },
+      };
     } else if (type === 'shape') {
-      node = { ...base, style: { width: 220, height: 110 }, data: { text: 'Process' } };
+      node = {
+        id,
+        type,
+        position: { x: center.x - 110, y: center.y - 55 },
+        style: { width: 220, height: 110 },
+        data: { text: 'Объект' },
+      };
     } else {
-      node = { ...base, data: { text: 'Text' } };
+      node = {
+        id,
+        type,
+        position: { x: center.x - 80, y: center.y - 20 },
+        data: { text: 'Текст' },
+      };
     }
 
     nodesMap.set(id, node);
-  }, [nodesMap, readOnly]);
+    setSelectedNodeId(id);
+    setToolMode('select');
+  }, [nodesMap, readOnly, viewportCenter]);
 
   const onPointerMove = useCallback((event: React.PointerEvent) => {
     if (!provider || !rf) return;
@@ -469,6 +567,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
         </header>
 
         <ReactFlow
+          className={`canvas-flow canvas-flow--${toolMode}`}
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
@@ -480,14 +579,14 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
             setSelectedNodeId(selectedNodes[0]?.id ?? null)
           }
           onPaneClick={() => setSelectedNodeId(null)}
-          nodesDraggable={!readOnly}
-          nodesConnectable={!readOnly}
-          elementsSelectable
-          deleteKeyCode={readOnly ? null : ['Backspace', 'Delete']}
+          nodesDraggable={!readOnly && toolMode === 'select'}
+          nodesConnectable={!readOnly && toolMode === 'select'}
+          elementsSelectable={toolMode === 'select'}
+          deleteKeyCode={readOnly || toolMode !== 'select' ? null : ['Backspace', 'Delete']}
           fitView
           panOnScroll
-          selectionOnDrag
-          panOnDrag={[1, 2]}
+          selectionOnDrag={toolMode === 'select'}
+          panOnDrag={toolMode === 'hand' ? true : [1, 2]}
           minZoom={0.15}
           maxZoom={2.5}
         >
@@ -497,14 +596,45 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
 
           <Panel position="center-left" className="toolbar-panel">
             <div className="toolbar">
-              <button title="Select"><MousePointer2 size={19} /></button>
+              <button
+                className={toolMode === 'select' ? 'is-active' : ''}
+                title="Выбор (V)"
+                onClick={() => setToolMode('select')}
+              >
+                <MousePointer2 size={19} />
+              </button>
+              <button
+                className={toolMode === 'hand' ? 'is-active' : ''}
+                title="Рука / перемещение canvas (H)"
+                onClick={() => {
+                  setSelectedNodeId(null);
+                  setToolMode('hand');
+                }}
+              >
+                <Hand size={19} />
+              </button>
               <div className="toolbar-separator" />
-              <button onClick={() => setDatasetsOpen(true)} title="Datasets"><Database size={19} /></button>
-              <button disabled={readOnly} onClick={() => addNode('sticky')} title="Sticky note"><StickyNote size={19} /></button>
-              <button disabled={readOnly} onClick={() => addNode('text')} title="Text"><Type size={19} /></button>
-              <button disabled={readOnly} onClick={() => addNode('shape')} title="Shape"><Shapes size={19} /></button>
+              <button
+                title="Отменить (Ctrl+Z)"
+                disabled={readOnly || !canUndo}
+                onClick={() => undoManager.undo()}
+              >
+                <Undo2 size={18} />
+              </button>
+              <button
+                title="Повторить (Ctrl+Y / Ctrl+Shift+Z)"
+                disabled={readOnly || !canRedo}
+                onClick={() => undoManager.redo()}
+              >
+                <Redo2 size={18} />
+              </button>
               <div className="toolbar-separator" />
-              <button onClick={() => setCommentsOpen(true)} title="Comments"><MessageSquare size={19} /></button>
+              <button onClick={() => setDatasetsOpen(true)} title="Данные"><Database size={19} /></button>
+              <button disabled={readOnly} onClick={() => addNode('sticky')} title="Стикер"><StickyNote size={19} /></button>
+              <button disabled={readOnly} onClick={() => addNode('text')} title="Текст"><Type size={19} /></button>
+              <button disabled={readOnly} onClick={() => addNode('shape')} title="Фигура"><Shapes size={19} /></button>
+              <div className="toolbar-separator" />
+              <button onClick={() => setCommentsOpen(true)} title="Комментарии"><MessageSquare size={19} /></button>
             </div>
           </Panel>
 
