@@ -1,9 +1,12 @@
 import 'reflect-metadata';
 import { json } from 'express';
 import { NestFactory } from '@nestjs/core';
+import { runMigrations } from '@modelboard/db';
 import { AppModule } from './app.module.js';
 
 async function bootstrap() {
+  await runMigrations();
+
   const app = await NestFactory.create(AppModule, {
     bodyParser: false,
   });

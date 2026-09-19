@@ -23,9 +23,11 @@ import {
   type DatasetRelationCardinality,
   type DatasetRelationType,
   type DatasetRow,
+  type CreateWorkspaceObjectTemplateInput,
   type UpsertObjectBindingInput,
   type WorkspaceRole,
 } from '@modelboard/shared';
+import { validateWorkspaceSvg } from './svg.js';
 import {
   AuthGuard,
   getBoardAccess,
@@ -287,6 +289,172 @@ export class AppController {
     };
   }
 
+
+
+  @UseGuards(AuthGuard)
+  @Get('workspaces/:id/templates')
+  async objectTemplates(
+    @Param('id') workspaceId: string,
+    @Req() req: any,
+  ) {
+    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+
+    const result = await query<{
+      id: string;
+      workspace_id: string;
+      name: string;
+      template_kind: 'SVG';
+      svg: string;
+      default_width: number;
+      default_height: number;
+      properties: Record<string, unknown> | null;
+      created_at: Date;
+    }>(
+      `SELECT id, workspace_id, name, template_kind, svg,
+              default_width, default_height, properties, created_at
+       FROM object_templates
+       WHERE workspace_id = $1
+       ORDER BY lower(name), created_at`,
+      [workspaceId],
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      workspaceId: row.workspace_id,
+      name: row.name,
+      kind: row.template_kind,
+      svg: row.svg,
+      defaultWidth: row.default_width,
+      defaultHeight: row.default_height,
+      properties: row.properties ?? undefined,
+      createdAt: row.created_at.toISOString(),
+    }));
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('workspaces/:id/templates')
+  async createObjectTemplate(
+    @Param('id') workspaceId: string,
+    @Req() req: any,
+    @Body() body: CreateWorkspaceObjectTemplateInput,
+  ) {
+    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    const name = body.name?.trim();
+    if (!name) {
+      throw new BadRequestException('Template name is required');
+    }
+    if (name.length > 120) {
+      throw new BadRequestException('Template name is limited to 120 characters');
+    }
+
+    let svg: string;
+    try {
+      svg = validateWorkspaceSvg(body.svg);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+
+    const defaultWidth = Math.round(body.defaultWidth ?? 220);
+    const defaultHeight = Math.round(body.defaultHeight ?? 130);
+
+    if (
+      defaultWidth < 48 ||
+      defaultWidth > 1600 ||
+      defaultHeight < 48 ||
+      defaultHeight > 1200
+    ) {
+      throw new BadRequestException(
+        'Template dimensions must be between 48 and 1600x1200',
+      );
+    }
+
+    const templateId = randomUUID();
+
+    try {
+      const result = await query<{
+        id: string;
+        workspace_id: string;
+        name: string;
+        template_kind: 'SVG';
+        svg: string;
+        default_width: number;
+        default_height: number;
+        properties: Record<string, unknown> | null;
+        created_at: Date;
+      }>(
+        `INSERT INTO object_templates (
+           id, workspace_id, name, template_kind, svg,
+           default_width, default_height, properties, created_by
+         )
+         VALUES ($1,$2,$3,'SVG',$4,$5,$6,$7::jsonb,$8)
+         RETURNING id, workspace_id, name, template_kind, svg,
+                   default_width, default_height, properties, created_at`,
+        [
+          templateId,
+          workspaceId,
+          name,
+          svg,
+          defaultWidth,
+          defaultHeight,
+          JSON.stringify(body.properties ?? {}),
+          req.user.sub,
+        ],
+      );
+
+      const row = result.rows[0];
+      return {
+        id: row.id,
+        workspaceId: row.workspace_id,
+        name: row.name,
+        kind: row.template_kind,
+        svg: row.svg,
+        defaultWidth: row.default_width,
+        defaultHeight: row.default_height,
+        properties: row.properties ?? undefined,
+        createdAt: row.created_at.toISOString(),
+      };
+    } catch (error: any) {
+      if (error?.code === '23505') {
+        throw new BadRequestException(
+          'A template with this name already exists in the workspace',
+        );
+      }
+      throw error;
+    }
+  }
+
+  @UseGuards(AuthGuard)
+  @Delete('workspaces/:id/templates/:templateId')
+  async deleteObjectTemplate(
+    @Param('id') workspaceId: string,
+    @Param('templateId') templateId: string,
+    @Req() req: any,
+  ) {
+    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    const result = await query(
+      'DELETE FROM object_templates WHERE id = $1 AND workspace_id = $2 RETURNING id',
+      [templateId, workspaceId],
+    );
+
+    if (!result.rows[0]) {
+      throw new NotFoundException('Template not found');
+    }
+
+    return { ok: true as const };
+  }
 
   @UseGuards(AuthGuard)
   @Get('workspaces/:id/relations')

@@ -148,6 +148,30 @@ export type DeviceKind =
   | 'DATABASE'
   | 'CLOUD';
 
+export type WorkspaceObjectTemplate = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  kind: 'SVG';
+  svg: string;
+  defaultWidth: number;
+  defaultHeight: number;
+  properties?: Record<string, unknown>;
+  createdAt?: string;
+};
+
+export type CreateWorkspaceObjectTemplateInput = {
+  name: string;
+  svg: string;
+  defaultWidth?: number;
+  defaultHeight?: number;
+  properties?: Record<string, unknown>;
+};
+
+export type VisualTemplateRef =
+  | { source: 'BUILTIN'; deviceKind: DeviceKind }
+  | { source: 'WORKSPACE'; templateId: string };
+
 export type DeviceNodeData = {
   deviceKind: DeviceKind;
   label?: string;
