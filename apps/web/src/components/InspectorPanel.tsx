@@ -1,4 +1,4 @@
-import { Database, Link2, Trash2, X } from 'lucide-react';
+import { Database, Link2, Table2, Trash2, X } from 'lucide-react';
 import type {
   DatasetMeta,
   DeviceKind,
@@ -10,6 +10,7 @@ import { api } from '../lib/api';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
 import { RelatedRecords } from './RelatedRecords';
 import { DEVICE_LABELS } from './DeviceNode';
+import { useBoardActions } from './BoardContext';
 
 function rowLabel(
   row: { id: string; values: Record<string, unknown> },
@@ -41,6 +42,7 @@ export function InspectorPanel({
   onClose: () => void;
   onUpdateNodeData: (nodeId: string, patch: Record<string, unknown>) => void;
 }) {
+  const { openDatasetSheet } = useBoardActions();
   const existingBinding = (node.data as any)?.binding as ObjectBindingRecord | undefined;
   const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
   const [datasetId, setDatasetId] = useState(existingBinding?.datasetId ?? '');
@@ -343,6 +345,19 @@ export function InspectorPanel({
                   </div>
                 ))}
               </div>
+
+              <button
+                className="secondary-button inspector-open-dataset"
+                onClick={() =>
+                  openDatasetSheet(
+                    existingBinding.datasetId,
+                    existingBinding.rowId,
+                  )
+                }
+              >
+                <Table2 size={14} />
+                Открыть в таблице
+              </button>
             </section>
 
             <RelatedRecords

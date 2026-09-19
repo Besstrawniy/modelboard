@@ -27,6 +27,10 @@ export type BoardActions = {
     parentNodeId: string,
     relationId: string,
   ) => number;
+  openDatasetSheet: (
+    datasetId: string,
+    rowId?: string,
+  ) => void;
 };
 
 const BoardActionsContext = createContext<BoardActions>({
@@ -38,6 +42,7 @@ const BoardActionsContext = createContext<BoardActions>({
   materializeRelated: async () => 0,
   hideMaterializedRelated: () => 0,
   materializedRelatedCount: () => 0,
+  openDatasetSheet: () => undefined,
 });
 
 export const BoardActionsProvider = BoardActionsContext.Provider;

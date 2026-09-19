@@ -111,11 +111,13 @@ export function DatasetSheet({
   datasetId,
   token,
   readOnly,
+  focusRowId,
   onClose,
 }: {
   datasetId: string;
   token: string;
   readOnly: boolean;
+  focusRowId?: string;
   onClose: () => void;
 }) {
   const { dataset, status, setCell } = useCollaborativeDataset(
@@ -142,6 +144,25 @@ export function DatasetSheet({
   useEffect(() => {
     setPage(0);
   }, [datasetId, query, sort?.columnId, sort?.direction]);
+
+  useEffect(() => {
+    if (!dataset || !focusRowId || query || sort) return;
+
+    const rowIndex = dataset.rows.findIndex(
+      (row) => row.id === focusRowId,
+    );
+
+    if (rowIndex >= 0) {
+      setPage(Math.floor(rowIndex / PAGE_SIZE));
+    }
+  }, [
+    dataset?.id,
+    dataset?.rows.length,
+    focusRowId,
+    query,
+    sort?.columnId,
+    sort?.direction,
+  ]);
 
   const visibleRows = useMemo(() => {
     if (!dataset) return [];
@@ -280,7 +301,10 @@ export function DatasetSheet({
 
             <tbody>
               {pageRows.map((row, rowIndex) => (
-                <tr key={row.id}>
+                <tr
+                  key={row.id}
+                  className={row.id === focusRowId ? 'is-focused' : ''}
+                >
                   <th className="dataset-sheet__row-number">
                     {safePage * PAGE_SIZE + rowIndex + 1}
                   </th>

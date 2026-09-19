@@ -170,7 +170,10 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>('select');
   const [historyTick, setHistoryTick] = useState(0);
-  const [sheetDatasetId, setSheetDatasetId] = useState<string | null>(null);
+  const [sheetTarget, setSheetTarget] = useState<{
+    datasetId: string;
+    rowId?: string;
+  } | null>(null);
   const [devicesOpen, setDevicesOpen] = useState(false);
 
   useEffect(() => {
@@ -773,6 +776,8 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
         materializeRelated,
         hideMaterializedRelated,
         materializedRelatedCount,
+        openDatasetSheet: (datasetId, rowId) =>
+          setSheetTarget({ datasetId, rowId }),
       }}
     >
       <div
@@ -813,7 +818,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
           onNodeDoubleClick={(_, node) => {
             if (node.type !== 'table') return;
             const datasetId = (node.data as any)?.datasetId as string | undefined;
-            if (datasetId) setSheetDatasetId(datasetId);
+            if (datasetId) setSheetTarget({ datasetId });
           }}
           onSelectionChange={({ nodes: selectedNodes }) =>
             setSelectedNodeId(selectedNodes[0]?.id ?? null)
@@ -895,12 +900,13 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
           </ViewportPortal>
         </ReactFlow>
 
-        {sheetDatasetId && (
+        {sheetTarget && (
           <DatasetSheet
-            datasetId={sheetDatasetId}
+            datasetId={sheetTarget.datasetId}
+            focusRowId={sheetTarget.rowId}
             token={session.token}
             readOnly={readOnly}
-            onClose={() => setSheetDatasetId(null)}
+            onClose={() => setSheetTarget(null)}
           />
         )}
 
