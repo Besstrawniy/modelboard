@@ -1,9 +1,14 @@
 import 'reflect-metadata';
+import { json } from 'express';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: false,
+  });
+
+  app.use(json({ limit: '6mb' }));
   app.setGlobalPrefix('api');
   app.enableCors({
     origin: process.env.WEB_ORIGIN ?? 'http://localhost:5173',

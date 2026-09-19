@@ -1,6 +1,7 @@
 import type {
   AuthSession,
   BoardMeta,
+  CreateDatasetInput,
   DatasetMeta,
   WorkspaceRole,
 } from '@modelboard/shared';
@@ -52,14 +53,18 @@ export const api = {
       headers: authHeaders(token),
     }),
 
-  createDataset: (workspaceId: string, token: string, name?: string) =>
+  createDataset: (
+    workspaceId: string,
+    token: string,
+    input: CreateDatasetInput,
+  ) =>
     json<DatasetMeta>(`/workspaces/${workspaceId}/datasets`, {
       method: 'POST',
       headers: {
         ...authHeaders(token),
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(input),
     }),
 
   comments: (boardId: string, token: string) =>

@@ -31,11 +31,10 @@ export function DatasetsPanel({
     if (readOnly) return;
     setBusy(true);
     try {
-      const next = await api.createDataset(
-        workspaceId,
-        token,
-        `dataset_${datasets.length + 1}`,
-      );
+      const next = await api.createDataset(workspaceId, token, {
+        name: `dataset_${datasets.length + 1}`,
+        kind: 'MANUAL',
+      });
       await load();
       onPlace(next.id);
     } finally {
@@ -76,7 +75,8 @@ export function DatasetsPanel({
       </div>
 
       <p className="datasets-panel__hint">
-        Placing the same dataset twice creates two views of one source. Edit either table and both update.
+        Drop a CSV directly on the canvas to create another reusable dataset.
+        Placing the same dataset twice creates two synchronized views of one source.
       </p>
     </aside>
   );

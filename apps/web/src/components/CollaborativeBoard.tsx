@@ -22,13 +22,14 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Database, MessageSquare, MousePointer2, Shapes, StickyNote, Type } from 'lucide-react';
+import { Database, MessageSquare, MousePointer2, Shapes, StickyNote, Type, UploadCloud, X } from 'lucide-react';
 import {
   DEMO_ROLES_DATASET_ID,
   DEMO_USERS_DATASET_ID,
   canEditBoard,
   type AuthSession,
   type BoardMeta,
+  type CreateDatasetInput,
 } from '@modelboard/shared';
 import { BoardActionsProvider } from './BoardContext';
 import { TableNode } from './TableNode';
@@ -37,10 +38,18 @@ import { TextNode } from './TextNode';
 import { ShapeNode } from './ShapeNode';
 import { CommentsPanel } from './CommentsPanel';
 import { DatasetsPanel } from './DatasetsPanel';
+import { CsvImportDialog } from './CsvImportDialog';
+import { parseCsvFile, type ParsedCsv } from '../lib/csv';
+import { api } from '../lib/api';
 
 type PresenceState = {
   user?: { id: string; name: string; role: string };
   cursor?: { x: number; y: number } | null;
+};
+
+type CsvDropState = {
+  parsed: ParsedCsv;
+  position: { x: number; y: number };
 };
 
 const USERS_ROLE_ID_COLUMN = '41000000-0000-0000-0000-000000000003';
@@ -135,6 +144,9 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const [rf, setRf] = useState<ReactFlowInstance | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [datasetsOpen, setDatasetsOpen] = useState(false);
+  const [csvDrop, setCsvDrop] = useState<CsvDropState | null>(null);
+  const [dropActive, setDropActive] = useState(false);
+  const [dropError, setDropError] = useState('');
 
   useEffect(() => {
     const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
@@ -252,14 +264,20 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     nodesMap.set(nodeId, { ...current, data: { ...(current.data as any), ...patch } });
   }, [nodesMap, readOnly]);
 
-  const placeDataset = useCallback((datasetId: string) => {
+  const placeDataset = useCallback((
+    datasetId: string,
+    position?: { x: number; y: number },
+  ) => {
     if (readOnly) return;
     const id = crypto.randomUUID();
     nodesMap.set(id, {
       id,
       type: 'table',
-      position: { x: 360 + Math.random() * 180, y: 220 + Math.random() * 180 },
-      style: { width: 520, height: 260 },
+      position: position ?? {
+        x: 360 + Math.random() * 180,
+        y: 220 + Math.random() * 180,
+      },
+      style: { width: 620, height: 300 },
       data: { datasetId },
     } satisfies Node);
   }, [nodesMap, readOnly]);
@@ -291,6 +309,52 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     provider.awareness?.setLocalStateField('cursor', point);
   }, [provider, rf]);
 
+  const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (readOnly || !event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setDropActive(true);
+  }, [readOnly]);
+
+  const handleDrop = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
+    if (readOnly) return;
+
+    event.preventDefault();
+    setDropActive(false);
+    setDropError('');
+
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length !== 1) {
+      setDropError('Drop exactly one CSV file at a time.');
+      return;
+    }
+
+    const position = rf?.screenToFlowPosition({
+      x: event.clientX,
+      y: event.clientY,
+    }) ?? { x: 320, y: 220 };
+
+    try {
+      const parsed = await parseCsvFile(files[0]);
+      setCsvDrop({ parsed, position });
+    } catch (error) {
+      setDropError(error instanceof Error ? error.message : String(error));
+    }
+  }, [readOnly, rf]);
+
+  const importCsv = useCallback(async (input: CreateDatasetInput) => {
+    if (!csvDrop) return;
+
+    const dataset = await api.createDataset(
+      meta.workspaceId,
+      session.token,
+      input,
+    );
+
+    placeDataset(dataset.id, csvDrop.position);
+    setCsvDrop(null);
+  }, [csvDrop, meta.workspaceId, placeDataset, session.token]);
+
   const remotePresence = presence.filter(([clientId, state]) =>
     clientId !== ydoc.clientID && state.user,
   );
@@ -307,6 +371,10 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
         className="board-shell"
         onPointerMove={onPointerMove}
         onPointerLeave={() => provider?.awareness?.setLocalStateField('cursor', null)}
+        onDragEnter={handleDragOver}
+        onDragOver={handleDragOver}
+        onDragLeave={() => setDropActive(false)}
+        onDrop={handleDrop}
       >
         <header className="topbar">
           <div className="brand"><span className="brand-mark">M</span> ModelBoard</div>
@@ -376,6 +444,31 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
             ) : null)}
           </ViewportPortal>
         </ReactFlow>
+
+        {dropActive && !readOnly && (
+          <div className="csv-drop-overlay">
+            <div>
+              <UploadCloud size={34} />
+              <strong>Drop CSV to create a Dataset</strong>
+              <span>The table will be placed here after preview.</span>
+            </div>
+          </div>
+        )}
+
+        {dropError && (
+          <div className="csv-drop-error">
+            <span>{dropError}</span>
+            <button onClick={() => setDropError('')}><X size={15} /></button>
+          </div>
+        )}
+
+        {csvDrop && (
+          <CsvImportDialog
+            parsed={csvDrop.parsed}
+            onCancel={() => setCsvDrop(null)}
+            onImport={importCsv}
+          />
+        )}
 
         {readOnly && (
           <div className="readonly-banner">

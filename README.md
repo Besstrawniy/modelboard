@@ -18,6 +18,9 @@ ModelBoard is an early self-hosted MVP for a workspace that combines an infinite
 - REST comments: COMMENTER can comment while VIEWER is read-only.
 - PostgreSQL storage for metadata and persisted Yjs documents.
 - Dataset library panel with create/place actions.
+- CSV drag/drop on the canvas with preview, delimiter detection, header toggle and basic type inference.
+- CSV import creates a reusable Dataset and places its TableNode at the actual drop coordinates.
+- CSV MVP limits: UTF-8, 5 MB, 100 columns, 2000 data rows.
 - Four seeded demo identities for testing access levels.
 
 ## Architecture
@@ -103,17 +106,30 @@ Open **Datasets**, place `users` a second time, then edit either view. Both Tabl
 
 Permissions are enforced by the realtime server for both `board:<id>` and `dataset:<id>` documents.
 
+## CSV drag/drop
+
+Drop one `.csv` file anywhere on the editable canvas. ModelBoard parses it in the browser, shows a preview, lets you confirm the Dataset name and whether the first row contains headers, then creates a reusable `CSV` Dataset through the API and places a TableNode at the drop position.
+
+Current MVP limits are intentionally conservative:
+
+- UTF-8 text.
+- 5 MB file size.
+- 100 columns.
+- 2000 data rows.
+- Automatic type inference for INTEGER, BOOLEAN, DATE, UUID and TEXT.
+
+The API enforces the row/column limits too; they are not frontend-only restrictions.
+
 ## Next slices
 
-1. CSV drag/drop -> create a reusable Dataset and place a TableNode view.
-2. Spreadsheet/fullscreen dataset view, formulas and fill handle.
-3. Real Object Binding UI: shape/icon -> dataset row/cell/relation-backed view.
-4. Freehand SVG drawing layer.
-5. Object comments on canvas and comment pins.
-6. Multiple boards + workspace navigation, proving cross-board dataset reuse in UI.
-7. SQL schema import/export + ER relation editor.
-8. History/snapshots.
-9. Custom SVG/icon template libraries for infrastructure diagrams.
+1. Spreadsheet/fullscreen dataset view, formulas and fill handle.
+2. Real Object Binding UI: shape/icon -> dataset row/cell/relation-backed view.
+3. Freehand SVG drawing layer.
+4. Object comments on canvas and comment pins.
+5. Multiple boards + workspace navigation, proving cross-board dataset reuse in UI.
+6. SQL schema import/export + ER relation editor.
+7. History/snapshots.
+8. Custom SVG/icon template libraries for infrastructure diagrams.
 
 ## Semantic object bindings
 

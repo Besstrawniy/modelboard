@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -14,6 +15,7 @@ import { pool, query } from '@modelboard/db';
 import {
   canComment,
   canEditBoard,
+  type CreateDatasetInput,
   type DatasetColumn,
   type DatasetRow,
   type WorkspaceRole,
@@ -147,13 +149,7 @@ export class AppController {
   async createDataset(
     @Param('id') workspaceId: string,
     @Req() req: any,
-    @Body()
-    body: {
-      name?: string;
-      kind?: 'MANUAL' | 'CSV' | 'SQL' | 'API';
-      columns?: Array<Partial<DatasetColumn> & Pick<DatasetColumn, 'name'>>;
-      rows?: Array<Partial<DatasetRow> & Pick<DatasetRow, 'values'>>;
-    },
+    @Body() body: CreateDatasetInput,
   ) {
     const access = await getWorkspaceAccess(workspaceId, req.user.sub);
     if (!access) throw new ForbiddenException();
@@ -162,6 +158,22 @@ export class AppController {
     const datasetId = randomUUID();
     const name = body.name?.trim() || 'untitled_dataset';
     const kind = body.kind ?? 'MANUAL';
+
+    if (name.length > 120) {
+      throw new BadRequestException('Dataset name is limited to 120 characters');
+    }
+
+    if (!['MANUAL', 'CSV', 'SQL', 'API'].includes(kind)) {
+      throw new BadRequestException('Unsupported dataset kind');
+    }
+
+    if ((body.columns?.length ?? 0) > 100) {
+      throw new BadRequestException('Dataset is limited to 100 columns in this MVP');
+    }
+
+    if ((body.rows?.length ?? 0) > 2000) {
+      throw new BadRequestException('Dataset is limited to 2000 rows in this MVP');
+    }
 
     const suppliedColumns = body.columns?.length
       ? body.columns
@@ -207,6 +219,18 @@ export class AppController {
           values: row.values,
         }))
       : defaultRows;
+
+    const columnIds = new Set(columns.map((column) => column.id));
+    for (const row of rows) {
+      const unknownColumn = Object.keys(row.values).find(
+        (columnId) => !columnIds.has(columnId),
+      );
+      if (unknownColumn) {
+        throw new BadRequestException(
+          `Row references an unknown column: ${unknownColumn}`,
+        );
+      }
+    }
 
     const client = await pool.connect();
     try {

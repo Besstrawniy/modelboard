@@ -30,6 +30,8 @@ export type BoardMeta = {
 };
 
 export type DatasetKind = 'MANUAL' | 'CSV' | 'SQL' | 'API';
+export type DatasetDataType = 'TEXT' | 'INTEGER' | 'BOOLEAN' | 'DATE' | 'UUID';
+export type DatasetCellValue = string | number | boolean | null;
 
 export type DatasetMeta = {
   id: string;
@@ -42,7 +44,7 @@ export type DatasetMeta = {
 export type DatasetColumn = {
   id: string;
   name: string;
-  dataType: 'TEXT' | 'INTEGER' | 'BOOLEAN' | 'DATE' | 'UUID';
+  dataType: DatasetDataType;
   ordinal: number;
   key?: 'PK' | 'FK';
 };
@@ -50,12 +52,19 @@ export type DatasetColumn = {
 export type DatasetRow = {
   id: string;
   ordinal: number;
-  values: Record<string, string | number | boolean | null>;
+  values: Record<string, DatasetCellValue>;
 };
 
 export type DatasetSnapshot = DatasetMeta & {
   columns: DatasetColumn[];
   rows: DatasetRow[];
+};
+
+export type CreateDatasetInput = {
+  name?: string;
+  kind?: DatasetKind;
+  columns?: Array<Partial<DatasetColumn> & Pick<DatasetColumn, 'name'>>;
+  rows?: Array<Partial<DatasetRow> & Pick<DatasetRow, 'values'>>;
 };
 
 export type TableNodeData = {
