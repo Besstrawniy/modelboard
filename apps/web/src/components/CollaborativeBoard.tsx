@@ -252,6 +252,18 @@ function BoardInner({
   const [boardActionBusy, setBoardActionBusy] = useState(false);
   const [deleteBoardConfirm, setDeleteBoardConfirm] = useState(false);
 
+  useEffect(() => {
+    setSelectedNodeId(null);
+    setSheetTarget(null);
+    setPendingRelation(null);
+    setCommentsOpen(false);
+    setDatasetsOpen(false);
+    setDevicesOpen(false);
+    setBoardMenuOpen(false);
+    setToolMode('select');
+    setDraftStroke(null);
+  }, [meta.id]);
+
   const refreshWorkspaceTemplates = useCallback(async () => {
     const templates = await api.templates(
       meta.workspaceId,

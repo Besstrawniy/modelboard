@@ -171,6 +171,28 @@ const server = new Server({
         return null;
       },
       store: async ({ documentName, state }) => {
+        const ref = parseDocumentName(documentName);
+        if (!ref) return;
+
+        const exists =
+          ref.kind === 'board'
+            ? await query<{ id: string }>(
+                'SELECT id FROM boards WHERE id = $1',
+                [ref.id],
+              )
+            : await query<{ id: string }>(
+                'SELECT id FROM datasets WHERE id = $1',
+                [ref.id],
+              );
+
+        if (!exists.rows[0]) {
+          await query(
+            'DELETE FROM collab_documents WHERE document_name = $1',
+            [documentName],
+          );
+          return;
+        }
+
         await query(
           `INSERT INTO collab_documents (document_name, state, updated_at)
            VALUES ($1, $2, now())
