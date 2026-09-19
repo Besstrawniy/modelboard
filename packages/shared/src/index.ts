@@ -139,6 +139,26 @@ export type ShapeNodeData = {
   binding?: ObjectBindingRecord | null;
 };
 
+export type DeviceKind =
+  | 'SERVER'
+  | 'VM'
+  | 'SWITCH'
+  | 'ROUTER'
+  | 'FIREWALL'
+  | 'DATABASE'
+  | 'CLOUD';
+
+export type DeviceNodeData = {
+  deviceKind: DeviceKind;
+  label?: string;
+  binding?: ObjectBindingRecord | null;
+  generatedFrom?: {
+    parentNodeId: string;
+    relationId: string;
+    rowId: string;
+  };
+};
+
 // Backward-compatible aliases while v0.1 code is being migrated.
 export type TableColumn = DatasetColumn;
 export type TableRow = DatasetRow;

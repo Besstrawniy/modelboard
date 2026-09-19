@@ -22,7 +22,7 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Database, Hand, MessageSquare, MousePointer2, Redo2, Shapes, StickyNote, Type, Undo2, UploadCloud, X } from 'lucide-react';
+import { Database, Hand, MessageSquare, MousePointer2, Network, Redo2, Shapes, StickyNote, Type, Undo2, UploadCloud, X } from 'lucide-react';
 import {
   DEMO_ROLES_DATASET_ID,
   DEMO_USERS_DATASET_ID,
@@ -35,6 +35,7 @@ import {
   type DatasetRelationType,
   type DatasetRow,
   type DatasetSnapshot,
+  type DeviceKind,
 } from '@modelboard/shared';
 import { BoardActionsProvider } from './BoardContext';
 import { TableNode } from './TableNode';
@@ -49,6 +50,8 @@ import { api } from '../lib/api';
 import { RelationDialog, type PendingRelation } from './RelationDialog';
 import { InspectorPanel } from './InspectorPanel';
 import { DatasetSheet } from './DatasetSheet';
+import { DeviceNode } from './DeviceNode';
+import { DevicePalette } from './DevicePalette';
 
 type PresenceState = {
   user?: { id: string; name: string; role: string };
@@ -71,6 +74,7 @@ const nodeTypes: any = {
   sticky: StickyNode,
   text: TextNode,
   shape: ShapeNode,
+  device: DeviceNode,
 };
 
 function seedDocument(nodesMap: Y.Map<any>, edgesMap: Y.Map<any>) {
@@ -167,6 +171,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const [toolMode, setToolMode] = useState<ToolMode>('select');
   const [historyTick, setHistoryTick] = useState(0);
   const [sheetDatasetId, setSheetDatasetId] = useState<string | null>(null);
+  const [devicesOpen, setDevicesOpen] = useState(false);
 
   useEffect(() => {
     const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
@@ -672,6 +677,31 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     setToolMode('select');
   }, [nodesMap, readOnly, viewportCenter]);
 
+  const addDevice = useCallback((kind: DeviceKind) => {
+    if (readOnly) return;
+
+    const id = crypto.randomUUID();
+    const center = viewportCenter();
+
+    nodesMap.set(id, {
+      id,
+      type: 'device',
+      position: {
+        x: center.x - 110,
+        y: center.y - 65,
+      },
+      style: { width: 220, height: 130 },
+      data: {
+        deviceKind: kind,
+        label: '',
+      },
+    } satisfies Node);
+
+    setSelectedNodeId(id);
+    setDevicesOpen(false);
+    setToolMode('select');
+  }, [nodesMap, readOnly, viewportCenter]);
+
   const onPointerMove = useCallback((event: React.PointerEvent) => {
     if (!provider || !rf) return;
     const point = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
@@ -840,6 +870,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
               </button>
               <div className="toolbar-separator" />
               <button onClick={() => setDatasetsOpen(true)} title="Данные"><Database size={19} /></button>
+              <button onClick={() => setDevicesOpen(true)} title="Инфраструктура"><Network size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('sticky')} title="Стикер"><StickyNote size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('text')} title="Текст"><Type size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('shape')} title="Фигура"><Shapes size={19} /></button>
@@ -922,6 +953,14 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
             readOnly={readOnly}
             onClose={() => setSelectedNodeId(null)}
             onUpdateNodeData={updateNodeData}
+          />
+        )}
+
+        {devicesOpen && (
+          <DevicePalette
+            readOnly={readOnly}
+            onAdd={addDevice}
+            onClose={() => setDevicesOpen(false)}
           />
         )}
 

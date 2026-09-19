@@ -1,6 +1,7 @@
 import { Database, Link2, Trash2, X } from 'lucide-react';
 import type {
   DatasetMeta,
+  DeviceKind,
   ObjectBindingRecord,
 } from '@modelboard/shared';
 import type { Node } from '@xyflow/react';
@@ -8,6 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
 import { RelatedRecords } from './RelatedRecords';
+import { DEVICE_LABELS } from './DeviceNode';
 
 function rowLabel(
   row: { id: string; values: Record<string, unknown> },
@@ -166,6 +168,42 @@ export function InspectorPanel({
               />
             </label>
           )}
+
+          {node.type === 'device' && (
+            <>
+              <label>
+                Тип устройства
+                <select
+                  disabled={readOnly}
+                  value={String((node.data as any)?.deviceKind ?? 'SERVER')}
+                  onChange={(event) =>
+                    onUpdateNodeData(node.id, {
+                      deviceKind: event.target.value as DeviceKind,
+                    })
+                  }
+                >
+                  {Object.entries(DEVICE_LABELS).map(([kind, label]) => (
+                    <option key={kind} value={kind}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Подпись
+                <input
+                  disabled={readOnly}
+                  value={String((node.data as any)?.label ?? '')}
+                  onChange={(event) =>
+                    onUpdateNodeData(node.id, {
+                      label: event.target.value,
+                    })
+                  }
+                />
+              </label>
+            </>
+          )}
         </section>
 
         {node.type === 'table' && (
@@ -178,7 +216,7 @@ export function InspectorPanel({
           </section>
         )}
 
-        {node.type === 'shape' && (
+        {(node.type === 'shape' || node.type === 'device') && (
           <section className="inspector-section">
             <h3><Link2 size={14} /> Привязка данных</h3>
 
@@ -291,7 +329,7 @@ export function InspectorPanel({
           </section>
         )}
 
-        {node.type === 'shape' && existingBinding && dataset && boundRow && (
+        {(node.type === 'shape' || node.type === 'device') && existingBinding && dataset && boundRow && (
           <>
             <section className="inspector-section">
               <h3><Database size={14} /> Текущие данные</h3>
