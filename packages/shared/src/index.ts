@@ -111,12 +111,32 @@ export type ObjectBindingType =
   | 'CELL'
   | 'RELATION_VIEW';
 
+export type ObjectBindingPresentation = {
+  titleColumnId?: string;
+  subtitleColumnId?: string;
+  [key: string]: unknown;
+};
+
 export type ObjectBinding = {
   type: ObjectBindingType;
   datasetId: string;
   rowId?: string;
   columnId?: string;
   relationPath?: string[];
+  presentation?: ObjectBindingPresentation;
+};
+
+export type ObjectBindingRecord = ObjectBinding & {
+  id: string;
+  boardId: string;
+  boardObjectId: string;
+};
+
+export type UpsertObjectBindingInput = ObjectBinding;
+
+export type ShapeNodeData = {
+  text?: string;
+  binding?: ObjectBindingRecord | null;
 };
 
 // Backward-compatible aliases while v0.1 code is being migrated.

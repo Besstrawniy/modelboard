@@ -5,6 +5,8 @@ import type {
   CreateDatasetRelationInput,
   DatasetMeta,
   DatasetRelation,
+  ObjectBindingRecord,
+  UpsertObjectBindingInput,
   WorkspaceRole,
 } from '@modelboard/shared';
 
@@ -87,6 +89,43 @@ export const api = {
       },
       body: JSON.stringify(input),
     }),
+
+  objectBinding: (boardId: string, objectId: string, token: string) =>
+    json<ObjectBindingRecord | null>(
+      `/boards/${boardId}/objects/${encodeURIComponent(objectId)}/binding`,
+      { headers: authHeaders(token) },
+    ),
+
+  upsertObjectBinding: (
+    boardId: string,
+    objectId: string,
+    token: string,
+    input: UpsertObjectBindingInput,
+  ) =>
+    json<ObjectBindingRecord>(
+      `/boards/${boardId}/objects/${encodeURIComponent(objectId)}/binding`,
+      {
+        method: 'PUT',
+        headers: {
+          ...authHeaders(token),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(input),
+      },
+    ),
+
+  deleteObjectBinding: (
+    boardId: string,
+    objectId: string,
+    token: string,
+  ) =>
+    json<{ ok: true }>(
+      `/boards/${boardId}/objects/${encodeURIComponent(objectId)}/binding`,
+      {
+        method: 'DELETE',
+        headers: authHeaders(token),
+      },
+    ),
 
   comments: (boardId: string, token: string) =>
     json<any[]>(`/boards/${boardId}/comments`, {

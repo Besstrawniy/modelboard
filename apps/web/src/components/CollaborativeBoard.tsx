@@ -44,6 +44,7 @@ import { CsvImportDialog } from './CsvImportDialog';
 import { parseCsvFile, type ParsedCsv } from '../lib/csv';
 import { api } from '../lib/api';
 import { RelationDialog, type PendingRelation } from './RelationDialog';
+import { InspectorPanel } from './InspectorPanel';
 
 type PresenceState = {
   user?: { id: string; name: string; role: string };
@@ -151,6 +152,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const [dropActive, setDropActive] = useState(false);
   const [dropError, setDropError] = useState('');
   const [pendingRelation, setPendingRelation] = useState<PendingRelation | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   useEffect(() => {
     const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
@@ -422,6 +424,10 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     setCsvDrop(null);
   }, [csvDrop, meta.workspaceId, placeDataset, session.token]);
 
+  const selectedNode = selectedNodeId
+    ? nodes.find((node) => node.id === selectedNodeId) ?? null
+    : null;
+
   const remotePresence = presence.filter(([clientId, state]) =>
     clientId !== ydoc.clientID && state.user,
   );
@@ -431,6 +437,8 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
       value={{
         readOnly,
         sessionToken: session.token,
+        boardId: meta.id,
+        workspaceId: meta.workspaceId,
         updateNodeData,
       }}
     >
@@ -468,6 +476,10 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onSelectionChange={({ nodes: selectedNodes }) =>
+            setSelectedNodeId(selectedNodes[0]?.id ?? null)
+          }
+          onPaneClick={() => setSelectedNodeId(null)}
           nodesDraggable={!readOnly}
           nodesConnectable={!readOnly}
           elementsSelectable
@@ -550,6 +562,18 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
           <div className="readonly-banner">
             Board editing is read-only for {meta.role}. Comments follow the role policy.
           </div>
+        )}
+
+        {selectedNode && (
+          <InspectorPanel
+            node={selectedNode}
+            boardId={meta.id}
+            workspaceId={meta.workspaceId}
+            token={session.token}
+            readOnly={readOnly}
+            onClose={() => setSelectedNodeId(null)}
+            onUpdateNodeData={updateNodeData}
+          />
         )}
 
         {commentsOpen && (

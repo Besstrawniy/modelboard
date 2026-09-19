@@ -2,11 +2,13 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   NotFoundException,
   Param,
   Post,
+  Put,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -21,6 +23,7 @@ import {
   type DatasetRelationCardinality,
   type DatasetRelationType,
   type DatasetRow,
+  type UpsertObjectBindingInput,
   type WorkspaceRole,
 } from '@modelboard/shared';
 import {
@@ -463,6 +466,191 @@ export class AppController {
       relationType: row.relation_type,
       cardinality: row.cardinality,
     };
+  }
+
+
+  @UseGuards(AuthGuard)
+  @Get('boards/:id/objects/:objectId/binding')
+  async objectBinding(
+    @Param('id') boardId: string,
+    @Param('objectId') objectId: string,
+    @Req() req: any,
+  ) {
+    const access = await getBoardAccess(boardId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+
+    const result = await query<{
+      id: string;
+      board_id: string;
+      board_object_id: string;
+      binding_type: 'DATASET' | 'ROW' | 'COLUMN' | 'CELL' | 'RELATION_VIEW';
+      dataset_id: string;
+      row_id: string | null;
+      column_id: string | null;
+      relation_path: string[] | null;
+      presentation: Record<string, unknown> | null;
+    }>(
+      `SELECT id, board_id, board_object_id, binding_type, dataset_id,
+              row_id, column_id, relation_path, presentation
+       FROM object_bindings
+       WHERE board_id = $1 AND board_object_id = $2
+       LIMIT 1`,
+      [boardId, objectId],
+    );
+
+    const row = result.rows[0];
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      boardId: row.board_id,
+      boardObjectId: row.board_object_id,
+      type: row.binding_type,
+      datasetId: row.dataset_id,
+      rowId: row.row_id ?? undefined,
+      columnId: row.column_id ?? undefined,
+      relationPath: row.relation_path ?? undefined,
+      presentation: row.presentation ?? undefined,
+    };
+  }
+
+  @UseGuards(AuthGuard)
+  @Put('boards/:id/objects/:objectId/binding')
+  async upsertObjectBinding(
+    @Param('id') boardId: string,
+    @Param('objectId') objectId: string,
+    @Req() req: any,
+    @Body() body: UpsertObjectBindingInput,
+  ) {
+    const access = await getBoardAccess(boardId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    if (!['DATASET', 'ROW', 'COLUMN', 'CELL', 'RELATION_VIEW'].includes(body.type)) {
+      throw new BadRequestException('Unsupported binding type');
+    }
+
+    const dataset = await query<{ id: string }>(
+      'SELECT id FROM datasets WHERE id = $1 AND workspace_id = $2',
+      [body.datasetId, access.workspace_id],
+    );
+    if (!dataset.rows[0]) {
+      throw new BadRequestException('Dataset does not belong to this workspace');
+    }
+
+    if (body.rowId) {
+      const row = await query<{ id: string }>(
+        'SELECT id FROM dataset_rows WHERE id = $1 AND dataset_id = $2',
+        [body.rowId, body.datasetId],
+      );
+      if (!row.rows[0]) {
+        throw new BadRequestException('Row does not belong to this dataset');
+      }
+    }
+
+    if (body.columnId) {
+      const column = await query<{ id: string }>(
+        'SELECT id FROM dataset_columns WHERE id = $1 AND dataset_id = $2',
+        [body.columnId, body.datasetId],
+      );
+      if (!column.rows[0]) {
+        throw new BadRequestException('Column does not belong to this dataset');
+      }
+    }
+
+    const presentationColumnIds = [
+      body.presentation?.titleColumnId,
+      body.presentation?.subtitleColumnId,
+    ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+    for (const columnId of presentationColumnIds) {
+      const column = await query<{ id: string }>(
+        'SELECT id FROM dataset_columns WHERE id = $1 AND dataset_id = $2',
+        [columnId, body.datasetId],
+      );
+      if (!column.rows[0]) {
+        throw new BadRequestException(
+          'Presentation column does not belong to this dataset',
+        );
+      }
+    }
+
+    const bindingId = randomUUID();
+    const result = await query<{
+      id: string;
+      board_id: string;
+      board_object_id: string;
+      binding_type: 'DATASET' | 'ROW' | 'COLUMN' | 'CELL' | 'RELATION_VIEW';
+      dataset_id: string;
+      row_id: string | null;
+      column_id: string | null;
+      relation_path: string[] | null;
+      presentation: Record<string, unknown> | null;
+    }>(
+      `INSERT INTO object_bindings (
+         id, board_id, board_object_id, binding_type, dataset_id,
+         row_id, column_id, relation_path, presentation, updated_at
+       )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,now())
+       ON CONFLICT (board_id, board_object_id)
+       DO UPDATE SET
+         binding_type = EXCLUDED.binding_type,
+         dataset_id = EXCLUDED.dataset_id,
+         row_id = EXCLUDED.row_id,
+         column_id = EXCLUDED.column_id,
+         relation_path = EXCLUDED.relation_path,
+         presentation = EXCLUDED.presentation,
+         updated_at = now()
+       RETURNING id, board_id, board_object_id, binding_type, dataset_id,
+                 row_id, column_id, relation_path, presentation`,
+      [
+        bindingId,
+        boardId,
+        objectId,
+        body.type,
+        body.datasetId,
+        body.rowId ?? null,
+        body.columnId ?? null,
+        JSON.stringify(body.relationPath ?? null),
+        JSON.stringify(body.presentation ?? {}),
+      ],
+    );
+
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      boardId: row.board_id,
+      boardObjectId: row.board_object_id,
+      type: row.binding_type,
+      datasetId: row.dataset_id,
+      rowId: row.row_id ?? undefined,
+      columnId: row.column_id ?? undefined,
+      relationPath: row.relation_path ?? undefined,
+      presentation: row.presentation ?? undefined,
+    };
+  }
+
+  @UseGuards(AuthGuard)
+  @Delete('boards/:id/objects/:objectId/binding')
+  async deleteObjectBinding(
+    @Param('id') boardId: string,
+    @Param('objectId') objectId: string,
+    @Req() req: any,
+  ) {
+    const access = await getBoardAccess(boardId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    await query(
+      'DELETE FROM object_bindings WHERE board_id = $1 AND board_object_id = $2',
+      [boardId, objectId],
+    );
+
+    return { ok: true as const };
   }
 
   @UseGuards(AuthGuard)
