@@ -18,6 +18,7 @@ import { pool, query } from '@modelboard/db';
 import {
   canComment,
   canEditBoard,
+  type BoardDatasetLocation,
   type ConvertDatasetColumnInput,
   type ConvertDatasetColumnResult,
   type CreateDatasetInput,
@@ -293,6 +294,76 @@ export class AppController {
       name: row.name,
       kind: row.kind,
       role: access.role,
+    }));
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('workspaces/:id/datasets/:datasetId/locations')
+  async datasetLocations(
+    @Param('id') workspaceId: string,
+    @Param('datasetId') datasetId: string,
+    @Req() req: any,
+  ): Promise<BoardDatasetLocation[]> {
+    const access = await getWorkspaceAccess(
+      workspaceId,
+      req.user.sub,
+    );
+    if (!access) throw new ForbiddenException();
+
+    const dataset = await query<{ id: string }>(
+      `SELECT id
+       FROM datasets
+       WHERE id = $1 AND workspace_id = $2`,
+      [datasetId, workspaceId],
+    );
+
+    if (!dataset.rows[0]) {
+      throw new NotFoundException(
+        'Dataset not found in this workspace',
+      );
+    }
+
+    const result = await query<{
+      board_id: string;
+      board_name: string;
+      object_id: string;
+      object_type: string;
+      dataset_id: string;
+      row_id: string | null;
+      column_id: string | null;
+      properties: Record<string, unknown> | null;
+    }>(
+      `SELECT
+         index.board_id,
+         board.name AS board_name,
+         index.object_id,
+         index.object_type,
+         index.dataset_id,
+         index.row_id,
+         index.column_id,
+         index.properties
+       FROM board_object_index AS index
+       JOIN boards AS board
+         ON board.id = index.board_id
+       WHERE board.workspace_id = $1
+         AND index.dataset_id = $2
+       ORDER BY
+         board.created_at,
+         lower(board.name),
+         index.object_type,
+         index.object_id`,
+      [workspaceId, datasetId],
+    );
+
+    return result.rows.map((row) => ({
+      boardId: row.board_id,
+      boardName: row.board_name,
+      objectId: row.object_id,
+      objectType: row.object_type,
+      datasetId: row.dataset_id,
+      rowId: row.row_id,
+      columnId: row.column_id,
+      properties: row.properties ?? undefined,
     }));
   }
 

@@ -1,5 +1,6 @@
-import { Database, Link2, Table2, Trash2, X } from 'lucide-react';
+import { Database, ExternalLink, LayoutDashboard, Link2, Table2, Trash2, X } from 'lucide-react';
 import type {
+  BoardDatasetLocation,
   DatasetMeta,
   DeviceKind,
   ObjectBindingRecord,
@@ -42,7 +43,10 @@ export function InspectorPanel({
   onClose: () => void;
   onUpdateNodeData: (nodeId: string, patch: Record<string, unknown>) => void;
 }) {
-  const { openDatasetSheet } = useBoardActions();
+  const {
+    openDatasetSheet,
+    navigateToDatasetLocation,
+  } = useBoardActions();
   const existingBinding = (node.data as any)?.binding as ObjectBindingRecord | undefined;
   const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
   const [datasetId, setDatasetId] = useState(existingBinding?.datasetId ?? '');
@@ -55,6 +59,8 @@ export function InspectorPanel({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [datasetLocations, setDatasetLocations] =
+    useState<BoardDatasetLocation[]>([]);
 
   const { dataset } = useCollaborativeDataset(
     datasetId || undefined,
@@ -67,6 +73,31 @@ export function InspectorPanel({
       .then(setDatasets)
       .catch((err) => setError(String(err)));
   }, [token, workspaceId]);
+
+  const locationDatasetId =
+    node.type === 'table'
+      ? String((node.data as any)?.datasetId ?? '')
+      : existingBinding?.datasetId ?? '';
+
+  useEffect(() => {
+    if (!locationDatasetId) {
+      setDatasetLocations([]);
+      return;
+    }
+
+    void api
+      .datasetLocations(
+        workspaceId,
+        locationDatasetId,
+        token,
+      )
+      .then(setDatasetLocations)
+      .catch((err) => setError(String(err)));
+  }, [
+    locationDatasetId,
+    token,
+    workspaceId,
+  ]);
 
   useEffect(() => {
     const binding = (node.data as any)?.binding as ObjectBindingRecord | undefined;
@@ -383,6 +414,61 @@ export function InspectorPanel({
               parentNodeId={node.id}
             />
           </>
+        )}
+
+        {locationDatasetId && (
+          <section className="inspector-section">
+            <h3>
+              <LayoutDashboard size={14} />
+              Где показан Dataset
+            </h3>
+
+            {datasetLocations.filter(
+              (location) => location.objectType === 'table',
+            ).length === 0 ? (
+              <p className="inspector-muted">
+                TableNode с этим Dataset пока не найден в индексе Board.
+                Индекс обновляется при открытии и изменении досок.
+              </p>
+            ) : (
+              <div className="dataset-location-list">
+                {datasetLocations
+                  .filter(
+                    (location) =>
+                      location.objectType === 'table',
+                  )
+                  .map((location) => {
+                    const current =
+                      location.boardId === boardId &&
+                      location.objectId === node.id;
+
+                    return (
+                      <button
+                        key={`${location.boardId}:${location.objectId}`}
+                        className={current ? 'is-current' : ''}
+                        disabled={current && !existingBinding?.rowId}
+                        onClick={() =>
+                          void navigateToDatasetLocation(
+                            location,
+                            existingBinding?.rowId,
+                          )
+                        }
+                      >
+                        <LayoutDashboard size={13} />
+                        <span>
+                          <strong>{location.boardName}</strong>
+                          <small>
+                            TableNode
+                            {current ? ' · текущий объект' : ''}
+                          </small>
+                        </span>
+                        <ExternalLink size={12} />
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+          </section>
         )}
       </div>
     </aside>

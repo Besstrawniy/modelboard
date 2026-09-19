@@ -1,5 +1,6 @@
 import type {
   AuthSession,
+  BoardDatasetLocation,
   BoardMeta,
   ConvertDatasetColumnInput,
   ConvertDatasetColumnResult,
@@ -101,6 +102,16 @@ export const api = {
     json<DatasetMeta>(`/datasets/${datasetId}`, {
       headers: authHeaders(token),
     }),
+
+  datasetLocations: (
+    workspaceId: string,
+    datasetId: string,
+    token: string,
+  ) =>
+    json<BoardDatasetLocation[]>(
+      `/workspaces/${workspaceId}/datasets/${datasetId}/locations`,
+      { headers: authHeaders(token) },
+    ),
 
   createDataset: (
     workspaceId: string,

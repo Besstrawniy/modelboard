@@ -23,6 +23,122 @@ function parseDocumentName(documentName: string): DocumentRef | null {
   };
 }
 
+async function projectBoardStateToPostgres(
+  boardId: string,
+  state: Uint8Array,
+) {
+  const doc = new Y.Doc();
+
+  try {
+    Y.applyUpdate(doc, state);
+
+    const objects = Array.from(
+      doc.getMap<any>('nodes').values(),
+    ).map((node: any) => {
+      const data =
+        node?.data && typeof node.data === 'object'
+          ? node.data
+          : {};
+      const binding =
+        data?.binding && typeof data.binding === 'object'
+          ? data.binding
+          : null;
+
+      return {
+        objectId: String(node.id),
+        objectType: String(node.type ?? 'unknown'),
+        datasetId:
+          data.datasetId ??
+          binding?.datasetId ??
+          null,
+        rowId: binding?.rowId ?? null,
+        columnId: binding?.columnId ?? null,
+        properties: {
+          ...(typeof data.text === 'string'
+            ? { text: data.text }
+            : {}),
+          ...(typeof data.label === 'string'
+            ? { label: data.label }
+            : {}),
+          ...(typeof data.deviceKind === 'string'
+            ? { deviceKind: data.deviceKind }
+            : {}),
+          ...(typeof data.templateId === 'string'
+            ? { templateId: data.templateId }
+            : {}),
+          ...(typeof data.relationId === 'string'
+            ? { relationId: data.relationId }
+            : {}),
+        },
+      };
+    });
+
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'DELETE FROM board_object_index WHERE board_id = $1',
+        [boardId],
+      );
+
+      if (objects.length > 0) {
+        await client.query(
+          `INSERT INTO board_object_index (
+             board_id,
+             object_id,
+             object_type,
+             dataset_id,
+             row_id,
+             column_id,
+             properties,
+             updated_at
+           )
+           SELECT
+             $1,
+             source.object_id,
+             source.object_type,
+             source.dataset_id,
+             source.row_id,
+             source.column_id,
+             source.properties,
+             now()
+           FROM jsonb_to_recordset($2::jsonb) AS source(
+             object_id text,
+             object_type text,
+             dataset_id uuid,
+             row_id uuid,
+             column_id uuid,
+             properties jsonb
+           )`,
+          [
+            boardId,
+            JSON.stringify(
+              objects.map((object) => ({
+                object_id: object.objectId,
+                object_type: object.objectType,
+                dataset_id: object.datasetId,
+                row_id: object.rowId,
+                column_id: object.columnId,
+                properties: object.properties,
+              })),
+            ),
+          ],
+        );
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } finally {
+    doc.destroy();
+  }
+}
+
 async function projectDatasetStateToPostgres(
   datasetId: string,
   state: Uint8Array,
@@ -326,6 +442,15 @@ async function startCollaborationServer() {
         );
 
         if (result.rows[0]?.state) {
+          const ref = parseDocumentName(documentName);
+
+          if (ref?.kind === 'board') {
+            await projectBoardStateToPostgres(
+              ref.id,
+              result.rows[0].state,
+            );
+          }
+
           return result.rows[0].state;
         }
 
@@ -369,6 +494,11 @@ async function startCollaborationServer() {
 
         if (ref.kind === 'dataset') {
           await projectDatasetStateToPostgres(
+            ref.id,
+            state,
+          );
+        } else {
+          await projectBoardStateToPostgres(
             ref.id,
             state,
           );

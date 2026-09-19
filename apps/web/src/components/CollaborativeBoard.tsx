@@ -29,6 +29,7 @@ import {
   DEMO_USERS_DATASET_ID,
   canEditBoard,
   type AuthSession,
+  type BoardDatasetLocation,
   type BoardMeta,
   type CreateDatasetInput,
   type DatasetRelation,
@@ -263,6 +264,10 @@ function BoardInner({
   const [renameBoardName, setRenameBoardName] = useState('');
   const [boardActionBusy, setBoardActionBusy] = useState(false);
   const [deleteBoardConfirm, setDeleteBoardConfirm] = useState(false);
+  const [navigationTarget, setNavigationTarget] = useState<{
+    location: BoardDatasetLocation;
+    rowId?: string;
+  } | null>(null);
 
   useEffect(() => {
     setSelectedNodeId(null);
@@ -1507,6 +1512,72 @@ function BoardInner({
     setCsvDrop(null);
   }, [csvDrop, meta.workspaceId, placeDataset, session.token]);
 
+  const navigateToDatasetLocation = useCallback(
+    async (
+      location: BoardDatasetLocation,
+      rowId?: string,
+    ) => {
+      setNavigationTarget({ location, rowId });
+      setSheetTarget(null);
+      setBoardMenuOpen(false);
+
+      if (location.boardId !== meta.id) {
+        await onSwitchBoard(location.boardId);
+      }
+    },
+    [meta.id, onSwitchBoard],
+  );
+
+  useEffect(() => {
+    if (
+      !navigationTarget ||
+      navigationTarget.location.boardId !== meta.id ||
+      !rf
+    ) {
+      return;
+    }
+
+    const node = nodes.find(
+      (item) =>
+        item.id === navigationTarget.location.objectId,
+    );
+
+    if (!node) return;
+
+    const nodeId = node.id;
+
+    setNodes((current) =>
+      current.map((item) => ({
+        ...item,
+        selected: item.id === nodeId,
+      })),
+    );
+    setSelectedNodeIds([nodeId]);
+    setSelectedNodeId(nodeId);
+    setToolMode('select');
+
+    void rf.fitView({
+      nodes: [node],
+      padding: 0.35,
+      duration: 450,
+    });
+
+    if (navigationTarget.rowId) {
+      setSheetTarget({
+        datasetId:
+          navigationTarget.location.datasetId,
+        rowId: navigationTarget.rowId,
+      });
+    }
+
+    setNavigationTarget(null);
+  }, [
+    meta.id,
+    navigationTarget,
+    nodes,
+    rf,
+  ]);
+
   const selectedNode = selectedNodeId
     ? nodes.find((node) => node.id === selectedNodeId) ?? null
     : null;
@@ -1531,6 +1602,7 @@ function BoardInner({
         materializedRelatedCount,
         openDatasetSheet: (datasetId, rowId) =>
           setSheetTarget({ datasetId, rowId }),
+        navigateToDatasetLocation,
       }}
     >
       <div

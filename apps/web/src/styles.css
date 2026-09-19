@@ -2502,3 +2502,52 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   opacity: .38;
   cursor: not-allowed;
 }
+
+
+/* Dataset placements across Boards */
+.dataset-location-list {
+  display: grid;
+  gap: 6px;
+}
+.dataset-location-list > button {
+  width: 100%;
+  min-height: 42px;
+  padding: 7px 8px;
+  border: 1px solid #e1e5ea;
+  border-radius: 8px;
+  background: #fff;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  color: #626b76;
+  text-align: left;
+}
+.dataset-location-list > button:hover:not(:disabled) {
+  border-color: #cbd1dc;
+  background: #f8f9fb;
+}
+.dataset-location-list > button.is-current {
+  border-color: #d5daf7;
+  background: #f6f7ff;
+}
+.dataset-location-list > button > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dataset-location-list strong,
+.dataset-location-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dataset-location-list strong {
+  color: #414852;
+  font-size: 9px;
+}
+.dataset-location-list small {
+  margin-top: 2px;
+  color: #9197a0;
+  font-size: 7px;
+}

@@ -1,4 +1,5 @@
 import type {
+  BoardDatasetLocation,
   DatasetRelation,
   DatasetRow,
   DatasetSnapshot,
@@ -44,6 +45,10 @@ export type BoardActions = {
     datasetId: string,
     rowId?: string,
   ) => void;
+  navigateToDatasetLocation: (
+    location: BoardDatasetLocation,
+    rowId?: string,
+  ) => Promise<void>;
 };
 
 const BoardActionsContext = createContext<BoardActions>({
@@ -59,6 +64,7 @@ const BoardActionsContext = createContext<BoardActions>({
   hideMaterializedRelated: async () => 0,
   materializedRelatedCount: () => 0,
   openDatasetSheet: () => undefined,
+  navigateToDatasetLocation: async () => undefined,
 });
 
 export const BoardActionsProvider = BoardActionsContext.Provider;

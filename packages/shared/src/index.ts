@@ -29,6 +29,17 @@ export type BoardMeta = {
   role: WorkspaceRole;
 };
 
+export type BoardDatasetLocation = {
+  boardId: string;
+  boardName: string;
+  objectId: string;
+  objectType: string;
+  datasetId: string;
+  rowId?: string | null;
+  columnId?: string | null;
+  properties?: Record<string, unknown>;
+};
+
 export type DatasetKind = 'MANUAL' | 'CSV' | 'SQL' | 'API';
 export type DatasetDataType = 'TEXT' | 'INTEGER' | 'BOOLEAN' | 'DATE' | 'UUID';
 export type DatasetCellValue = string | number | boolean | null;
