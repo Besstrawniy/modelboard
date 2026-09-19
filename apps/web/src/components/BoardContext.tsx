@@ -56,7 +56,7 @@ const BoardActionsContext = createContext<BoardActions>({
   updateNodeData: () => undefined,
   materializeRelated: async () => 0,
   createRelationView: async () => false,
-  hideMaterializedRelated: () => 0,
+  hideMaterializedRelated: async () => 0,
   materializedRelatedCount: () => 0,
   openDatasetSheet: () => undefined,
 });
