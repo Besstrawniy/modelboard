@@ -60,6 +60,16 @@ export type DatasetSnapshot = DatasetMeta & {
   rows: DatasetRow[];
 };
 
+export type ConvertDatasetColumnInput = {
+  dataType: DatasetDataType;
+  values: Record<string, DatasetCellValue>;
+};
+
+export type ConvertDatasetColumnResult = {
+  column: DatasetColumn;
+  values: Record<string, DatasetCellValue>;
+};
+
 export type CreateDatasetInput = {
   name?: string;
   kind?: DatasetKind;

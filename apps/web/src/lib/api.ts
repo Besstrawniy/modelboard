@@ -1,6 +1,8 @@
 import type {
   AuthSession,
   BoardMeta,
+  ConvertDatasetColumnInput,
+  ConvertDatasetColumnResult,
   CreateDatasetInput,
   CreateDatasetRelationInput,
   CreateWorkspaceObjectTemplateInput,
@@ -104,6 +106,24 @@ export const api = {
           'content-type': 'application/json',
         },
         body: JSON.stringify({ name }),
+      },
+    ),
+
+  convertDatasetColumn: (
+    datasetId: string,
+    columnId: string,
+    token: string,
+    input: ConvertDatasetColumnInput,
+  ) =>
+    json<ConvertDatasetColumnResult>(
+      `/datasets/${datasetId}/columns/${columnId}/type`,
+      {
+        method: 'PUT',
+        headers: {
+          ...authHeaders(token),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(input),
       },
     ),
 

@@ -1,6 +1,7 @@
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import type {
   DatasetColumn,
+  DatasetCellValue,
   DatasetKind,
   DatasetRow,
   DatasetSnapshot,
@@ -135,6 +136,49 @@ export function useCollaborativeDataset(
     [columnsMap, datasetId, readOnly, token],
   );
 
+  const convertColumn = useCallback(
+    async (
+      columnId: string,
+      dataType: DatasetColumn['dataType'],
+      values: Record<string, DatasetCellValue>,
+    ) => {
+      if (readOnly || !datasetId || !token) return null;
+
+      const result = await api.convertDatasetColumn(
+        datasetId,
+        columnId,
+        token,
+        { dataType, values },
+      );
+
+      ydoc.transact(() => {
+        columnsMap.set(result.column.id, result.column);
+
+        for (const [rowId, value] of Object.entries(result.values)) {
+          const row = rowsMap.get(rowId);
+          if (!row) continue;
+          rowsMap.set(rowId, {
+            ...row,
+            values: {
+              ...row.values,
+              [columnId]: value,
+            },
+          });
+        }
+      });
+
+      return result;
+    },
+    [
+      columnsMap,
+      datasetId,
+      readOnly,
+      rowsMap,
+      token,
+      ydoc,
+    ],
+  );
+
   const deleteColumn = useCallback(
     async (columnId: string) => {
       if (readOnly || !datasetId || !token) return false;
@@ -203,6 +247,7 @@ export function useCollaborativeDataset(
     setCell,
     addColumn,
     renameColumn,
+    convertColumn,
     deleteColumn,
     addRow,
     deleteRow,

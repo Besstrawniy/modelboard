@@ -61,6 +61,120 @@ function normalizeInput(value: string, column: DatasetColumn): DatasetCellValue 
   return value;
 }
 
+type ConversionFailure = {
+  rowId: string;
+  ordinal: number;
+  value: DatasetCellValue;
+  reason: string;
+};
+
+type ConversionPreview = {
+  values: Record<string, DatasetCellValue>;
+  convertedCount: number;
+  nullCount: number;
+  unchangedCount: number;
+  failures: ConversionFailure[];
+};
+
+function isIsoDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function convertCellValue(
+  value: DatasetCellValue | undefined,
+  targetType: DatasetColumn['dataType'],
+): { ok: true; value: DatasetCellValue } | { ok: false; reason: string } {
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === 'string' && value.trim() === '')
+  ) {
+    return { ok: true, value: null };
+  }
+
+  if (targetType === 'TEXT') {
+    return { ok: true, value: String(value) };
+  }
+
+  if (targetType === 'INTEGER') {
+    if (typeof value === 'number' && Number.isSafeInteger(value)) {
+      return { ok: true, value };
+    }
+
+    if (
+      typeof value === 'string' &&
+      /^[+-]?\d+$/.test(value.trim())
+    ) {
+      const parsed = Number(value.trim());
+      if (Number.isSafeInteger(parsed)) {
+        return { ok: true, value: parsed };
+      }
+    }
+
+    return {
+      ok: false,
+      reason: 'Ожидается целое безопасное число',
+    };
+  }
+
+  if (targetType === 'BOOLEAN') {
+    if (typeof value === 'boolean') {
+      return { ok: true, value };
+    }
+
+    if (typeof value === 'number' && (value === 0 || value === 1)) {
+      return { ok: true, value: value === 1 };
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1') {
+        return { ok: true, value: true };
+      }
+      if (normalized === 'false' || normalized === '0') {
+        return { ok: true, value: false };
+      }
+    }
+
+    return {
+      ok: false,
+      reason: 'Допустимы true/false или 1/0',
+    };
+  }
+
+  if (targetType === 'DATE') {
+    if (typeof value === 'string' && isIsoDate(value.trim())) {
+      return { ok: true, value: value.trim() };
+    }
+
+    return {
+      ok: false,
+      reason: 'Ожидается дата YYYY-MM-DD',
+    };
+  }
+
+  if (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value.trim(),
+    )
+  ) {
+    return { ok: true, value: value.trim().toLowerCase() };
+  }
+
+  return {
+    ok: false,
+    reason: 'Ожидается UUID RFC 4122',
+  };
+}
+
 function SheetCell({
   row,
   column,
@@ -129,6 +243,7 @@ export function DatasetSheet({
     setCell,
     addColumn,
     renameColumn,
+    convertColumn,
     deleteColumn,
     addRow,
     deleteRow,
@@ -154,6 +269,10 @@ export function DatasetSheet({
   const [columnError, setColumnError] = useState('');
   const [deleteColumnTarget, setDeleteColumnTarget] =
     useState<DatasetColumn | null>(null);
+  const [convertColumnTarget, setConvertColumnTarget] =
+    useState<DatasetColumn | null>(null);
+  const [convertType, setConvertType] =
+    useState<DatasetColumn['dataType']>('TEXT');
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -217,6 +336,52 @@ export function DatasetSheet({
 
     return result;
   }, [dataset, query, sort]);
+
+  const conversionPreview = useMemo<ConversionPreview | null>(() => {
+    if (!dataset || !convertColumnTarget) return null;
+
+    const values: Record<string, DatasetCellValue> = {};
+    const failures: ConversionFailure[] = [];
+    let convertedCount = 0;
+    let nullCount = 0;
+    let unchangedCount = 0;
+
+    for (const row of dataset.rows) {
+      const source = row.values[convertColumnTarget.id];
+      const converted = convertCellValue(source, convertType);
+
+      if (!converted.ok) {
+        failures.push({
+          rowId: row.id,
+          ordinal: row.ordinal,
+          value: source ?? null,
+          reason: converted.reason,
+        });
+        continue;
+      }
+
+      values[row.id] = converted.value;
+
+      if (converted.value === null) {
+        nullCount += 1;
+      } else if (
+        typeof source === typeof converted.value &&
+        source === converted.value
+      ) {
+        unchangedCount += 1;
+      } else {
+        convertedCount += 1;
+      }
+    }
+
+    return {
+      values,
+      convertedCount,
+      nullCount,
+      unchangedCount,
+      failures,
+    };
+  }, [convertColumnTarget, convertType, dataset]);
 
   const totalPages = Math.max(1, Math.ceil(visibleRows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -349,6 +514,133 @@ export function DatasetSheet({
           </section>
         </div>
       )}
+      {convertColumnTarget && conversionPreview && (
+        <div className="dataset-sheet__dialog-backdrop">
+          <section className="dataset-sheet__column-dialog dataset-sheet__column-dialog--wide">
+            <header>
+              <strong>Изменить тип колонки</strong>
+              <button
+                className="icon-button"
+                onClick={() => setConvertColumnTarget(null)}
+              >
+                <X size={16} />
+              </button>
+            </header>
+
+            <div className="dataset-sheet__column-dialog-body">
+              <div className="dataset-sheet__conversion-title">
+                <strong>{convertColumnTarget.name}</strong>
+                <span>{convertColumnTarget.dataType}</span>
+                <span>→</span>
+                <select
+                  value={convertType}
+                  onChange={(event) =>
+                    setConvertType(
+                      event.target.value as DatasetColumn['dataType'],
+                    )
+                  }
+                >
+                  <option value="TEXT">TEXT</option>
+                  <option value="INTEGER">INTEGER</option>
+                  <option value="BOOLEAN">BOOLEAN</option>
+                  <option value="DATE">DATE</option>
+                  <option value="UUID">UUID</option>
+                </select>
+              </div>
+
+              <div className="dataset-sheet__conversion-stats">
+                <span>
+                  <strong>{conversionPreview.convertedCount}</strong>
+                  преобразуется
+                </span>
+                <span>
+                  <strong>{conversionPreview.unchangedCount}</strong>
+                  уже подходит
+                </span>
+                <span>
+                  <strong>{conversionPreview.nullCount}</strong>
+                  NULL
+                </span>
+                <span className={conversionPreview.failures.length ? 'is-error' : ''}>
+                  <strong>{conversionPreview.failures.length}</strong>
+                  ошибок
+                </span>
+              </div>
+
+              {conversionPreview.failures.length > 0 ? (
+                <div className="dataset-sheet__conversion-errors">
+                  <strong>
+                    Конвертацию нельзя применить, пока есть ошибки:
+                  </strong>
+                  {conversionPreview.failures.slice(0, 10).map((failure) => (
+                    <div key={failure.rowId}>
+                      <span>Строка {failure.ordinal + 1}</span>
+                      <code>{String(failure.value)}</code>
+                      <small>{failure.reason}</small>
+                    </div>
+                  ))}
+                  {conversionPreview.failures.length > 10 && (
+                    <p>
+                      + ещё {conversionPreview.failures.length - 10} ошибок
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="dataset-sheet__conversion-ok">
+                  Все значения можно безопасно привести к выбранному типу.
+                </p>
+              )}
+
+              {columnError && (
+                <div className="dataset-sheet__column-error">
+                  {columnError}
+                </div>
+              )}
+            </div>
+
+            <footer>
+              <button
+                className="secondary-button"
+                disabled={columnBusy}
+                onClick={() => setConvertColumnTarget(null)}
+              >
+                Отмена
+              </button>
+              <button
+                className="primary-button"
+                disabled={
+                  columnBusy ||
+                  conversionPreview.failures.length > 0 ||
+                  convertType === convertColumnTarget.dataType
+                }
+                onClick={async () => {
+                  setColumnBusy(true);
+                  setColumnError('');
+                  try {
+                    await convertColumn(
+                      convertColumnTarget.id,
+                      convertType,
+                      conversionPreview.values,
+                    );
+                    setConvertColumnTarget(null);
+                  } catch (error) {
+                    setColumnError(
+                      error instanceof Error
+                        ? error.message
+                        : String(error),
+                    );
+                  } finally {
+                    setColumnBusy(false);
+                  }
+                }}
+              >
+                {columnBusy ? 'Конвертация…' : 'Применить'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
       {deleteColumnTarget && (
         <div className="dataset-sheet__dialog-backdrop">
           <section className="dataset-sheet__column-dialog">
@@ -580,7 +872,33 @@ export function DatasetSheet({
                             )}
                           </strong>
                           <small>
-                            {column.dataType}
+                            <span
+                              className={`dataset-sheet__column-type ${readOnly ? '' : 'is-editable'}`}
+                              role={readOnly ? undefined : 'button'}
+                              tabIndex={readOnly ? undefined : 0}
+                              title={readOnly ? undefined : 'Изменить тип колонки'}
+                              onClick={(event) => {
+                                if (readOnly) return;
+                                event.stopPropagation();
+                                setConvertColumnTarget(column);
+                                setConvertType(column.dataType);
+                                setColumnError('');
+                              }}
+                              onKeyDown={(event) => {
+                                if (
+                                  !readOnly &&
+                                  (event.key === 'Enter' || event.key === ' ')
+                                ) {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setConvertColumnTarget(column);
+                                  setConvertType(column.dataType);
+                                  setColumnError('');
+                                }
+                              }}
+                            >
+                              {column.dataType}
+                            </span>
                             {column.key ? ` · ${column.key}` : ''}
                           </small>
                         </span>

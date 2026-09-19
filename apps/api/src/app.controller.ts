@@ -18,6 +18,8 @@ import { pool, query } from '@modelboard/db';
 import {
   canComment,
   canEditBoard,
+  type ConvertDatasetColumnInput,
+  type ConvertDatasetColumnResult,
   type CreateDatasetInput,
   type CreateDatasetRelationInput,
   type DatasetColumn,
@@ -301,6 +303,182 @@ export class AppController {
       ordinal: row.ordinal,
       ...(row.properties?.key ? { key: row.properties.key } : {}),
     } satisfies DatasetColumn;
+  }
+
+  @UseGuards(AuthGuard)
+  @Put('datasets/:id/columns/:columnId/type')
+  async convertDatasetColumn(
+    @Param('id') datasetId: string,
+    @Param('columnId') columnId: string,
+    @Req() req: any,
+    @Body() body: ConvertDatasetColumnInput,
+  ): Promise<ConvertDatasetColumnResult> {
+    const access = await getDatasetAccess(datasetId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    const allowedTypes: DatasetColumn['dataType'][] = [
+      'TEXT',
+      'INTEGER',
+      'BOOLEAN',
+      'DATE',
+      'UUID',
+    ];
+    if (!allowedTypes.includes(body.dataType)) {
+      throw new BadRequestException('Unsupported column data type');
+    }
+
+    const columnResult = await query<{
+      id: string;
+      name: string;
+      data_type: DatasetColumn['dataType'];
+      ordinal: number;
+      properties: { key?: 'PK' | 'FK' } | null;
+    }>(
+      `SELECT id, name, data_type, ordinal, properties
+       FROM dataset_columns
+       WHERE id = $1 AND dataset_id = $2`,
+      [columnId, datasetId],
+    );
+
+    const currentColumn = columnResult.rows[0];
+    if (!currentColumn) {
+      throw new NotFoundException('Dataset column not found');
+    }
+
+    if (currentColumn.data_type !== body.dataType) {
+      const relation = await query<{ id: string }>(
+        `SELECT id
+         FROM dataset_relations
+         WHERE source_column_id = $1 OR target_column_id = $1
+         LIMIT 1`,
+        [columnId],
+      );
+
+      if (relation.rows[0]) {
+        throw new ConflictException(
+          'Column participates in a dataset relation. Remove the relation before changing its type.',
+        );
+      }
+    }
+
+    const rows = await query<{ id: string }>(
+      `SELECT id
+       FROM dataset_rows
+       WHERE dataset_id = $1
+       ORDER BY ordinal, id`,
+      [datasetId],
+    );
+
+    const rowIds = rows.rows.map((row) => row.id);
+    const suppliedIds = Object.keys(body.values ?? {});
+
+    if (
+      suppliedIds.length !== rowIds.length ||
+      suppliedIds.some((rowId) => !rowIds.includes(rowId))
+    ) {
+      throw new BadRequestException(
+        'Conversion values must contain exactly all rows of the dataset',
+      );
+    }
+
+    const isUuid = (value: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+    const isIsoDate = (value: string) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const [year, month, day] = value.split('-').map(Number);
+      const date = new Date(Date.UTC(year, month - 1, day));
+      return (
+        date.getUTCFullYear() === year &&
+        date.getUTCMonth() === month - 1 &&
+        date.getUTCDate() === day
+      );
+    };
+
+    for (const [rowId, value] of Object.entries(body.values ?? {})) {
+      if (value === null) continue;
+
+      const valid =
+        body.dataType === 'TEXT'
+          ? typeof value === 'string'
+          : body.dataType === 'INTEGER'
+            ? typeof value === 'number' && Number.isSafeInteger(value)
+            : body.dataType === 'BOOLEAN'
+              ? typeof value === 'boolean'
+              : body.dataType === 'DATE'
+                ? typeof value === 'string' && isIsoDate(value)
+                : typeof value === 'string' && isUuid(value);
+
+      if (!valid) {
+        throw new BadRequestException(
+          `Converted value for row ${rowId} is invalid for ${body.dataType}`,
+        );
+      }
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT id FROM datasets WHERE id = $1 FOR UPDATE',
+        [datasetId],
+      );
+
+      const updated = await client.query<{
+        id: string;
+        name: string;
+        data_type: DatasetColumn['dataType'];
+        ordinal: number;
+        properties: { key?: 'PK' | 'FK' } | null;
+      }>(
+        `UPDATE dataset_columns
+         SET data_type = $1
+         WHERE id = $2 AND dataset_id = $3
+         RETURNING id, name, data_type, ordinal, properties`,
+        [body.dataType, columnId, datasetId],
+      );
+
+      for (const rowId of rowIds) {
+        await client.query(
+          `UPDATE dataset_rows
+           SET values = jsonb_set(
+             values,
+             ARRAY[$2]::text[],
+             $3::jsonb,
+             true
+           )
+           WHERE id = $1 AND dataset_id = $4`,
+          [
+            rowId,
+            columnId,
+            JSON.stringify(body.values[rowId] ?? null),
+            datasetId,
+          ],
+        );
+      }
+
+      await client.query('COMMIT');
+
+      const row = updated.rows[0];
+      return {
+        column: {
+          id: row.id,
+          name: row.name,
+          dataType: row.data_type,
+          ordinal: row.ordinal,
+          ...(row.properties?.key ? { key: row.properties.key } : {}),
+        },
+        values: body.values,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   @UseGuards(AuthGuard)
