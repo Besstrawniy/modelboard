@@ -56,7 +56,7 @@ function compareValues(a: DatasetCellValue, b: DatasetCellValue) {
 function normalizeInput(value: string, column: DatasetColumn): DatasetCellValue {
   if (value === '') return null;
 
-  if (column.dataType === 'BOOLEAN' && !formulaActive) {
+  if (column.dataType === 'BOOLEAN') {
     if (value.toLowerCase() === 'true') return true;
     if (value.toLowerCase() === 'false') return false;
     return value;
@@ -200,7 +200,7 @@ function SheetCell({
 }) {
   const raw = row.values[column.id];
 
-  if (column.dataType === 'BOOLEAN') {
+  if (column.dataType === 'BOOLEAN' && !formulaActive) {
     return (
       <select
         className="dataset-sheet__cell-editor"
