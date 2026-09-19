@@ -2032,3 +2032,74 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .canvas-flow--pen .react-flow__node {
   cursor: crosshair;
 }
+
+
+/* Freehand pen controls + eraser */
+.freehand-capture--eraser {
+  cursor: cell;
+}
+.freehand-options {
+  position: absolute;
+  z-index: 32;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-height: 42px;
+  padding: 6px 8px;
+  border: 1px solid #dce0e6;
+  border-radius: 11px;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 10px 30px rgba(25,30,40,.13);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  backdrop-filter: blur(8px);
+}
+.freehand-options__mode {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #4d5662;
+}
+.freehand-options__mode strong {
+  font-size: 9px;
+}
+.freehand-options > label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #7b828c;
+  font-size: 8px;
+  font-weight: 700;
+}
+.freehand-options input[type="color"] {
+  width: 28px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid #d9dde3;
+  border-radius: 6px;
+  background: #fff;
+}
+.freehand-options__width input[type="range"] {
+  width: 110px;
+}
+.freehand-options__width output {
+  min-width: 42px;
+  color: #56606b;
+  font-size: 8px;
+  text-align: right;
+}
+.freehand-options input:disabled {
+  opacity: .4;
+}
+
+@media (max-width: 700px) {
+  .freehand-options {
+    left: 80px;
+    right: 10px;
+    transform: none;
+  }
+  .freehand-options__width input[type="range"] {
+    width: 70px;
+  }
+}

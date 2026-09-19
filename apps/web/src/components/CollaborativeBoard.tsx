@@ -22,7 +22,7 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Database, Hand, MessageSquare, MousePointer2, Network, PenLine, Redo2, Shapes, StickyNote, Type, Undo2, UploadCloud, X } from 'lucide-react';
+import { Database, Eraser, Hand, MessageSquare, MousePointer2, Network, PenLine, Redo2, Shapes, StickyNote, Type, Undo2, UploadCloud, X } from 'lucide-react';
 import {
   DEMO_ROLES_DATASET_ID,
   DEMO_USERS_DATASET_ID,
@@ -69,7 +69,7 @@ type CsvDropState = {
   position: { x: number; y: number };
 };
 
-type ToolMode = 'select' | 'hand' | 'pen';
+type ToolMode = 'select' | 'hand' | 'pen' | 'eraser';
 
 const USERS_ROLE_ID_COLUMN = '41000000-0000-0000-0000-000000000003';
 const ROLES_ID_COLUMN = '42000000-0000-0000-0000-000000000001';
@@ -202,6 +202,9 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const [strokes, setStrokes] = useState<FreehandStroke[]>([]);
   const [draftStroke, setDraftStroke] =
     useState<FreehandStroke | null>(null);
+  const [penColor, setPenColor] = useState('#344054');
+  const [penWidth, setPenWidth] = useState(2.6);
+  const erasingRef = useRef(false);
   const [status, setStatus] = useState('connecting');
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
   const [presence, setPresence] = useState<Array<[number, PresenceState]>>([]);
@@ -362,6 +365,10 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
       if (!readOnly && event.key === 'p') {
         setSelectedNodeId(null);
         setToolMode('pen');
+      }
+      if (!readOnly && event.key === 'e') {
+        setSelectedNodeId(null);
+        setToolMode('eraser');
       }
     };
 
@@ -1007,12 +1014,19 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
       setDraftStroke({
         id: crypto.randomUUID(),
         points: [point],
-        width: 2.6,
-        color: '#344054',
+        width: penWidth,
+        color: penColor,
         createdBy: session.user.id,
       });
     },
-    [readOnly, rf, session.user.id, toolMode],
+    [
+      penColor,
+      penWidth,
+      readOnly,
+      rf,
+      session.user.id,
+      toolMode,
+    ],
   );
 
   const moveFreehand = useCallback(
@@ -1056,6 +1070,70 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
       }
     },
     [strokesMap, toolMode],
+  );
+
+  const eraseAtPointer = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!rf) return;
+
+      const point = rf.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      let closestId: string | null = null;
+      let closestDistance = Number.POSITIVE_INFINITY;
+
+      for (const stroke of strokesMap.values()) {
+        for (const strokePoint of stroke.points) {
+          const distance = pointDistance(strokePoint, point);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestId = stroke.id;
+          }
+        }
+      }
+
+      if (closestId && closestDistance <= 10) {
+        strokesMap.delete(closestId);
+      }
+    },
+    [rf, strokesMap],
+  );
+
+  const beginErase = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (readOnly || toolMode !== 'eraser') return;
+
+      event.preventDefault();
+      erasingRef.current = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      eraseAtPointer(event);
+    },
+    [eraseAtPointer, readOnly, toolMode],
+  );
+
+  const moveErase = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (
+        toolMode !== 'eraser' ||
+        !erasingRef.current
+      ) {
+        return;
+      }
+      eraseAtPointer(event);
+    },
+    [eraseAtPointer, toolMode],
+  );
+
+  const finishErase = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      erasingRef.current = false;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    },
+    [],
   );
 
   const onPointerMove = useCallback((event: React.PointerEvent) => {
@@ -1225,6 +1303,17 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
               >
                 <PenLine size={19} />
               </button>
+              <button
+                className={toolMode === 'eraser' ? 'is-active' : ''}
+                disabled={readOnly}
+                title="Ластик для рисунков (E)"
+                onClick={() => {
+                  setSelectedNodeId(null);
+                  setToolMode('eraser');
+                }}
+              >
+                <Eraser size={19} />
+              </button>
               <div className="toolbar-separator" />
               <button
                 title="Отменить (Ctrl+Z)"
@@ -1286,14 +1375,63 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
           </ViewportPortal>
         </ReactFlow>
 
-        {toolMode === 'pen' && !readOnly && (
+        {(toolMode === 'pen' || toolMode === 'eraser') && !readOnly && (
           <div
-            className="freehand-capture"
-            onPointerDown={beginFreehand}
-            onPointerMove={moveFreehand}
-            onPointerUp={finishFreehand}
-            onPointerCancel={finishFreehand}
+            className={`freehand-capture freehand-capture--${toolMode}`}
+            onPointerDown={
+              toolMode === 'pen' ? beginFreehand : beginErase
+            }
+            onPointerMove={
+              toolMode === 'pen' ? moveFreehand : moveErase
+            }
+            onPointerUp={
+              toolMode === 'pen' ? finishFreehand : finishErase
+            }
+            onPointerCancel={
+              toolMode === 'pen' ? finishFreehand : finishErase
+            }
           />
+        )}
+
+        {(toolMode === 'pen' || toolMode === 'eraser') && !readOnly && (
+          <div className="freehand-options">
+            <div className="freehand-options__mode">
+              {toolMode === 'pen' ? (
+                <PenLine size={14} />
+              ) : (
+                <Eraser size={14} />
+              )}
+              <strong>
+                {toolMode === 'pen' ? 'Перо' : 'Ластик'}
+              </strong>
+            </div>
+
+            <label title="Цвет пера">
+              <span>Цвет</span>
+              <input
+                type="color"
+                value={penColor}
+                disabled={toolMode !== 'pen'}
+                onChange={(event) => setPenColor(event.target.value)}
+              />
+            </label>
+
+            <label className="freehand-options__width">
+              <span>Толщина</span>
+              <input
+                type="range"
+                min="1"
+                max="12"
+                step="0.5"
+                value={penWidth}
+                disabled={toolMode !== 'pen'}
+                onChange={(event) =>
+                  setPenWidth(Number(event.target.value))
+                }
+              />
+              <output>{penWidth.toFixed(1)} px</output>
+            </label>
+          </div>
         )}
 
         {sheetTarget && (

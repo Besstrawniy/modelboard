@@ -35,6 +35,8 @@
 - режимы Select/Hand;
 - Undo/Redo через Yjs и горячие клавиши;
 - свободное рисование Pen tool: strokes синхронизируются через Yjs и участвуют в Undo/Redo;
+- настройка цвета и толщины Pen;
+- Eraser удаляет freehand-strokes с поддержкой Undo/Redo;
 - встроенная палитра инфраструктуры: сервер, VM, switch, router, firewall, database, cloud;
 - DeviceNode поддерживает те же ROW bindings, что и обычный Shape;
 - полноэкранный Dataset-режим по двойному клику на TableNode;
@@ -259,7 +261,7 @@ npm run build
 - нормальная регистрация/логин;
 - production-ready миграционная политика и rollback-команды;
 - формулы и autofill;
-- выбор цвета/толщины пера, ластик и выделение отдельных strokes;
+- выделение, перемещение и изменение отдельных freehand strokes;
 - CELL binding и многошаговые Relation View (одношаговый Relation View уже работает);
 - категории и наборы SVG-библиотек;
 - история изменений;
