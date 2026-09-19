@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Database, Link2 } from 'lucide-react';
+import { ArrowLeftRight, Database, GitBranchPlus, Link2 } from 'lucide-react';
 import type {
   DatasetRelation,
   DatasetRow,
@@ -7,6 +7,7 @@ import type {
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
+import { useBoardActions } from './BoardContext';
 
 function sameValue(a: unknown, b: unknown) {
   if (a === null || a === undefined || b === null || b === undefined) {
@@ -32,12 +33,18 @@ function RelatedRelationSection({
   currentDataset,
   currentRow,
   token,
+  parentNodeId,
 }: {
   relation: DatasetRelation;
   currentDataset: DatasetSnapshot;
   currentRow: DatasetRow;
   token: string;
+  parentNodeId: string;
 }) {
+  const { readOnly, materializeRelated } = useBoardActions();
+  const [materializing, setMaterializing] = useState(false);
+  const [materializeMessage, setMaterializeMessage] = useState('');
+
   const currentIsSource = relation.sourceDatasetId === currentDataset.id;
   const otherDatasetId = currentIsSource
     ? relation.targetDatasetId
@@ -76,6 +83,32 @@ function RelatedRelationSection({
     (column) => column.id === remoteColumnId,
   );
 
+  const showOnCanvas = async () => {
+    if (!otherDataset || matches.length === 0 || readOnly) return;
+
+    setMaterializing(true);
+    setMaterializeMessage('');
+    try {
+      const created = await materializeRelated({
+        parentNodeId,
+        relation,
+        dataset: otherDataset,
+        rows: matches,
+      });
+      setMaterializeMessage(
+        created > 0
+          ? `Добавлено объектов: ${created}`
+          : 'Все связанные объекты уже есть на canvas.',
+      );
+    } catch (error) {
+      setMaterializeMessage(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setMaterializing(false);
+    }
+  };
+
   return (
     <article className="related-relation">
       <div className="related-relation__header">
@@ -105,6 +138,27 @@ function RelatedRelationSection({
       <div className="related-relation__value">
         Значение связи: <code>{String(localValue ?? 'NULL')}</code>
       </div>
+
+      {matches.length > 0 && otherDataset && !readOnly && (
+        <div className="related-relation__actions">
+          <button
+            disabled={materializing}
+            onClick={showOnCanvas}
+            title="Создать живые Shape для связанных строк"
+          >
+            <GitBranchPlus size={13} />
+            {materializing
+              ? 'Добавление…'
+              : `Показать на canvas (${Math.min(matches.length, 20)})`}
+          </button>
+        </div>
+      )}
+
+      {materializeMessage && (
+        <div className="related-relation__message">
+          {materializeMessage}
+        </div>
+      )}
 
       {matches.length === 0 ? (
         <p className="related-relation__empty">
@@ -156,11 +210,13 @@ export function RelatedRecords({
   token,
   dataset,
   row,
+  parentNodeId,
 }: {
   workspaceId: string;
   token: string;
   dataset: DatasetSnapshot;
   row: DatasetRow;
+  parentNodeId: string;
 }) {
   const [relations, setRelations] = useState<DatasetRelation[]>([]);
   const [error, setError] = useState('');
@@ -200,6 +256,7 @@ export function RelatedRecords({
               currentDataset={dataset}
               currentRow={row}
               token={token}
+              parentNodeId={parentNodeId}
             />
           ))}
         </div>

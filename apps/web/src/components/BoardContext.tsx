@@ -1,4 +1,16 @@
+import type {
+  DatasetRelation,
+  DatasetRow,
+  DatasetSnapshot,
+} from '@modelboard/shared';
 import { createContext, useContext } from 'react';
+
+export type MaterializeRelatedInput = {
+  parentNodeId: string;
+  relation: DatasetRelation;
+  dataset: DatasetSnapshot;
+  rows: DatasetRow[];
+};
 
 export type BoardActions = {
   readOnly: boolean;
@@ -6,6 +18,7 @@ export type BoardActions = {
   boardId: string;
   workspaceId: string;
   updateNodeData: (nodeId: string, patch: Record<string, unknown>) => void;
+  materializeRelated: (input: MaterializeRelatedInput) => Promise<number>;
 };
 
 const BoardActionsContext = createContext<BoardActions>({
@@ -14,6 +27,7 @@ const BoardActionsContext = createContext<BoardActions>({
   boardId: '',
   workspaceId: '',
   updateNodeData: () => undefined,
+  materializeRelated: async () => 0,
 });
 
 export const BoardActionsProvider = BoardActionsContext.Provider;

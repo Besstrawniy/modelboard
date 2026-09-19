@@ -30,8 +30,11 @@ import {
   type AuthSession,
   type BoardMeta,
   type CreateDatasetInput,
+  type DatasetRelation,
   type DatasetRelationCardinality,
   type DatasetRelationType,
+  type DatasetRow,
+  type DatasetSnapshot,
 } from '@modelboard/shared';
 import { BoardActionsProvider } from './BoardContext';
 import { TableNode } from './TableNode';
@@ -409,6 +412,139 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
     nodesMap.set(nodeId, { ...current, data: { ...(current.data as any), ...patch } });
   }, [nodesMap, readOnly]);
 
+  const materializeRelated = useCallback(async ({
+    parentNodeId,
+    relation,
+    dataset,
+    rows,
+  }: {
+    parentNodeId: string;
+    relation: DatasetRelation;
+    dataset: DatasetSnapshot;
+    rows: DatasetRow[];
+  }) => {
+    if (readOnly) return 0;
+
+    const parent = nodesMap.get(parentNodeId) as Node | undefined;
+    if (!parent) return 0;
+
+    const limitedRows = rows.slice(0, 20);
+    const titleCandidates = ['hostname', 'name', 'title', 'label', 'service'];
+    const subtitleCandidates = ['ip', 'ip_address', 'address', 'port', 'status'];
+
+    const byNames = (candidates: string[]) =>
+      dataset.columns.find((column) =>
+        candidates.includes(column.name.trim().toLowerCase()),
+      )?.id;
+
+    const titleColumnId =
+      byNames(titleCandidates) ??
+      dataset.columns.find((column) => !/^(id|.*_id)$/i.test(column.name))?.id ??
+      dataset.columns[0]?.id;
+
+    const subtitleColumnId =
+      byNames(subtitleCandidates) ??
+      dataset.columns.find((column) => column.id !== titleColumnId)?.id;
+
+    const columnsPerBand = 6;
+    const createdNodes: Node[] = [];
+    const createdEdges: Edge[] = [];
+
+    for (let index = 0; index < limitedRows.length; index += 1) {
+      const row = limitedRows[index];
+      const childId = `related:${parentNodeId}:${relation.id}:${row.id}`;
+      const edgeId = `related-edge:${parentNodeId}:${relation.id}:${row.id}`;
+
+      if (nodesMap.has(childId)) {
+        continue;
+      }
+
+      const binding = await api.upsertObjectBinding(
+        meta.id,
+        childId,
+        session.token,
+        {
+          type: 'ROW',
+          datasetId: dataset.id,
+          rowId: row.id,
+          presentation: {
+            ...(titleColumnId ? { titleColumnId } : {}),
+            ...(subtitleColumnId && subtitleColumnId !== titleColumnId
+              ? { subtitleColumnId }
+              : {}),
+          },
+        },
+      );
+
+      const columnIndex = Math.floor(index / columnsPerBand);
+      const rowIndex = index % columnsPerBand;
+      const rowsInColumn = Math.min(
+        columnsPerBand,
+        limitedRows.length - columnIndex * columnsPerBand,
+      );
+      const verticalOffset = (rowIndex - (rowsInColumn - 1) / 2) * 138;
+
+      createdNodes.push({
+        id: childId,
+        type: 'shape',
+        position: {
+          x: parent.position.x + 330 + columnIndex * 270,
+          y: parent.position.y + verticalOffset,
+        },
+        style: { width: 220, height: 105 },
+        data: {
+          binding,
+          generatedFrom: {
+            parentNodeId,
+            relationId: relation.id,
+            rowId: row.id,
+          },
+        },
+      });
+
+      if (!edgesMap.has(edgeId)) {
+        createdEdges.push({
+          id: edgeId,
+          source: parentNodeId,
+          target: childId,
+          type: 'smoothstep',
+          label: relation.cardinality
+            ? `${relation.relationType === 'FOREIGN_KEY' ? 'FK' : relation.relationType}  ${relation.cardinality}`
+            : relation.relationType,
+          markerEnd: { type: MarkerType.ArrowClosed },
+          data: {
+            relationId: relation.id,
+            relationType: relation.relationType,
+            cardinality: relation.cardinality ?? null,
+            generated: true,
+          },
+        });
+      }
+    }
+
+    if (createdNodes.length === 0) {
+      return 0;
+    }
+
+    ydoc.transact(() => {
+      for (const node of createdNodes) {
+        nodesMap.set(node.id, node);
+      }
+      for (const edge of createdEdges) {
+        edgesMap.set(edge.id, edge);
+      }
+    });
+
+    return createdNodes.length;
+  }, [
+    edgesMap,
+    meta.id,
+    nodesMap,
+    readOnly,
+    session.token,
+    ydoc,
+  ]);
+
   const viewportCenter = useCallback(() => {
     if (!rf) return { x: 360, y: 220 };
     return rf.screenToFlowPosition({
@@ -538,6 +674,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
         boardId: meta.id,
         workspaceId: meta.workspaceId,
         updateNodeData,
+        materializeRelated,
       }}
     >
       <div

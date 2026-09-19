@@ -312,6 +312,7 @@ export function InspectorPanel({
               token={token}
               dataset={dataset}
               row={boundRow}
+              parentNodeId={node.id}
             />
           </>
         )}
