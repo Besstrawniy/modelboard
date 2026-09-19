@@ -3,7 +3,7 @@ import { Database } from '@hocuspocus/extension-database';
 import { Logger } from '@hocuspocus/extension-logger';
 import jwt from 'jsonwebtoken';
 import * as Y from 'yjs';
-import { pool, query } from '@modelboard/db';
+import { pool, query, runMigrations } from '@modelboard/db';
 import { canEditBoard, type WorkspaceRole } from '@modelboard/shared';
 
 const jwtSecret = process.env.JWT_SECRET ?? 'change-me-in-production';
@@ -53,6 +53,14 @@ async function projectDatasetStateToPostgres(
         row.values && typeof row.values === 'object'
           ? row.values
           : {},
+    }));
+
+    const formulas = Array.from(
+      doc.getMap<any>('formulas').values(),
+    ).map((formula: any) => ({
+      rowId: String(formula.rowId),
+      columnId: String(formula.columnId),
+      expression: String(formula.expression ?? ''),
     }));
 
     const client = await pool.connect();
@@ -109,6 +117,39 @@ async function projectDatasetStateToPostgres(
         );
       }
 
+      await client.query(
+        'DELETE FROM dataset_formulas WHERE dataset_id = $1',
+        [datasetId],
+      );
+
+      if (formulas.length > 0) {
+        await client.query(
+          `INSERT INTO dataset_formulas (
+             dataset_id, row_id, column_id, expression
+           )
+           SELECT
+             $1,
+             source.row_id,
+             source.column_id,
+             source.expression
+           FROM jsonb_to_recordset($2::jsonb) AS source(
+             row_id uuid,
+             column_id uuid,
+             expression text
+           )`,
+          [
+            datasetId,
+            JSON.stringify(
+              formulas.map((formula) => ({
+                row_id: formula.rowId,
+                column_id: formula.columnId,
+                expression: formula.expression,
+              })),
+            ),
+          ],
+        );
+      }
+
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -161,10 +202,23 @@ async function bootstrapDataset(datasetId: string) {
     [datasetId],
   );
 
+  const formulasResult = await query<{
+    row_id: string;
+    column_id: string;
+    expression: string;
+  }>(
+    `SELECT row_id, column_id, expression
+     FROM dataset_formulas
+     WHERE dataset_id = $1
+     ORDER BY row_id, column_id`,
+    [datasetId],
+  );
+
   const doc = new Y.Doc();
   const meta = doc.getMap<any>('meta');
   const columns = doc.getMap<any>('columns');
   const rows = doc.getMap<any>('rows');
+  const formulas = doc.getMap<any>('formulas');
 
   meta.set('id', dataset.id);
   meta.set('workspaceId', dataset.workspace_id);
@@ -189,10 +243,24 @@ async function bootstrapDataset(datasetId: string) {
     });
   }
 
+  for (const formula of formulasResult.rows) {
+    formulas.set(
+      `${formula.row_id}:${formula.column_id}`,
+      {
+        rowId: formula.row_id,
+        columnId: formula.column_id,
+        expression: formula.expression,
+      },
+    );
+  }
+
   return Y.encodeStateAsUpdate(doc);
 }
 
-const server = new Server({
+async function startCollaborationServer() {
+  await runMigrations();
+
+  const server = new Server({
   name: 'modelboard-collab',
   port,
   debounce: 1000,
@@ -312,7 +380,12 @@ const server = new Server({
       onLoadDocument: false,
     }),
   ],
-});
+  });
 
-server.listen();
-console.log(`ModelBoard collaboration server listening on ws://localhost:${port}`);
+  server.listen();
+  console.log(
+    `ModelBoard collaboration server listening on ws://localhost:${port}`,
+  );
+}
+
+void startCollaborationServer();

@@ -55,9 +55,16 @@ export type DatasetRow = {
   values: Record<string, DatasetCellValue>;
 };
 
+export type DatasetFormula = {
+  rowId: string;
+  columnId: string;
+  expression: string;
+};
+
 export type DatasetSnapshot = DatasetMeta & {
   columns: DatasetColumn[];
   rows: DatasetRow[];
+  formulas: DatasetFormula[];
 };
 
 export type ConvertDatasetColumnInput = {
