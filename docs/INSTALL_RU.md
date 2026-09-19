@@ -175,28 +175,78 @@ id;hostname;ip
 
 ## 11. Обновление проекта
 
+Если процесс уже работает, остановите его через `Ctrl+C`.
+
+Затем:
+
 ```bash
 git pull
 npm install
 npm run dev
 ```
 
-Если процесс уже работает, сначала остановите его через `Ctrl+C`.
+При старте API автоматически выполняет ещё не применённые SQL-миграции из:
 
-## 12. Сброс dev-БД
+```text
+packages/db/migrations/
+```
 
-На ранней стадии проекта миграции БД ещё не внедрены. Если изменился `infra/postgres/init.sql`, может потребоваться пересоздать dev volume:
+Применённые версии фиксируются в таблице `schema_migrations`.
+
+Поэтому после обычного обновления проекта **не нужно удалять PostgreSQL volume** и не нужно повторно выполнять `init.sql`.
+
+## 12. Миграции и сброс dev-БД
+
+Нормальное обновление схемы:
+
+```bash
+git pull
+npm run dev
+```
+
+В логе API при наличии новой миграции появится сообщение вида:
+
+```text
+Applied database migration: 001_object_templates.sql
+```
+
+Полный сброс БД нужен только если вы сознательно хотите удалить все локальные данные:
 
 ```bash
 docker compose down -v
 docker compose up -d postgres
 ```
 
-**Внимание:** команда `down -v` удаляет данные текущей dev-БД.
+**Внимание:** `down -v` безвозвратно удаляет текущие Dataset, шаблоны, комментарии и другие данные dev-БД.
 
-После появления миграций этот шаг будет убран.
+## 13. WSL
 
-## 13. Остановка
+Для Windows рекомендуется запускать ModelBoard внутри WSL2, но сам репозиторий лучше хранить в Linux filesystem, например:
+
+```bash
+mkdir -p ~/projects
+cd ~/projects
+git clone https://github.com/Besstrawniy/modelboard.git
+cd modelboard
+```
+
+Путь вида:
+
+```text
+/mnt/c/Users/.../modelboard
+```
+
+тоже работает, но npm/Vite могут быть медленнее, а на `node_modules` иногда встречаются ошибки `ENOTEMPTY` из-за NTFS.
+
+Обязательно используйте Node.js 22+:
+
+```bash
+node -v
+```
+
+Если используется Node.js 18, Vite 8 может завершиться ошибкой, связанной с `node:util/styleText`.
+
+## 14. Остановка
 
 Node.js процессы:
 
@@ -216,7 +266,7 @@ docker compose down
 docker compose down -v
 ```
 
-## 14. Диагностика
+## 15. Диагностика
 
 ### Порт уже занят
 
