@@ -22,7 +22,7 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Database, Eraser, Hand, LayoutDashboard, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X } from 'lucide-react';
+import { ChevronDown, ClipboardPaste, Copy, Database, Eraser, Grid3X3, Hand, LayoutDashboard, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X } from 'lucide-react';
 import {
   DEMO_BOARD_ID,
   DEMO_ROLES_DATASET_ID,
@@ -39,6 +39,7 @@ import {
   type DeviceKind,
   type FreehandPoint,
   type FreehandStroke,
+  type ObjectBindingRecord,
   type VisualTemplateRef,
   type WorkspaceObjectTemplate,
 } from '@modelboard/shared';
@@ -68,6 +69,11 @@ type PresenceState = {
 type CsvDropState = {
   parsed: ParsedCsv;
   position: { x: number; y: number };
+};
+
+type BoardClipboard = {
+  nodes: Node[];
+  edges: Edge[];
 };
 
 type ToolMode = 'select' | 'hand' | 'pen' | 'eraser';
@@ -214,6 +220,7 @@ function BoardInner({
     [edgesMap, nodesMap, strokesMap],
   );
   const initialSyncDone = useRef(false);
+  const pasteOffsetRef = useRef(0);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [strokes, setStrokes] = useState<FreehandStroke[]>([]);
@@ -233,6 +240,11 @@ function BoardInner({
   const [dropError, setDropError] = useState('');
   const [pendingRelation, setPendingRelation] = useState<PendingRelation | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [clipboard, setClipboard] = useState<BoardClipboard | null>(null);
+  const [snapToGrid, setSnapToGrid] = useState(() =>
+    localStorage.getItem('modelboard:snap-to-grid') !== 'false',
+  );
   const [toolMode, setToolMode] = useState<ToolMode>('select');
   const [historyTick, setHistoryTick] = useState(0);
   const [sheetTarget, setSheetTarget] = useState<{
@@ -254,6 +266,7 @@ function BoardInner({
 
   useEffect(() => {
     setSelectedNodeId(null);
+    setSelectedNodeIds([]);
     setSheetTarget(null);
     setPendingRelation(null);
     setCommentsOpen(false);
@@ -321,7 +334,21 @@ function BoardInner({
     });
     setProvider(instance);
 
-    const syncNodes = () => setNodes(Array.from(nodesMap.values()));
+    const syncNodes = () =>
+      setNodes((current) => {
+        const selected = new Set(
+          current
+            .filter((node) => node.selected)
+            .map((node) => node.id),
+        );
+
+        return Array.from(nodesMap.values()).map(
+          (node: Node) => ({
+            ...node,
+            selected: selected.has(node.id),
+          }),
+        );
+      });
     const syncEdges = () => setEdges(Array.from(edgesMap.values()));
     const syncStrokes = () =>
       setStrokes(Array.from(strokesMap.values()));
@@ -373,6 +400,211 @@ function BoardInner({
   const canRedo = undoManager.redoStack.length > 0;
 
   useEffect(() => {
+    localStorage.setItem(
+      'modelboard:snap-to-grid',
+      String(snapToGrid),
+    );
+  }, [snapToGrid]);
+
+  const clearSelection = useCallback(() => {
+    setNodes((current) =>
+      current.map((node) =>
+        node.selected
+          ? { ...node, selected: false }
+          : node,
+      ),
+    );
+    setSelectedNodeIds([]);
+    setSelectedNodeId(null);
+  }, []);
+
+  const copySelection = useCallback(() => {
+    if (selectedNodeIds.length === 0) return;
+
+    const selected = new Set(selectedNodeIds);
+    const sourceNodes = nodes
+      .filter((node) => selected.has(node.id))
+      .map((node) => {
+        const copy = structuredClone(node);
+        copy.selected = false;
+        return copy;
+      });
+
+    const sourceEdges = edges
+      .filter(
+        (edge) =>
+          selected.has(edge.source) &&
+          selected.has(edge.target),
+      )
+      .map((edge) => structuredClone(edge));
+
+    if (sourceNodes.length === 0) return;
+
+    setClipboard({
+      nodes: sourceNodes,
+      edges: sourceEdges,
+    });
+    pasteOffsetRef.current = 0;
+  }, [edges, nodes, selectedNodeIds]);
+
+  const cloneToBoard = useCallback(
+    async (
+      sourceNodes: Node[],
+      sourceEdges: Edge[],
+      offset: number,
+    ) => {
+      if (readOnly || sourceNodes.length === 0) {
+        return [] as string[];
+      }
+
+      const idMap = new Map<string, string>();
+      for (const source of sourceNodes) {
+        idMap.set(source.id, crypto.randomUUID());
+      }
+
+      const clonedNodes = await Promise.all(
+        sourceNodes.map(async (source) => {
+          const id = idMap.get(source.id)!;
+          const data = structuredClone(
+            (source.data ?? {}) as Record<string, any>,
+          );
+
+          delete data.generatedFrom;
+
+          if (data.parentNodeId) {
+            data.parentNodeId =
+              idMap.get(String(data.parentNodeId)) ??
+              undefined;
+          }
+
+          const oldBinding =
+            data.binding as ObjectBindingRecord | undefined;
+
+          if (oldBinding) {
+            const binding = await api.upsertObjectBinding(
+              meta.id,
+              id,
+              session.token,
+              {
+                type: oldBinding.type,
+                datasetId: oldBinding.datasetId,
+                rowId: oldBinding.rowId,
+                columnId: oldBinding.columnId,
+                relationPath: oldBinding.relationPath,
+                presentation: oldBinding.presentation,
+              },
+            );
+
+            data.binding = binding;
+          }
+
+          const clone = structuredClone(source);
+          clone.id = id;
+          clone.position = {
+            x: source.position.x + offset,
+            y: source.position.y + offset,
+          };
+          clone.data = data;
+          clone.selected = false;
+
+          return clone;
+        }),
+      );
+
+      const clonedEdges = sourceEdges.map((source) => {
+        const clone = structuredClone(source);
+        clone.id = crypto.randomUUID();
+        clone.source =
+          idMap.get(source.source) ?? source.source;
+        clone.target =
+          idMap.get(source.target) ?? source.target;
+        clone.selected = false;
+        return clone;
+      });
+
+      ydoc.transact(() => {
+        for (const node of clonedNodes) {
+          const persisted = {
+            ...node,
+            selected: undefined,
+          } as Node;
+          nodesMap.set(node.id, persisted);
+        }
+
+        for (const edge of clonedEdges) {
+          edgesMap.set(edge.id, edge);
+        }
+      });
+
+      const ids = clonedNodes.map((node) => node.id);
+
+      requestAnimationFrame(() => {
+        setNodes((current) =>
+          current.map((node) => ({
+            ...node,
+            selected: ids.includes(node.id),
+          })),
+        );
+        setSelectedNodeIds(ids);
+        setSelectedNodeId(
+          ids.length === 1 ? ids[0] : null,
+        );
+      });
+
+      return ids;
+    },
+    [
+      edgesMap,
+      meta.id,
+      nodesMap,
+      readOnly,
+      session.token,
+      ydoc,
+    ],
+  );
+
+  const pasteClipboard = useCallback(async () => {
+    if (!clipboard || readOnly) return;
+
+    pasteOffsetRef.current += 1;
+    const offset = 28 + pasteOffsetRef.current * 12;
+
+    await cloneToBoard(
+      clipboard.nodes,
+      clipboard.edges,
+      offset,
+    );
+  }, [clipboard, cloneToBoard, readOnly]);
+
+  const duplicateSelection = useCallback(async () => {
+    if (readOnly || selectedNodeIds.length === 0) {
+      return;
+    }
+
+    const selected = new Set(selectedNodeIds);
+    const sourceNodes = nodes.filter((node) =>
+      selected.has(node.id),
+    );
+    const sourceEdges = edges.filter(
+      (edge) =>
+        selected.has(edge.source) &&
+        selected.has(edge.target),
+    );
+
+    await cloneToBoard(
+      sourceNodes,
+      sourceEdges,
+      32,
+    );
+  }, [
+    cloneToBoard,
+    edges,
+    nodes,
+    readOnly,
+    selectedNodeIds,
+  ]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing =
@@ -399,8 +631,42 @@ function BoardInner({
         return;
       }
 
+      if (mod && key === 'c') {
+        event.preventDefault();
+        copySelection();
+        return;
+      }
+
+      if (!readOnly && mod && key === 'v') {
+        event.preventDefault();
+        void pasteClipboard();
+        return;
+      }
+
+      if (!readOnly && mod && key === 'd') {
+        event.preventDefault();
+        void duplicateSelection();
+        return;
+      }
+
+      if (mod && key === 'a') {
+        event.preventDefault();
+        const ids = nodes.map((node) => node.id);
+        setNodes((current) =>
+          current.map((node) => ({
+            ...node,
+            selected: true,
+          })),
+        );
+        setSelectedNodeIds(ids);
+        setSelectedNodeId(
+          ids.length === 1 ? ids[0] : null,
+        );
+        return;
+      }
+
       if (event.key === 'Escape') {
-        setSelectedNodeId(null);
+        clearSelection();
         setPendingRelation(null);
         setToolMode('select');
       }
@@ -419,7 +685,15 @@ function BoardInner({
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [readOnly, undoManager]);
+  }, [
+    clearSelection,
+    copySelection,
+    duplicateSelection,
+    nodes,
+    pasteClipboard,
+    readOnly,
+    undoManager,
+  ]);
 
   const persistNodeChanges = useCallback((changes: NodeChange[]) => {
     setNodes((current) => {
@@ -1500,15 +1774,21 @@ function BoardInner({
             const datasetId = (node.data as any)?.datasetId as string | undefined;
             if (datasetId) setSheetTarget({ datasetId });
           }}
-          onSelectionChange={({ nodes: selectedNodes }) =>
-            setSelectedNodeId(selectedNodes[0]?.id ?? null)
-          }
-          onPaneClick={() => setSelectedNodeId(null)}
+          onSelectionChange={({ nodes: selectedNodes }) => {
+            const ids = selectedNodes.map((node) => node.id);
+            setSelectedNodeIds(ids);
+            setSelectedNodeId(
+              ids.length === 1 ? ids[0] : null,
+            );
+          }}
+          onPaneClick={clearSelection}
           nodesDraggable={!readOnly && toolMode === 'select'}
           nodesConnectable={!readOnly && toolMode === 'select'}
           elementsSelectable={toolMode === 'select'}
           deleteKeyCode={readOnly || toolMode !== 'select' ? null : ['Backspace', 'Delete']}
           fitView
+          snapToGrid={snapToGrid}
+          snapGrid={[22, 22]}
           panOnScroll
           selectionOnDrag={toolMode === 'select'}
           panOnDrag={toolMode === 'hand' ? true : [1, 2]}
@@ -1532,7 +1812,7 @@ function BoardInner({
                 className={toolMode === 'hand' ? 'is-active' : ''}
                 title="Рука / перемещение canvas (H)"
                 onClick={() => {
-                  setSelectedNodeId(null);
+                  clearSelection();
                   setToolMode('hand');
                 }}
               >
@@ -1543,7 +1823,7 @@ function BoardInner({
                 disabled={readOnly}
                 title="Перо / свободное рисование (P)"
                 onClick={() => {
-                  setSelectedNodeId(null);
+                  clearSelection();
                   setToolMode('pen');
                 }}
               >
@@ -1554,7 +1834,7 @@ function BoardInner({
                 disabled={readOnly}
                 title="Ластик для рисунков (E)"
                 onClick={() => {
-                  setSelectedNodeId(null);
+                  clearSelection();
                   setToolMode('eraser');
                 }}
               >
@@ -1574,6 +1854,29 @@ function BoardInner({
                 onClick={() => undoManager.redo()}
               >
                 <Redo2 size={18} />
+              </button>
+              <button
+                title="Копировать (Ctrl+C)"
+                disabled={selectedNodeIds.length === 0}
+                onClick={copySelection}
+              >
+                <Copy size={17} />
+              </button>
+              <button
+                title="Вставить (Ctrl+V)"
+                disabled={readOnly || !clipboard}
+                onClick={() => void pasteClipboard()}
+              >
+                <ClipboardPaste size={17} />
+              </button>
+              <button
+                className={snapToGrid ? 'is-active' : ''}
+                title="Привязка к сетке"
+                onClick={() =>
+                  setSnapToGrid((value) => !value)
+                }
+              >
+                <Grid3X3 size={17} />
               </button>
               <div className="toolbar-separator" />
               <button onClick={() => setDatasetsOpen(true)} title="Данные"><Database size={19} /></button>

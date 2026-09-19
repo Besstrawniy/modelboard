@@ -2495,3 +2495,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   color: #8b929c;
   font-size: 7px;
 }
+
+
+/* Canvas clipboard + local multi-selection */
+.toolbar button:disabled {
+  opacity: .38;
+  cursor: not-allowed;
+}
