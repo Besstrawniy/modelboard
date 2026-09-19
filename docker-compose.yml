@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-modelboard}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-modelboard}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - modelboard_pg:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro

@@ -75,6 +75,35 @@ export type TableNodeData = {
   };
 };
 
+export type DatasetRelationType =
+  | 'REFERENCE'
+  | 'FOREIGN_KEY'
+  | 'DEPENDENCY'
+  | 'MAP'
+  | 'FLOW';
+
+export type DatasetRelationCardinality =
+  | '1:1'
+  | '1:N'
+  | 'N:1'
+  | 'N:M';
+
+export type DatasetRelation = {
+  id: string;
+  workspaceId: string;
+  sourceDatasetId: string;
+  sourceColumnId: string;
+  targetDatasetId: string;
+  targetColumnId: string;
+  relationType: DatasetRelationType;
+  cardinality?: DatasetRelationCardinality | null;
+};
+
+export type CreateDatasetRelationInput = Omit<
+  DatasetRelation,
+  'id' | 'workspaceId'
+>;
+
 export type ObjectBindingType =
   | 'DATASET'
   | 'ROW'

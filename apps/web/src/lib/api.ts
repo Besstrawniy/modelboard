@@ -2,7 +2,9 @@ import type {
   AuthSession,
   BoardMeta,
   CreateDatasetInput,
+  CreateDatasetRelationInput,
   DatasetMeta,
+  DatasetRelation,
   WorkspaceRole,
 } from '@modelboard/shared';
 
@@ -59,6 +61,25 @@ export const api = {
     input: CreateDatasetInput,
   ) =>
     json<DatasetMeta>(`/workspaces/${workspaceId}/datasets`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders(token),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    }),
+
+  relations: (workspaceId: string, token: string) =>
+    json<DatasetRelation[]>(`/workspaces/${workspaceId}/relations`, {
+      headers: authHeaders(token),
+    }),
+
+  createRelation: (
+    workspaceId: string,
+    token: string,
+    input: CreateDatasetRelationInput,
+  ) =>
+    json<DatasetRelation>(`/workspaces/${workspaceId}/relations`, {
       method: 'POST',
       headers: {
         ...authHeaders(token),

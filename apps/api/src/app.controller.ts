@@ -16,7 +16,10 @@ import {
   canComment,
   canEditBoard,
   type CreateDatasetInput,
+  type CreateDatasetRelationInput,
   type DatasetColumn,
+  type DatasetRelationCardinality,
+  type DatasetRelationType,
   type DatasetRow,
   type WorkspaceRole,
 } from '@modelboard/shared';
@@ -278,6 +281,187 @@ export class AppController {
       name,
       kind,
       role: access.role,
+    };
+  }
+
+
+  @UseGuards(AuthGuard)
+  @Get('workspaces/:id/relations')
+  async relations(@Param('id') workspaceId: string, @Req() req: any) {
+    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+
+    const result = await query<{
+      id: string;
+      workspace_id: string;
+      source_dataset_id: string;
+      source_column_id: string;
+      target_dataset_id: string;
+      target_column_id: string;
+      relation_type: DatasetRelationType;
+      cardinality: DatasetRelationCardinality | null;
+    }>(
+      `SELECT id, workspace_id, source_dataset_id, source_column_id,
+              target_dataset_id, target_column_id, relation_type, cardinality
+       FROM dataset_relations
+       WHERE workspace_id = $1
+       ORDER BY created_at, id`,
+      [workspaceId],
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      workspaceId: row.workspace_id,
+      sourceDatasetId: row.source_dataset_id,
+      sourceColumnId: row.source_column_id,
+      targetDatasetId: row.target_dataset_id,
+      targetColumnId: row.target_column_id,
+      relationType: row.relation_type,
+      cardinality: row.cardinality,
+    }));
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('workspaces/:id/relations')
+  async createRelation(
+    @Param('id') workspaceId: string,
+    @Req() req: any,
+    @Body() body: CreateDatasetRelationInput,
+  ) {
+    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
+    if (!access) throw new ForbiddenException();
+    if (!canEditBoard(access.role)) {
+      throw new ForbiddenException('Edit permission required');
+    }
+
+    const allowedTypes: DatasetRelationType[] = [
+      'REFERENCE',
+      'FOREIGN_KEY',
+      'DEPENDENCY',
+      'MAP',
+      'FLOW',
+    ];
+    const allowedCardinality: DatasetRelationCardinality[] = [
+      '1:1',
+      '1:N',
+      'N:1',
+      'N:M',
+    ];
+
+    if (!allowedTypes.includes(body.relationType)) {
+      throw new BadRequestException('Unsupported relation type');
+    }
+
+    if (
+      body.cardinality != null &&
+      !allowedCardinality.includes(body.cardinality)
+    ) {
+      throw new BadRequestException('Unsupported cardinality');
+    }
+
+    const endpoints = await query<{
+      source_dataset_id: string;
+      source_column_id: string;
+      target_dataset_id: string;
+      target_column_id: string;
+    }>(
+      `SELECT
+         sd.id AS source_dataset_id,
+         sc.id AS source_column_id,
+         td.id AS target_dataset_id,
+         tc.id AS target_column_id
+       FROM datasets sd
+       JOIN dataset_columns sc
+         ON sc.dataset_id = sd.id AND sc.id = $2
+       JOIN datasets td
+         ON td.id = $3 AND td.workspace_id = $1
+       JOIN dataset_columns tc
+         ON tc.dataset_id = td.id AND tc.id = $4
+       WHERE sd.id = $5 AND sd.workspace_id = $1`,
+      [
+        workspaceId,
+        body.sourceColumnId,
+        body.targetDatasetId,
+        body.targetColumnId,
+        body.sourceDatasetId,
+      ],
+    );
+
+    if (!endpoints.rows[0]) {
+      throw new BadRequestException(
+        'Datasets/columns must exist and belong to this workspace',
+      );
+    }
+
+    const existing = await query<{
+      id: string;
+      workspace_id: string;
+      source_dataset_id: string;
+      source_column_id: string;
+      target_dataset_id: string;
+      target_column_id: string;
+      relation_type: DatasetRelationType;
+      cardinality: DatasetRelationCardinality | null;
+    }>(
+      `SELECT id, workspace_id, source_dataset_id, source_column_id,
+              target_dataset_id, target_column_id, relation_type, cardinality
+       FROM dataset_relations
+       WHERE workspace_id = $1
+         AND source_dataset_id = $2
+         AND source_column_id = $3
+         AND target_dataset_id = $4
+         AND target_column_id = $5
+         AND relation_type = $6
+         AND cardinality IS NOT DISTINCT FROM $7
+       LIMIT 1`,
+      [
+        workspaceId,
+        body.sourceDatasetId,
+        body.sourceColumnId,
+        body.targetDatasetId,
+        body.targetColumnId,
+        body.relationType,
+        body.cardinality ?? null,
+      ],
+    );
+
+    let row = existing.rows[0];
+
+    if (!row) {
+      const relationId = randomUUID();
+      const inserted = await query<typeof existing.rows[number]>(
+        `INSERT INTO dataset_relations (
+           id, workspace_id,
+           source_dataset_id, source_column_id,
+           target_dataset_id, target_column_id,
+           relation_type, cardinality
+         )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         RETURNING id, workspace_id, source_dataset_id, source_column_id,
+                   target_dataset_id, target_column_id, relation_type, cardinality`,
+        [
+          relationId,
+          workspaceId,
+          body.sourceDatasetId,
+          body.sourceColumnId,
+          body.targetDatasetId,
+          body.targetColumnId,
+          body.relationType,
+          body.cardinality ?? null,
+        ],
+      );
+      row = inserted.rows[0];
+    }
+
+    return {
+      id: row.id,
+      workspaceId: row.workspace_id,
+      sourceDatasetId: row.source_dataset_id,
+      sourceColumnId: row.source_column_id,
+      targetDatasetId: row.target_dataset_id,
+      targetColumnId: row.target_column_id,
+      relationType: row.relation_type,
+      cardinality: row.cardinality,
     };
   }
 

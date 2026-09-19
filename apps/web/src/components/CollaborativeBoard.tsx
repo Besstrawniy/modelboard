@@ -30,6 +30,8 @@ import {
   type AuthSession,
   type BoardMeta,
   type CreateDatasetInput,
+  type DatasetRelationCardinality,
+  type DatasetRelationType,
 } from '@modelboard/shared';
 import { BoardActionsProvider } from './BoardContext';
 import { TableNode } from './TableNode';
@@ -41,6 +43,7 @@ import { DatasetsPanel } from './DatasetsPanel';
 import { CsvImportDialog } from './CsvImportDialog';
 import { parseCsvFile, type ParsedCsv } from '../lib/csv';
 import { api } from '../lib/api';
+import { RelationDialog, type PendingRelation } from './RelationDialog';
 
 type PresenceState = {
   user?: { id: string; name: string; role: string };
@@ -147,6 +150,7 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
   const [csvDrop, setCsvDrop] = useState<CsvDropState | null>(null);
   const [dropActive, setDropActive] = useState(false);
   const [dropError, setDropError] = useState('');
+  const [pendingRelation, setPendingRelation] = useState<PendingRelation | null>(null);
 
   useEffect(() => {
     const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
@@ -245,17 +249,80 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
 
   const onConnect = useCallback((connection: Connection) => {
     if (readOnly) return;
+    if (!connection.source || !connection.target) return;
+
+    const sourceNode = nodesMap.get(connection.source) as Node | undefined;
+    const targetNode = nodesMap.get(connection.target) as Node | undefined;
+    const sourceDatasetId = (sourceNode?.data as any)?.datasetId as string | undefined;
+    const targetDatasetId = (targetNode?.data as any)?.datasetId as string | undefined;
+    const sourceColumnId = connection.sourceHandle?.replace(/^source:/, '');
+    const targetColumnId = connection.targetHandle?.replace(/^target:/, '');
+
+    if (
+      sourceNode?.type === 'table' &&
+      targetNode?.type === 'table' &&
+      sourceDatasetId &&
+      targetDatasetId &&
+      sourceColumnId &&
+      targetColumnId
+    ) {
+      setPendingRelation({
+        connection,
+        sourceDatasetId,
+        sourceColumnId,
+        targetDatasetId,
+        targetColumnId,
+      });
+      return;
+    }
+
     const edge: Edge = {
       ...connection,
       id: crypto.randomUUID(),
       type: 'smoothstep',
-      label: connection.sourceHandle?.includes('source:') ? 'REFERENCE' : undefined,
       markerEnd: { type: MarkerType.ArrowClosed },
-      data: { relationType: 'REFERENCE' },
+      data: { relationType: 'VISUAL' },
     };
     setEdges((current) => addEdge(edge, current));
     edgesMap.set(edge.id, edge);
-  }, [edgesMap, readOnly]);
+  }, [edgesMap, nodesMap, readOnly]);
+
+  const confirmRelation = useCallback(async (
+    relationType: DatasetRelationType,
+    cardinality: DatasetRelationCardinality | null,
+  ) => {
+    if (!pendingRelation) return;
+
+    const relation = await api.createRelation(meta.workspaceId, session.token, {
+      sourceDatasetId: pendingRelation.sourceDatasetId,
+      sourceColumnId: pendingRelation.sourceColumnId,
+      targetDatasetId: pendingRelation.targetDatasetId,
+      targetColumnId: pendingRelation.targetColumnId,
+      relationType,
+      cardinality,
+    });
+
+    const edge: Edge = {
+      ...pendingRelation.connection,
+      id: crypto.randomUUID(),
+      type: 'smoothstep',
+      label: cardinality
+        ? `${relationType === 'FOREIGN_KEY' ? 'FK' : relationType}  ${cardinality}`
+        : relationType === 'FOREIGN_KEY'
+          ? 'FK'
+          : relationType,
+      markerEnd: { type: MarkerType.ArrowClosed },
+      data: {
+        relationId: relation.id,
+        relationType,
+        cardinality,
+      },
+    };
+
+    setEdges((current) => addEdge(edge, current));
+    edgesMap.set(edge.id, edge);
+    setPendingRelation(null);
+  }, [edgesMap, meta.workspaceId, pendingRelation, session.token]);
 
   const updateNodeData = useCallback((nodeId: string, patch: Record<string, unknown>) => {
     if (readOnly) return;
@@ -460,6 +527,15 @@ function BoardInner({ meta, session }: { meta: BoardMeta; session: AuthSession }
             <span>{dropError}</span>
             <button onClick={() => setDropError('')}><X size={15} /></button>
           </div>
+        )}
+
+        {pendingRelation && (
+          <RelationDialog
+            relation={pendingRelation}
+            token={session.token}
+            onCancel={() => setPendingRelation(null)}
+            onConfirm={confirmRelation}
+          />
         )}
 
         {csvDrop && (

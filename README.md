@@ -1,138 +1,250 @@
 # ModelBoard
 
-ModelBoard is an early self-hosted MVP for a workspace that combines an infinite collaborative canvas with structured data tables and semantic relations.
+**ModelBoard** — self-hosted рабочее пространство, которое объединяет интерактивную бесконечную доску, таблицы данных и семантические связи между ними.
 
-## Current vertical slice
+Идея проекта — получить гибрид **Miro + Excel + draw.io + лёгкой реляционной модели данных**. На одной доске можно рисовать схемы, оставлять стикеры и пояснения, размещать таблицы, а затем связывать визуальные объекты с реальными структурированными данными.
 
-- React Flow infinite canvas.
-- Sticky note, text, shape and dataset-backed table nodes.
-- Independent collaborative datasets: a `TableNode` stores only a `datasetId`; rows and columns live in `dataset:<id>` Yjs documents.
-- The same dataset can be placed on the same board multiple times and every view stays synchronized.
-- Dataset documents are independent from board documents, so the same dataset can later be reused across different boards without copying data.
-- Stable dataset, column and row IDs for future object/cell bindings.
-- Column-level semantic connections between table views.
-- Realtime CRDT synchronization with Yjs + Hocuspocus.
-- Presence/awareness for connected users.
-- Workspace roles: OWNER, EDITOR, COMMENTER, VIEWER.
-- Server-enforced read-only realtime sessions for COMMENTER and VIEWER.
-- REST comments: COMMENTER can comment while VIEWER is read-only.
-- PostgreSQL storage for metadata and persisted Yjs documents.
-- Dataset library panel with create/place actions.
-- CSV drag/drop on the canvas with preview, delimiter detection, header toggle and basic type inference.
-- CSV import creates a reusable Dataset and places its TableNode at the actual drop coordinates.
-- CSV MVP limits: UTF-8, 5 MB, 100 columns, 2000 data rows.
-- Four seeded demo identities for testing access levels.
+> Проект находится на стадии раннего MVP. Он уже запускается и собирается через CI, но пока не предназначен для production-эксплуатации.
 
-## Architecture
+## Что уже умеет MVP
+
+- бесконечный canvas на React Flow;
+- текст, фигуры, стикеры и стрелки;
+- интерактивные таблицы прямо на canvas;
+- Dataset как независимый источник данных;
+- несколько TableNode могут показывать один и тот же Dataset;
+- совместное редактирование через Yjs + Hocuspocus;
+- отображение подключённых пользователей и их курсоров;
+- роли `OWNER`, `EDITOR`, `COMMENTER`, `VIEWER`;
+- серверная проверка прав на Board и Dataset;
+- комментарии;
+- импорт CSV через drag&drop;
+- preview CSV перед импортом;
+- автоматическое определение типов колонок;
+- семантические связи между колонками Dataset;
+- хранение relations в PostgreSQL;
+- PostgreSQL для метаданных и persisted Yjs state.
+
+## Архитектурная идея
 
 ```text
-Board Yjs document
-  board:<board-id>
-      |
-      +-- canvas nodes / positions / edges
-      +-- TableNode { datasetId }
-
-Dataset Yjs document
-  dataset:<dataset-id>
-      |
-      +-- metadata
-      +-- stable columns
-      +-- stable rows / cell values
-
-PostgreSQL
-      |
-      +-- users / workspaces / roles / boards
-      +-- dataset metadata + bootstrap rows/columns
-      +-- dataset_relations
-      +-- object_bindings (schema reserved for later MVP)
-      +-- persisted Yjs binary documents
+Workspace
+│
+├── Board
+│   ├── Shape
+│   ├── Sticky
+│   ├── Text
+│   ├── TableNode ─────────────┐
+│   └── Edge ── relationId     │
+│                              │
+├── Board                      │
+│   └── TableNode ─────────────┤
+│                              ▼
+├── Dataset: servers
+├── Dataset: machines
+└── DatasetRelation
 ```
 
-Hocuspocus uses the PostgreSQL relational dataset rows only to bootstrap a dataset document when no CRDT state exists yet. After collaborative editing begins, the persisted Yjs binary is the live source of truth.
+Board хранит визуальное представление — положение объектов, линии, размеры и ссылки на данные.
 
-This separation is intentional: a board is a visual workspace; a dataset is reusable structured data.
+Dataset существует независимо от конкретной доски:
 
-## Run locally
+```text
+board:<board-id>
+    └── TableNode { datasetId }
 
-Requirements: Node.js 22+, npm 10+, Docker.
+dataset:<dataset-id>
+    ├── columns
+    └── rows
+```
+
+Поэтому один Dataset можно использовать на нескольких досках без копирования данных.
+
+## Быстрый запуск
+
+Требуется:
+
+- Git;
+- Node.js 22+;
+- npm 10+;
+- Docker + Docker Compose.
 
 ```bash
+git clone https://github.com/Besstrawniy/modelboard.git
+cd modelboard
+
 cp .env.example .env
+
 docker compose up -d postgres
+
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`.
+После запуска:
 
-The app shows a developer identity selector. Open the page in two browsers/incognito windows and select Owner/Editor to test simultaneous editing.
+- Web UI — `http://localhost:5173`
+- REST API — `http://localhost:3001/api`
+- Collaboration WebSocket — `ws://localhost:1234`
+- PostgreSQL — только `127.0.0.1:5432`
 
-### Important when upgrading from the first scaffold
+Подробная инструкция, включая запуск на удалённом Linux-сервере и обновление проекта: **[docs/INSTALL_RU.md](docs/INSTALL_RU.md)**.
 
-The PostgreSQL bootstrap file now contains the seeded `users` and `roles` datasets. If you already started the old Docker volume before this change, recreate the development volume once:
+## Первый вход
+
+Пока полноценная авторизация ещё не подключена. Для MVP автоматически создаются четыре тестовых пользователя:
+
+| Пользователь | Роль | Доска | Данные | Комментарии |
+| --- | --- | --- | --- | --- |
+| Owner | OWNER | редактирование | редактирование | да |
+| Editor | EDITOR | редактирование | редактирование | да |
+| Commenter | COMMENTER | просмотр | просмотр | да |
+| Viewer | VIEWER | просмотр | просмотр | нет |
+
+Можно открыть Owner и Editor в двух разных браузерах/инкогнито и проверить совместное редактирование.
+
+## Работа с Dataset
+
+TableNode не хранит строки внутри объекта доски. Он хранит только:
+
+```ts
+{
+  datasetId: "..."
+}
+```
+
+Сами данные находятся в отдельном realtime-документе `dataset:<id>`.
+
+В панели **Datasets** можно создать Dataset или повторно разместить существующий Dataset на canvas. Если один Dataset размещён дважды, изменение значения в одной таблице отображается во второй.
+
+## Импорт CSV
+
+CSV можно просто перетащить на canvas.
+
+Перед импортом ModelBoard показывает preview и позволяет:
+
+- изменить имя Dataset;
+- указать, является ли первая строка заголовком;
+- посмотреть определённый разделитель;
+- увидеть число строк и колонок;
+- проверить автоматически определённые типы.
+
+Поддерживаемые типы на текущем этапе:
+
+```text
+INTEGER
+BOOLEAN
+DATE
+UUID
+TEXT
+```
+
+Ограничения MVP:
+
+- UTF-8;
+- до 5 МБ;
+- до 100 колонок;
+- до 2000 строк.
+
+После подтверждения создаётся отдельный Dataset, а TableNode появляется в месте, куда был брошен файл.
+
+## Связи между таблицами
+
+Если протянуть соединение от колонки одной таблицы к колонке другой, ModelBoard предлагает создать **семантическую связь**.
+
+Доступны типы:
+
+- `FOREIGN_KEY`;
+- `REFERENCE`;
+- `DEPENDENCY`;
+- `MAP`;
+- `FLOW`.
+
+Кардинальность:
+
+- `1:1`;
+- `1:N`;
+- `N:1`;
+- `N:M`.
+
+Связь сохраняется в `dataset_relations`, а линия конкретной Board содержит её `relationId`.
+
+Это важно: линия — визуальное представление связи, а сама связь является самостоятельной частью модели данных.
+
+## Сетевой сценарий, ради которого развивается ModelBoard
+
+Например, есть:
+
+```text
+servers
+id | hostname | ip
+1  | srv-main | 172.168.16.2
+```
+
+и:
+
+```text
+machines
+id | server_id | hostname | ip
+10 | 1         | vm-web   | 172.168.16.10
+11 | 1         | vm-db    | 172.168.16.11
+```
+
+После создания связи:
+
+```text
+machines.server_id
+        │
+        │ FK N:1
+        ▼
+servers.id
+```
+
+следующий этап проекта позволит связать иконку сервера на схеме с конкретной строкой `servers`.
+
+Тогда изменение IP в таблице автоматически изменит отображаемый IP на схеме, а по серверу можно будет открыть связанные ВМ и сервисы.
+
+Подробнее: **[docs/OBJECT_BINDINGS.md](docs/OBJECT_BINDINGS.md)**.
+
+## Проверка сборки
+
+В репозитории настроен GitHub Actions CI.
+
+При каждом push в `main` выполняются:
 
 ```bash
-docker compose down -v
-docker compose up -d postgres
+npm install
+npm run typecheck
+npm run build
 ```
 
-This is only for the current pre-migration MVP. Proper migrations will replace this before production use.
+## Текущие ограничения
 
-## Demo board
+Пока отсутствуют:
 
-The seeded board id is:
+- production Docker image для всего приложения;
+- нормальная регистрация/логин;
+- миграции БД;
+- полноэкранный spreadsheet-режим;
+- формулы и autofill;
+- изменение структуры Dataset через UI;
+- привязка Shape/Icon к Row/Cell;
+- библиотеки SVG-иконок;
+- история изменений;
+- несколько пользовательских Workspace через интерфейс.
 
-```text
-30000000-0000-0000-0000-000000000001
-```
+## Ближайшие этапы
 
-The demo board references these reusable datasets:
+1. UI для Object Binding: `Shape/Icon → Dataset Row/Cell`.
+2. Inspector связанного объекта и переход к строке таблицы.
+3. Relation View — отображение связанных записей.
+4. Полноэкранный spreadsheet-режим.
+5. Формулы и автозаполнение.
+6. Свободное рисование.
+7. Несколько Board внутри Workspace.
+8. Импорт пользовательских SVG/icon templates.
+9. SQL schema import/export и полноценный ER-режим.
 
-```text
-users  -> 40000000-0000-0000-0000-000000000001
-roles  -> 40000000-0000-0000-0000-000000000002
-```
+## Лицензия
 
-Open **Datasets**, place `users` a second time, then edit either view. Both TableNodes read the same `dataset:<id>` document.
-
-## Access model
-
-| Role | Edit board | Edit dataset | Add comments |
-| --- | --- | --- | --- |
-| OWNER | yes | yes | yes |
-| EDITOR | yes | yes | yes |
-| COMMENTER | no | no | yes |
-| VIEWER | no | no | no |
-
-Permissions are enforced by the realtime server for both `board:<id>` and `dataset:<id>` documents.
-
-## CSV drag/drop
-
-Drop one `.csv` file anywhere on the editable canvas. ModelBoard parses it in the browser, shows a preview, lets you confirm the Dataset name and whether the first row contains headers, then creates a reusable `CSV` Dataset through the API and places a TableNode at the drop position.
-
-Current MVP limits are intentionally conservative:
-
-- UTF-8 text.
-- 5 MB file size.
-- 100 columns.
-- 2000 data rows.
-- Automatic type inference for INTEGER, BOOLEAN, DATE, UUID and TEXT.
-
-The API enforces the row/column limits too; they are not frontend-only restrictions.
-
-## Next slices
-
-1. Spreadsheet/fullscreen dataset view, formulas and fill handle.
-2. Real Object Binding UI: shape/icon -> dataset row/cell/relation-backed view.
-3. Freehand SVG drawing layer.
-4. Object comments on canvas and comment pins.
-5. Multiple boards + workspace navigation, proving cross-board dataset reuse in UI.
-6. SQL schema import/export + ER relation editor.
-7. History/snapshots.
-8. Custom SVG/icon template libraries for infrastructure diagrams.
-
-## Semantic object bindings
-
-A core direction for ModelBoard is binding canvas objects to structured data. A shape or imported infrastructure icon will be able to reference a dataset, stable row/entity, column, cell, or a relation-backed view.
-
-See [docs/OBJECT_BINDINGS.md](docs/OBJECT_BINDINGS.md) for the proposed model and network-diagram example.
+Лицензия проекта пока не зафиксирована. Перед публичным распространением необходимо добавить отдельный `LICENSE`.
