@@ -122,6 +122,17 @@ function pointDistance(left: FreehandPoint, right: FreehandPoint) {
   return Math.hypot(left.x - right.x, left.y - right.y);
 }
 
+function nodeSize(node: Node, key: 'width' | 'height', fallback: number) {
+  const measured = Number((node as any).measured?.[key]);
+  if (Number.isFinite(measured) && measured > 0) return measured;
+
+  const direct = Number((node as any)[key]);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const styled = Number((node.style as any)?.[key]);
+  return Number.isFinite(styled) && styled > 0 ? styled : fallback;
+}
+
 function seedDocument(nodesMap: Y.Map<any>, edgesMap: Y.Map<any>) {
   const usersId = 'seed-users';
   const rolesId = 'seed-roles';
@@ -233,6 +244,12 @@ function BoardInner({
   const [penColor, setPenColor] = useState('#344054');
   const [penWidth, setPenWidth] = useState(2.6);
   const erasingRef = useRef(false);
+  const frameDragRef = useRef<{
+    frameId: string;
+    lastX: number;
+    lastY: number;
+    nodeIds: string[];
+  } | null>(null);
   const [status, setStatus] = useState('connecting');
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
   const [presence, setPresence] = useState<Array<[number, PresenceState]>>([]);
@@ -1488,6 +1505,90 @@ function BoardInner({
     [],
   );
 
+
+  const handleFrameDragStart = useCallback(
+    (_event: React.MouseEvent, frame: Node) => {
+      if (readOnly || frame.type !== 'frame') {
+        frameDragRef.current = null;
+        return;
+      }
+
+      const left = frame.position.x;
+      const top = frame.position.y;
+      const right = left + nodeSize(frame, 'width', 720);
+      const bottom = top + nodeSize(frame, 'height', 460);
+      const selected = new Set(selectedNodeIds);
+
+      const nodeIds = nodes
+        .filter((candidate) => {
+          if (
+            candidate.id === frame.id ||
+            candidate.type === 'frame' ||
+            selected.has(candidate.id)
+          ) {
+            return false;
+          }
+
+          const centerX =
+            candidate.position.x +
+            nodeSize(candidate, 'width', 180) / 2;
+          const centerY =
+            candidate.position.y +
+            nodeSize(candidate, 'height', 90) / 2;
+
+          return (
+            centerX >= left &&
+            centerX <= right &&
+            centerY >= top &&
+            centerY <= bottom
+          );
+        })
+        .map((candidate) => candidate.id);
+
+      frameDragRef.current = {
+        frameId: frame.id,
+        lastX: frame.position.x,
+        lastY: frame.position.y,
+        nodeIds,
+      };
+    },
+    [nodes, readOnly, selectedNodeIds],
+  );
+
+  const handleFrameDrag = useCallback(
+    (_event: React.MouseEvent, frame: Node) => {
+      const state = frameDragRef.current;
+      if (!state || state.frameId !== frame.id) return;
+
+      const dx = frame.position.x - state.lastX;
+      const dy = frame.position.y - state.lastY;
+      if (!dx && !dy) return;
+
+      ydoc.transact(() => {
+        for (const nodeId of state.nodeIds) {
+          const current = nodesMap.get(nodeId) as Node | undefined;
+          if (!current) continue;
+
+          nodesMap.set(nodeId, {
+            ...current,
+            position: {
+              x: current.position.x + dx,
+              y: current.position.y + dy,
+            },
+          });
+        }
+      });
+
+      state.lastX = frame.position.x;
+      state.lastY = frame.position.y;
+    },
+    [nodesMap, ydoc],
+  );
+
+  const handleFrameDragStop = useCallback(() => {
+    frameDragRef.current = null;
+  }, []);
+
   const onPointerMove = useCallback((event: React.PointerEvent) => {
     if (!provider || !rf) return;
     const point = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
@@ -1879,6 +1980,9 @@ function BoardInner({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onNodeDragStart={handleFrameDragStart}
+          onNodeDrag={handleFrameDrag}
+          onNodeDragStop={handleFrameDragStop}
           onNodeDoubleClick={(_, node) => {
             if (node.type !== 'table') return;
             const datasetId = (node.data as any)?.datasetId as string | undefined;
