@@ -252,6 +252,36 @@ export function InspectorPanel({
               />
             </label>
           )}
+
+          {node.type === 'frame' && (
+            <>
+              <label>
+                Название секции
+                <input
+                  disabled={readOnly}
+                  value={String((node.data as any)?.title ?? '')}
+                  onChange={(event) =>
+                    onUpdateNodeData(node.id, {
+                      title: event.target.value,
+                    })
+                  }
+                />
+              </label>
+
+              <label>
+                Описание
+                <textarea
+                  disabled={readOnly}
+                  value={String((node.data as any)?.description ?? '')}
+                  onChange={(event) =>
+                    onUpdateNodeData(node.id, {
+                      description: event.target.value,
+                    })
+                  }
+                />
+              </label>
+            </>
+          )}
         </section>
 
         {node.type === 'table' && (

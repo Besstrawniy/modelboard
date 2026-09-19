@@ -2722,3 +2722,51 @@ button:disabled { cursor: not-allowed; opacity: .42; }
     padding-top: 60px;
   }
 }
+
+
+/* Visual frames / canvas sections */
+.frame-node {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1.5px dashed #aeb6c2;
+  border-radius: 16px;
+  background: rgba(246,248,251,.42);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.45);
+}
+.frame-node.is-selected {
+  border-style: solid;
+  border-color: #6678dd;
+  background: rgba(244,246,255,.48);
+}
+.frame-node__header {
+  height: 42px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid rgba(184,190,200,.42);
+  background: rgba(255,255,255,.62);
+  backdrop-filter: blur(5px);
+}
+.frame-node__header input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #4a515c;
+  font-size: 13px;
+  font-weight: 800;
+}
+.frame-node__description {
+  width: min(360px, calc(100% - 24px));
+  min-height: 52px;
+  margin: 10px 12px;
+  padding: 0;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #858c96;
+  font-size: 9px;
+  line-height: 1.45;
+}

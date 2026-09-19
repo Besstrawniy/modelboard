@@ -22,7 +22,7 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ClipboardPaste, Copy, Database, Eraser, Grid3X3, Hand, LayoutDashboard, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X } from 'lucide-react';
+import { ChevronDown, ClipboardPaste, Copy, Database, Eraser, Frame as FrameIcon, Grid3X3, Hand, LayoutDashboard, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X } from 'lucide-react';
 import {
   DEMO_BOARD_ID,
   DEMO_ROLES_DATASET_ID,
@@ -62,6 +62,7 @@ import { DevicePalette } from './DevicePalette';
 import { TemplateNode } from './TemplateNode';
 import { RelationViewNode } from './RelationViewNode';
 import { WorkspaceSearch } from './WorkspaceSearch';
+import { FrameNode } from './FrameNode';
 
 type PresenceState = {
   user?: { id: string; name: string; role: string };
@@ -92,6 +93,7 @@ const nodeTypes: any = {
   device: DeviceNode,
   template: TemplateNode,
   relationView: RelationViewNode,
+  frame: FrameNode,
 };
 
 function freehandPath(points: FreehandPoint[]) {
@@ -1255,6 +1257,24 @@ function BoardInner({
         style: { width: 220, height: 110 },
         data: { text: 'Объект' },
       };
+    } else if (type === 'frame') {
+      node = {
+        id,
+        type,
+        position: {
+          x: center.x - 360,
+          y: center.y - 230,
+        },
+        style: {
+          width: 720,
+          height: 460,
+        },
+        zIndex: -10,
+        data: {
+          title: 'Новая секция',
+          description: '',
+        },
+      };
     } else {
       node = {
         id,
@@ -1974,6 +1994,7 @@ function BoardInner({
               <button disabled={readOnly} onClick={() => addNode('sticky')} title="Стикер"><StickyNote size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('text')} title="Текст"><Type size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('shape')} title="Фигура"><Shapes size={19} /></button>
+              <button disabled={readOnly} onClick={() => addNode('frame')} title="Frame / секция"><FrameIcon size={19} /></button>
               <div className="toolbar-separator" />
               <button onClick={() => setCommentsOpen(true)} title="Комментарии"><MessageSquare size={19} /></button>
             </div>
