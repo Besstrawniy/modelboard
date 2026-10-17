@@ -1,4 +1,5 @@
-import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react';
+import { CanvasNodeResizer } from './CanvasNodeResizer';
+import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type {
   DeviceKind,
   DeviceNodeData,
@@ -135,7 +136,7 @@ export function DeviceNode({ id, data, selected }: NodeProps<any>) {
   return (
     <div className={`device-node ${selected ? 'is-selected' : ''} ${binding ? 'is-bound' : ''}`}>
       {!readOnly && (
-        <NodeResizer
+        <CanvasNodeResizer
           minWidth={170}
           minHeight={110}
           isVisible={selected}

@@ -1,5 +1,6 @@
+import { CanvasNodeResizer } from './CanvasNodeResizer';
 import { Database } from 'lucide-react';
-import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { ObjectBindingRecord, ShapeNodeData } from '@modelboard/shared';
 import { useBoardActions } from './BoardContext';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
@@ -40,7 +41,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<any>) {
   return (
     <div className={`shape-node ${selected ? 'is-selected' : ''} ${binding ? 'is-bound' : ''}`}>
       {!readOnly && (
-        <NodeResizer
+        <CanvasNodeResizer
           minWidth={140}
           minHeight={84}
           isVisible={selected}

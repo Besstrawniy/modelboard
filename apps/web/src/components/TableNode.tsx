@@ -1,4 +1,5 @@
-import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react';
+import { CanvasNodeResizer } from './CanvasNodeResizer';
+import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { TableNodeData } from '@modelboard/shared';
 import { useBoardActions } from './BoardContext';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
@@ -50,7 +51,7 @@ export function TableNode({ data, selected }: NodeProps<any>) {
 
   return (
     <div className={`table-node ${selected ? 'is-selected' : ''}`}>
-      {!readOnly && <NodeResizer minWidth={360} minHeight={180} isVisible={selected} />}
+      {!readOnly && <CanvasNodeResizer minWidth={360} minHeight={180} isVisible={selected} />}
       <div className="table-node__title">
         <span className="table-node__kind">DATASET</span>
         <strong>{view.view?.labelOverride || dataset.name}</strong>

@@ -1,6 +1,6 @@
+import { CanvasNodeResizer } from './CanvasNodeResizer';
 import {
   Handle,
-  NodeResizer,
   Position,
   type NodeProps,
 } from '@xyflow/react';
@@ -62,7 +62,7 @@ export function TemplateNode({ data, selected }: NodeProps<any>) {
   return (
     <div className={`template-node ${selected ? 'is-selected' : ''} ${binding ? 'is-bound' : ''}`}>
       {!readOnly && (
-        <NodeResizer
+        <CanvasNodeResizer
           minWidth={90}
           minHeight={80}
           isVisible={selected}

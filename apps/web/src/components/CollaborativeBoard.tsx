@@ -63,6 +63,7 @@ import { TemplateNode } from './TemplateNode';
 import { RelationViewNode } from './RelationViewNode';
 import { WorkspaceSearch } from './WorkspaceSearch';
 import { FrameNode } from './FrameNode';
+import { useCanvasModifiers } from '../lib/useCanvasModifiers';
 import { appendFreehandPoint, eraserHitsStroke, freehandPath, prepareFreehandStroke } from '../lib/freehandGeometry';
 import { CanvasSelectionActions } from './CanvasSelectionActions';
 import { CanvasContextMenu } from './CanvasContextMenu';
@@ -204,6 +205,7 @@ function BoardInner({
   onDeleteBoard: (boardId: string) => Promise<void>;
 }) {
   const readOnly = !canEditBoard(meta.role);
+  const modifiers = useCanvasModifiers();
   const ydoc = useMemo(() => new Y.Doc(), [meta.id, session.user.id]);
   const nodesMap = useMemo(() => ydoc.getMap<any>('nodes'), [ydoc]);
   const edgesMap = useMemo(() => ydoc.getMap<any>('edges'), [ydoc]);
@@ -280,6 +282,7 @@ function BoardInner({
   const [snapToGrid, setSnapToGrid] = useState(() =>
     localStorage.getItem('modelboard:snap-to-grid') !== 'false',
   );
+  const gridActive = snapToGrid && !modifiers.alt;
   const [toolMode, setToolMode] = useState<ToolMode>('select');
   const [spacePressed, setSpacePressed] = useState(false);
   const [canvasHelpOpen, setCanvasHelpOpen] = useState(false);
@@ -2268,6 +2271,7 @@ function BoardInner({
     <BoardActionsProvider
       value={{
         readOnly,
+        keepAspectRatio: modifiers.shift,
         sessionToken: session.token,
         boardId: meta.id,
         workspaceId: meta.workspaceId,
@@ -2563,7 +2567,7 @@ function BoardInner({
           elevateNodesOnSelect={false}
           deleteKeyCode={readOnly || effectiveToolMode !== 'select' || sheetTarget || workspaceSearchOpen ? null : ['Backspace', 'Delete']}
           fitView
-          snapToGrid={snapToGrid}
+          snapToGrid={gridActive}
           snapGrid={[22, 22]}
           panOnScroll={false}
           zoomOnScroll
@@ -2684,8 +2688,9 @@ function BoardInner({
                 <ClipboardPaste size={17} />
               </button>
               <button
-                className={snapToGrid ? 'is-active' : ''}
-                title="Привязка к сетке"
+                className={gridActive ? 'is-active' : ''}
+                aria-pressed={gridActive}
+                title="Привязка к сетке (Alt — временно отключить)"
                 onClick={() =>
                   setSnapToGrid((value) => !value)
                 }
@@ -2871,6 +2876,8 @@ function BoardInner({
                     <div><dt>Перо / ластик</dt><dd>P / E</dd></div>
                     <div><dt>Выход из инструмента</dt><dd>Esc</dd></div>
                     <div><dt>Дополнительное выделение</dt><dd>Shift + клик</dd></div>
+                    <div><dt>Resize с сохранением пропорций</dt><dd>Shift + маркер размера</dd></div>
+                    <div><dt>Временно отключить сетку</dt><dd>Alt</dd></div>
                     <div><dt>Действия с объектом / доской</dt><dd>Правая кнопка</dd></div>
                     <div><dt>Меню браузера</dt><dd>Shift + правая кнопка</dd></div>
                   </dl>

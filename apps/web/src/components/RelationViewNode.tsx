@@ -1,3 +1,4 @@
+import { CanvasNodeResizer } from './CanvasNodeResizer';
 import { ExternalLink, Link2 } from 'lucide-react';
 import type {
   DatasetRow,
@@ -5,7 +6,6 @@ import type {
 } from '@modelboard/shared';
 import {
   Handle,
-  NodeResizer,
   Position,
   type NodeProps,
 } from '@xyflow/react';
@@ -140,7 +140,7 @@ export function RelationViewNode({
   return (
     <div className={`relation-view-node ${selected ? 'is-selected' : ''}`}>
       {!readOnly && (
-        <NodeResizer
+        <CanvasNodeResizer
           minWidth={300}
           minHeight={180}
           isVisible={selected}

@@ -1,5 +1,5 @@
+import { CanvasNodeResizer } from './CanvasNodeResizer';
 import {
-  NodeResizer,
   type NodeProps,
 } from '@xyflow/react';
 import { useBoardActions } from './BoardContext';
@@ -16,7 +16,7 @@ export function FrameNode({
       className={`frame-node ${selected ? 'is-selected' : ''}`}
     >
       {!readOnly && (
-        <NodeResizer
+        <CanvasNodeResizer
           minWidth={280}
           minHeight={180}
           isVisible={selected}

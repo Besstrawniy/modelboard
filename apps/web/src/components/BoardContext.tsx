@@ -25,6 +25,7 @@ export type MaterializeRelatedInput = {
 
 export type BoardActions = {
   readOnly: boolean;
+  keepAspectRatio: boolean;
   sessionToken: string;
   boardId: string;
   workspaceId: string;
@@ -57,6 +58,7 @@ export type BoardActions = {
 
 const BoardActionsContext = createContext<BoardActions>({
   readOnly: true,
+  keepAspectRatio: false,
   sessionToken: '',
   boardId: '',
   workspaceId: '',
