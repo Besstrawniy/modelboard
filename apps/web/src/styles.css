@@ -3007,3 +3007,60 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   opacity: .38;
   cursor: not-allowed;
 }
+
+
+/* Spreadsheet per-column filters */
+.dataset-sheet__filter-toggle {
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid #dce0e6;
+  border-radius: 7px;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #59616c;
+  font-size: 9px;
+  font-weight: 750;
+}
+.dataset-sheet__filter-toggle:hover,
+.dataset-sheet__filter-toggle.is-active {
+  background: #f4f6ff;
+  border-color: #cfd5f2;
+  color: #5263ca;
+}
+.dataset-sheet__filter-toggle > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5263ca;
+}
+.dataset-sheet__table thead
+  .dataset-sheet__filter-row th {
+  top: 48px;
+  z-index: 4;
+  height: 36px;
+  background: #fbfcfd;
+}
+.dataset-sheet__table thead
+  .dataset-sheet__filter-row
+  .dataset-sheet__row-number {
+  z-index: 6;
+}
+.dataset-sheet__filter-row th > input {
+  width: 100%;
+  height: 35px;
+  padding: 0 8px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #4e5661;
+  font-size: 8px;
+}
+.dataset-sheet__filter-row th > input:focus {
+  background: #fff;
+  box-shadow: inset 0 0 0 2px #6578e5;
+}
+.dataset-sheet__filter-row th > input::placeholder {
+  color: #adb2ba;
+}

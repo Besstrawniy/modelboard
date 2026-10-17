@@ -8,6 +8,8 @@ import {
   ClipboardPaste,
   Copy,
   Database,
+  Filter,
+  FilterX,
   Pencil,
   Plus,
   Search,
@@ -356,6 +358,9 @@ export function DatasetSheet({
   );
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortState>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [columnFilters, setColumnFilters] =
+    useState<Record<string, string>>({});
   const [page, setPage] = useState(0);
   const [rowAction, setRowAction] = useState<string | null>(null);
   const [rowError, setRowError] = useState('');
@@ -439,9 +444,20 @@ export function DatasetSheet({
       window.removeEventListener('keydown', onHistoryKey);
   }, [readOnly, redo, undo]);
 
+  const filterSignature = JSON.stringify(columnFilters);
+  const hasColumnFilters = Object.values(
+    columnFilters,
+  ).some((value) => value.trim() !== '');
+
   useEffect(() => {
     setPage(0);
-  }, [datasetId, query, sort?.columnId, sort?.direction]);
+  }, [
+    datasetId,
+    query,
+    sort?.columnId,
+    sort?.direction,
+    filterSignature,
+  ]);
 
   useEffect(() => {
     try {
@@ -632,11 +648,11 @@ export function DatasetSheet({
   };
 
   useEffect(() => {
-    if (query || sort) {
+    if (query || sort || hasColumnFilters) {
       setAutofillDrag(null);
       setSelectionRange(null);
     }
-  }, [query, sort]);
+  }, [hasColumnFilters, query, sort]);
 
   const selectCell = (
     event: React.MouseEvent,
@@ -780,7 +796,8 @@ export function DatasetSheet({
       selectionBounds.startColumn !==
         selectionBounds.endColumn ||
       query ||
-      sort
+      sort ||
+      hasColumnFilters
     ) {
       return;
     }
@@ -1016,9 +1033,9 @@ export function DatasetSheet({
       return;
     }
 
-    if (query || sort) {
+    if (query || sort || hasColumnFilters) {
       setClipboardMessage(
-        'Перед вставкой уберите поиск и сортировку, чтобы порядок строк был однозначным.',
+        'Перед вставкой уберите поиск, сортировку и фильтры, чтобы порядок строк был однозначным.',
       );
       return;
     }
@@ -1251,6 +1268,20 @@ export function DatasetSheet({
         )
       : [...dataset.rows];
 
+    const activeFilters = Object.entries(
+      columnFilters,
+    ).filter(([, value]) => value.trim() !== '');
+
+    if (activeFilters.length > 0) {
+      result = result.filter((row) =>
+        activeFilters.every(([columnId, filter]) =>
+          String(row.values[columnId] ?? '')
+            .toLowerCase()
+            .includes(filter.trim().toLowerCase()),
+        ),
+      );
+    }
+
     if (sort) {
       result = result.sort((left, right) => {
         const compared = compareValues(
@@ -1262,7 +1293,7 @@ export function DatasetSheet({
     }
 
     return result;
-  }, [dataset, query, sort]);
+  }, [columnFilters, dataset, query, sort]);
 
   const conversionPreview = useMemo<ConversionPreview | null>(() => {
     if (!dataset || !convertColumnTarget) return null;
@@ -1716,6 +1747,28 @@ export function DatasetSheet({
         </label>
 
         <button
+          className={`dataset-sheet__filter-toggle ${filtersOpen ? 'is-active' : ''}`}
+          onClick={() =>
+            setFiltersOpen((value) => !value)
+          }
+          title="Фильтры по колонкам"
+        >
+          <Filter size={14} />
+          Фильтры
+          {hasColumnFilters && <span />}
+        </button>
+
+        {hasColumnFilters && (
+          <button
+            className="dataset-sheet__history-button"
+            onClick={() => setColumnFilters({})}
+            title="Очистить фильтры"
+          >
+            <FilterX size={14} />
+          </button>
+        )}
+
+        <button
           className="dataset-sheet__history-button"
           disabled={readOnly || !canUndo}
           onClick={undo}
@@ -1958,6 +2011,35 @@ export function DatasetSheet({
                   );
                 })}
               </tr>
+
+              {filtersOpen && (
+                <tr className="dataset-sheet__filter-row">
+                  <th className="dataset-sheet__row-number">
+                    <Filter size={12} />
+                  </th>
+                  {dataset.columns.map((column) => (
+                    <th
+                      key={column.id}
+                      style={{
+                        width: columnWidth(column.id),
+                        minWidth: columnWidth(column.id),
+                        maxWidth: columnWidth(column.id),
+                      }}
+                    >
+                      <input
+                        value={columnFilters[column.id] ?? ''}
+                        placeholder={`Фильтр: ${column.name}`}
+                        onChange={(event) =>
+                          setColumnFilters((current) => ({
+                            ...current,
+                            [column.id]: event.target.value,
+                          }))
+                        }
+                      />
+                    </th>
+                  ))}
+                </tr>
+              )}
             </thead>
 
             <tbody>
@@ -2024,6 +2106,7 @@ export function DatasetSheet({
                       !readOnly &&
                       !query &&
                       !sort &&
+                      !hasColumnFilters &&
                       Boolean(selectionBounds) &&
                       selectionBounds!.startColumn ===
                         selectionBounds!.endColumn &&
