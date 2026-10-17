@@ -380,6 +380,14 @@ export function DatasetSheet({
     useState<AutofillDrag | null>(null);
   const [clipboardMessage, setClipboardMessage] = useState('');
   const sheetRef = useRef<HTMLDivElement | null>(null);
+  const resizeRef = useRef<{
+    columnId: string;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+  const [columnWidths, setColumnWidths] = useState<
+    Record<string, number>
+  >({});
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -396,6 +404,26 @@ export function DatasetSheet({
   useEffect(() => {
     setPage(0);
   }, [datasetId, query, sort?.columnId, sort?.direction]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(
+        `modelboard:dataset-widths:${datasetId}`,
+      );
+      setColumnWidths(
+        raw ? JSON.parse(raw) : {},
+      );
+    } catch {
+      setColumnWidths({});
+    }
+  }, [datasetId]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      `modelboard:dataset-widths:${datasetId}`,
+      JSON.stringify(columnWidths),
+    );
+  }, [columnWidths, datasetId]);
 
   useEffect(() => {
     if (!dataset || !focusRowId || query || sort) return;
@@ -1065,6 +1093,71 @@ export function DatasetSheet({
     );
   };
 
+  const columnWidth = (columnId: string) =>
+    Math.max(
+      90,
+      Math.min(640, columnWidths[columnId] ?? 180),
+    );
+
+  const beginColumnResize = (
+    event: React.PointerEvent<HTMLSpanElement>,
+    columnId: string,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const th = event.currentTarget.closest('th');
+    const width =
+      th?.getBoundingClientRect().width ??
+      columnWidth(columnId);
+
+    resizeRef.current = {
+      columnId,
+      startX: event.clientX,
+      startWidth: width,
+    };
+    event.currentTarget.setPointerCapture(
+      event.pointerId,
+    );
+  };
+
+  const moveColumnResize = (
+    event: React.PointerEvent<HTMLSpanElement>,
+  ) => {
+    const resize = resizeRef.current;
+    if (!resize) return;
+
+    const next = Math.max(
+      90,
+      Math.min(
+        640,
+        resize.startWidth +
+          event.clientX -
+          resize.startX,
+      ),
+    );
+
+    setColumnWidths((current) => ({
+      ...current,
+      [resize.columnId]: Math.round(next),
+    }));
+  };
+
+  const finishColumnResize = (
+    event: React.PointerEvent<HTMLSpanElement>,
+  ) => {
+    resizeRef.current = null;
+    if (
+      event.currentTarget.hasPointerCapture(
+        event.pointerId,
+      )
+    ) {
+      event.currentTarget.releasePointerCapture(
+        event.pointerId,
+      );
+    }
+  };
+
   const visibleRows = useMemo(() => {
     if (!dataset) return [];
 
@@ -1631,7 +1724,14 @@ export function DatasetSheet({
                   const activeSort = sort?.columnId === column.id;
 
                   return (
-                    <th key={column.id}>
+                    <th
+                      key={column.id}
+                      style={{
+                        width: columnWidth(column.id),
+                        minWidth: columnWidth(column.id),
+                        maxWidth: columnWidth(column.id),
+                      }}
+                    >
                       <button
                         className="dataset-sheet__column-header"
                         onClick={() => toggleSort(column.id)}
@@ -1736,6 +1836,28 @@ export function DatasetSheet({
                           <ArrowUpDown size={13} />
                         )}
                       </button>
+                      <span
+                        className="dataset-sheet__column-resizer"
+                        title="Изменить ширину колонки"
+                        onDoubleClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setColumnWidths((current) => {
+                            const next = { ...current };
+                            delete next[column.id];
+                            return next;
+                          });
+                        }}
+                        onPointerDown={(event) =>
+                          beginColumnResize(
+                            event,
+                            column.id,
+                          )
+                        }
+                        onPointerMove={moveColumnResize}
+                        onPointerUp={finishColumnResize}
+                        onPointerCancel={finishColumnResize}
+                      />
                     </th>
                   );
                 })}
@@ -1805,6 +1927,11 @@ export function DatasetSheet({
                       <td
                         key={column.id}
                         data-row-id={row.id}
+                        style={{
+                          width: columnWidth(column.id),
+                          minWidth: columnWidth(column.id),
+                          maxWidth: columnWidth(column.id),
+                        }}
                         data-column-id={column.id}
                         className={[
                           selected ? 'is-selected-cell' : '',
