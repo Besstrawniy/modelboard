@@ -3537,3 +3537,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .canvas-context-menu button:disabled { opacity: .4; cursor: default; }
 .canvas-context-menu button.is-danger { color: #a13c3c; }
 .canvas-context-menu kbd { color: #737d8a; font-size: 10px; white-space: nowrap; }
+
+.freehand-capture--eraser {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ccircle cx='10' cy='10' r='8' fill='white' fill-opacity='.35' stroke='%23344054' stroke-width='1'/%3E%3C/svg%3E") 10 10, crosshair;
+}

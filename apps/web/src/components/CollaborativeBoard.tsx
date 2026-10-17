@@ -63,6 +63,7 @@ import { TemplateNode } from './TemplateNode';
 import { RelationViewNode } from './RelationViewNode';
 import { WorkspaceSearch } from './WorkspaceSearch';
 import { FrameNode } from './FrameNode';
+import { appendFreehandPoint, eraserHitsStroke, freehandPath, prepareFreehandStroke } from '../lib/freehandGeometry';
 import { CanvasSelectionActions } from './CanvasSelectionActions';
 import { CanvasContextMenu } from './CanvasContextMenu';
 import { canvasPasteOffset, selectCanvasContextTarget, type CanvasContextCommand } from '../lib/canvasContextMenu';
@@ -88,6 +89,17 @@ type BoardClipboard = {
 
 type ToolMode = 'select' | 'hand' | 'pen' | 'eraser';
 
+type DrawingGesture = {
+  pointerId: number;
+  target: HTMLDivElement;
+  zoom: number;
+} & ({ mode: 'pen'; stroke: FreehandStroke } | {
+  mode: 'eraser'; lastPoint: FreehandPoint;
+  erased: Map<string, FreehandStroke>;
+  cache: Map<string, { stroke: FreehandStroke; geometry: ReturnType<typeof prepareFreehandStroke> }>;
+});
+
+
 const USERS_ROLE_ID_COLUMN = '41000000-0000-0000-0000-000000000003';
 const ROLES_ID_COLUMN = '42000000-0000-0000-0000-000000000001';
 const DEMO_RELATION_ID = '43000000-0000-0000-0000-000000000001';
@@ -102,32 +114,6 @@ const nodeTypes: any = {
   relationView: RelationViewNode,
   frame: FrameNode,
 };
-
-function freehandPath(points: FreehandPoint[]) {
-  if (points.length === 0) return '';
-  if (points.length === 1) {
-    const point = points[0];
-    return `M ${point.x} ${point.y} l 0.01 0.01`;
-  }
-
-  let path = `M ${points[0].x} ${points[0].y}`;
-
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const current = points[index];
-    const next = points[index + 1];
-    const midX = (current.x + next.x) / 2;
-    const midY = (current.y + next.y) / 2;
-    path += ` Q ${current.x} ${current.y} ${midX} ${midY}`;
-  }
-
-  const last = points[points.length - 1];
-  path += ` L ${last.x} ${last.y}`;
-  return path;
-}
-
-function pointDistance(left: FreehandPoint, right: FreehandPoint) {
-  return Math.hypot(left.x - right.x, left.y - right.y);
-}
 
 const nodeSize = canvasNodeSize;
 
@@ -250,7 +236,27 @@ function BoardInner({
     useState<FreehandStroke | null>(null);
   const [penColor, setPenColor] = useState('#344054');
   const [penWidth, setPenWidth] = useState(2.6);
-  const erasingRef = useRef(false);
+  const drawingGestureRef = useRef<DrawingGesture | null>(null);
+  const drawingFrameRef = useRef<number | null>(null);
+  const [erasedStrokeIds, setErasedStrokeIds] = useState<Set<string>>(new Set());
+  const cancelDrawing = useCallback(() => {
+    const gesture = drawingGestureRef.current;
+    drawingGestureRef.current = null;
+    if (drawingFrameRef.current !== null) cancelAnimationFrame(drawingFrameRef.current);
+    drawingFrameRef.current = null;
+    setDraftStroke(null);
+    setErasedStrokeIds(new Set());
+    if (gesture?.target.hasPointerCapture(gesture.pointerId)) gesture.target.releasePointerCapture(gesture.pointerId);
+  }, []);
+  const queueDrawingPreview = useCallback(() => {
+    if (drawingFrameRef.current !== null) return;
+    drawingFrameRef.current = requestAnimationFrame(() => {
+      drawingFrameRef.current = null;
+      const gesture = drawingGestureRef.current;
+      if (gesture?.mode === 'pen') setDraftStroke({ ...gesture.stroke, points: [...gesture.stroke.points] });
+      else if (gesture?.mode === 'eraser') setErasedStrokeIds(new Set(gesture.erased.keys()));
+    });
+  }, []);
   const frameDragRef = useRef<{
     frameId: string;
     startX: number;
@@ -318,8 +324,20 @@ function BoardInner({
     setDevicesOpen(false);
     setBoardMenuOpen(false);
     setToolMode('select');
-    setDraftStroke(null);
-  }, [meta.id]);
+    cancelDrawing();
+  }, [meta.id, cancelDrawing]);
+
+  useEffect(() => {
+    cancelDrawing();
+  }, [effectiveToolMode, readOnly, cancelDrawing]);
+
+  useEffect(() => {
+    window.addEventListener('blur', cancelDrawing);
+    return () => {
+      window.removeEventListener('blur', cancelDrawing);
+      cancelDrawing();
+    };
+  }, [cancelDrawing]);
 
   const refreshWorkspaceTemplates = useCallback(async () => {
     const templates = await api.templates(
@@ -840,13 +858,12 @@ function BoardInner({
   const activateTool = useCallback(
     (next: ToolMode) => {
       setContextMenu(null);
-      setDraftStroke(null);
-      erasingRef.current = false;
+      cancelDrawing();
       setSpacePressed(false);
       if (next !== 'select') clearSelection();
       setToolMode(next);
     },
-    [clearSelection],
+    [cancelDrawing, clearSelection],
   );
 
   const fitCanvas = useCallback(
@@ -952,12 +969,16 @@ function BoardInner({
 
       if (event.code === 'Space' && !mod && !event.altKey) {
         event.preventDefault();
-        if (!event.repeat) setSpacePressed(true);
+        if (!event.repeat) {
+          cancelDrawing();
+          setSpacePressed(true);
+        }
         return;
       }
 
       if (mod && key === 'k') {
         event.preventDefault();
+        cancelDrawing();
         setWorkspaceSearchOpen(true);
         return;
       }
@@ -983,12 +1004,14 @@ function BoardInner({
       }
       if (!readOnly && mod && key === 'z') {
         event.preventDefault();
+        if (drawingGestureRef.current) { cancelDrawing(); return; }
         if (event.shiftKey) undoManager.redo();
         else undoManager.undo();
         return;
       }
       if (!readOnly && mod && key === 'y') {
         event.preventDefault();
+        if (drawingGestureRef.current) { cancelDrawing(); return; }
         undoManager.redo();
         return;
       }
@@ -1032,6 +1055,7 @@ function BoardInner({
 
       if (event.key === '?' || (event.shiftKey && event.code === 'Slash')) {
         event.preventDefault();
+        cancelDrawing();
         setCanvasHelpOpen(true);
         return;
       }
@@ -1075,6 +1099,7 @@ function BoardInner({
     activateTool,
     boardMenuOpen,
     canvasHelpOpen,
+    cancelDrawing,
     contextMenu,
     changeZoom,
     changeSelectionLayer,
@@ -1921,142 +1946,74 @@ function BoardInner({
     workspaceTemplates,
   ]);
 
-  const beginFreehand = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (readOnly || toolMode !== 'pen' || !rf) return;
-
-      event.preventDefault();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      const point = rf.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
-
-      setDraftStroke({
-        id: crypto.randomUUID(),
-        points: [point],
-        width: penWidth,
-        color: penColor,
-        createdBy: session.user.id,
-      });
-    },
-    [
-      penColor,
-      penWidth,
-      readOnly,
-      rf,
-      session.user.id,
-      toolMode,
-    ],
-  );
-
-  const moveFreehand = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (toolMode !== 'pen' || !rf) return;
-
-      const point = rf.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
-
-      setDraftStroke((current) => {
-        if (!current) return current;
-        const previous = current.points[current.points.length - 1];
-        if (previous && pointDistance(previous, point) < 1.8) {
-          return current;
-        }
-
-        return {
-          ...current,
-          points: [...current.points, point],
-        };
-      });
-    },
-    [rf, toolMode],
-  );
-
-  const finishFreehand = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (toolMode !== 'pen') return;
-
-      setDraftStroke((current) => {
-        if (current && current.points.length > 1) {
-          strokesMap.set(current.id, current);
-        }
-        return null;
-      });
-
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
+  const eraseGestureSegment = useCallback((gesture: Extract<DrawingGesture, { mode: 'eraser' }>, point: FreehandPoint) => {
+    for (const stroke of strokesMap.values()) {
+      if (gesture.erased.has(stroke.id)) continue;
+      let cached = gesture.cache.get(stroke.id);
+      if (!cached || cached.stroke !== stroke) {
+        cached = { stroke, geometry: prepareFreehandStroke(stroke, gesture.zoom) };
+        gesture.cache.set(stroke.id, cached);
       }
-    },
-    [strokesMap, toolMode],
-  );
-
-  const eraseAtPointer = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!rf) return;
-
-      const point = rf.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
-
-      let closestId: string | null = null;
-      let closestDistance = Number.POSITIVE_INFINITY;
-
-      for (const stroke of strokesMap.values()) {
-        for (const strokePoint of stroke.points) {
-          const distance = pointDistance(strokePoint, point);
-          if (distance < closestDistance) {
-            closestDistance = distance;
-            closestId = stroke.id;
-          }
-        }
+      if (eraserHitsStroke(stroke, gesture.lastPoint, point, gesture.zoom, cached.geometry)) {
+        gesture.erased.set(stroke.id, stroke);
       }
+    }
+    gesture.lastPoint = point;
+  }, [strokesMap]);
 
-      if (closestId && closestDistance <= 10) {
-        strokesMap.delete(closestId);
+  const beginDrawing = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (readOnly || !rf || event.button !== 0 || !event.isPrimary || drawingGestureRef.current ||
+      (effectiveToolMode !== 'pen' && effectiveToolMode !== 'eraser')) return;
+    event.preventDefault();
+    const point = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false });
+    const base = { pointerId: event.pointerId, target: event.currentTarget, zoom: rf.getZoom() };
+    const gesture: DrawingGesture = effectiveToolMode === 'pen'
+      ? { ...base, mode: 'pen', stroke: { id: crypto.randomUUID(), points: [point], width: penWidth,
+          color: penColor, createdBy: session.user.id } }
+      : { ...base, mode: 'eraser', lastPoint: point, erased: new Map(), cache: new Map() };
+    drawingGestureRef.current = gesture;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    if (gesture.mode === 'pen') setDraftStroke({ ...gesture.stroke, points: [...gesture.stroke.points] });
+    else {
+      eraseGestureSegment(gesture, point);
+      setErasedStrokeIds(new Set(gesture.erased.keys()));
+    }
+  }, [effectiveToolMode, eraseGestureSegment, penColor, penWidth, readOnly, rf, session.user.id]);
+
+  const moveDrawing = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = drawingGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId || readOnly || !rf) return;
+    const coalesced = event.nativeEvent.getCoalescedEvents?.() ?? [];
+    for (const sample of [...coalesced, event.nativeEvent]) {
+      const point = rf.screenToFlowPosition({ x: sample.clientX, y: sample.clientY }, { snapToGrid: false });
+      if (gesture.mode === 'pen') appendFreehandPoint(gesture.stroke.points, point, gesture.zoom);
+      else eraseGestureSegment(gesture, point);
+    }
+    queueDrawingPreview();
+  }, [eraseGestureSegment, queueDrawingPreview, readOnly, rf]);
+
+  const finishDrawing = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = drawingGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (readOnly || !rf) { cancelDrawing(); return; }
+    const point = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false });
+    if (gesture.mode === 'pen') appendFreehandPoint(gesture.stroke.points, point, gesture.zoom, true);
+    else eraseGestureSegment(gesture, point);
+    undoManager.stopCapturing();
+    ydoc.transact(() => {
+      if (gesture.mode === 'pen') strokesMap.set(gesture.stroke.id, gesture.stroke);
+      else for (const [id, original] of gesture.erased) {
+        // Keep a stroke that another participant changed during the gesture.
+        if (strokesMap.get(id) === original) strokesMap.delete(id);
       }
-    },
-    [rf, strokesMap],
-  );
+    });
+    undoManager.stopCapturing();
+    cancelDrawing();
+  }, [cancelDrawing, eraseGestureSegment, readOnly, rf, strokesMap, undoManager, ydoc]);
 
-  const beginErase = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (readOnly || toolMode !== 'eraser') return;
-
-      event.preventDefault();
-      erasingRef.current = true;
-      event.currentTarget.setPointerCapture(event.pointerId);
-      eraseAtPointer(event);
-    },
-    [eraseAtPointer, readOnly, toolMode],
-  );
-
-  const moveErase = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (
-        toolMode !== 'eraser' ||
-        !erasingRef.current
-      ) {
-        return;
-      }
-      eraseAtPointer(event);
-    },
-    [eraseAtPointer, toolMode],
-  );
-
-  const finishErase = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      erasingRef.current = false;
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-    },
-    [],
-  );
-
+  const cancelPointerDrawing = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (drawingGestureRef.current?.pointerId === event.pointerId) cancelDrawing();
+  }, [cancelDrawing]);
 
   const handleFrameDragStart = useCallback(
     (_event: any, frame: Node) => {
@@ -2149,7 +2106,7 @@ function BoardInner({
 
   const onPointerMove = useCallback((event: React.PointerEvent) => {
     if (!provider || !rf) return;
-    const point = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const point = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false });
     provider.awareness?.setLocalStateField('cursor', point);
   }, [provider, rf]);
 
@@ -2539,7 +2496,7 @@ function BoardInner({
             setRf(instance);
             setCanvasZoom(instance.getZoom());
           }}
-          onMoveStart={closeContextMenu}
+          onMoveStart={() => { closeContextMenu(); cancelDrawing(); }}
           onMoveEnd={(_, viewport) => setCanvasZoom(viewport.zoom)}
           onNodeContextMenu={(event, node) => openContextMenu(event, node.id)}
           onSelectionContextMenu={(event, selection) => {
@@ -2718,7 +2675,7 @@ function BoardInner({
               className="freehand-layer"
               aria-hidden="true"
             >
-              {[...strokes, ...(draftStroke ? [draftStroke] : [])].map(
+              {[...strokes.filter((stroke) => !erasedStrokeIds.has(stroke.id)), ...(draftStroke ? [draftStroke] : [])].map(
                 (stroke) => (
                   <path
                     key={stroke.id}
@@ -2777,31 +2734,26 @@ function BoardInner({
         {(effectiveToolMode === 'pen' || effectiveToolMode === 'eraser') && !readOnly && (
           <div
             className={`freehand-capture freehand-capture--${effectiveToolMode}`}
-            onPointerDown={
-              effectiveToolMode === 'pen' ? beginFreehand : beginErase
-            }
-            onPointerMove={
-              effectiveToolMode === 'pen' ? moveFreehand : moveErase
-            }
-            onPointerUp={
-              effectiveToolMode === 'pen' ? finishFreehand : finishErase
-            }
-            onPointerCancel={
-              effectiveToolMode === 'pen' ? finishFreehand : finishErase
-            }
+            onPointerDown={beginDrawing}
+            onPointerMove={moveDrawing}
+            onPointerUp={finishDrawing}
+            onPointerCancel={cancelPointerDrawing}
+            onLostPointerCapture={cancelPointerDrawing}
           />
         )}
 
         {(toolMode === 'pen' || toolMode === 'eraser') && !readOnly && (
           <div className="freehand-options">
-            <div className="freehand-options__mode">
+            <div className="freehand-options__mode"
+              title={toolMode === 'pen' ? 'Рисуйте свободно; Esc отменяет текущий штрих.' :
+                'Удаляет целые штрихи. Отпустите кнопку для сохранения; Esc отменяет текущий жест.'}>
               {toolMode === 'pen' ? (
                 <PenLine size={14} />
               ) : (
                 <Eraser size={14} />
               )}
               <strong>
-                {toolMode === 'pen' ? 'Перо' : 'Ластик'}
+                {toolMode === 'pen' ? 'Перо' : 'Ластик штрихов'}
               </strong>
             </div>
 
