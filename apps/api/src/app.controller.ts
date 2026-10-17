@@ -411,7 +411,7 @@ export class AppController {
     }
 
     const dataType = body.dataType ?? 'TEXT';
-    if (!['TEXT', 'INTEGER', 'BOOLEAN', 'DATE', 'UUID'].includes(dataType)) {
+    if (!['TEXT', 'INTEGER', 'NUMBER', 'BOOLEAN', 'DATE', 'UUID'].includes(dataType)) {
       throw new BadRequestException('Unsupported column data type');
     }
 
@@ -585,6 +585,7 @@ export class AppController {
     const allowedTypes: DatasetColumn['dataType'][] = [
       'TEXT',
       'INTEGER',
+      'NUMBER',
       'BOOLEAN',
       'DATE',
       'UUID',
@@ -669,11 +670,13 @@ export class AppController {
           ? typeof value === 'string'
           : body.dataType === 'INTEGER'
             ? typeof value === 'number' && Number.isSafeInteger(value)
-            : body.dataType === 'BOOLEAN'
-              ? typeof value === 'boolean'
-              : body.dataType === 'DATE'
-                ? typeof value === 'string' && isIsoDate(value)
-                : typeof value === 'string' && isUuid(value);
+            : body.dataType === 'NUMBER'
+              ? typeof value === 'number' && Number.isFinite(value)
+              : body.dataType === 'BOOLEAN'
+                ? typeof value === 'boolean'
+                : body.dataType === 'DATE'
+                  ? typeof value === 'string' && isIsoDate(value)
+                  : typeof value === 'string' && isUuid(value);
 
       if (!valid) {
         throw new BadRequestException(

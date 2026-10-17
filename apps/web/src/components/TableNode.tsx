@@ -113,7 +113,37 @@ export function TableNode({ data, selected }: NodeProps<any>) {
                   className="nodrag nowheel"
                   disabled={readOnly}
                   value={String(row.values[column.id] ?? '')}
-                  onChange={(event) => setCell(row.id, column.id, event.target.value)}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+
+                    if (raw === '') {
+                      setCell(row.id, column.id, null);
+                    } else if (
+                      column.dataType === 'INTEGER' &&
+                      /^-?\d+$/.test(raw)
+                    ) {
+                      setCell(
+                        row.id,
+                        column.id,
+                        Number.parseInt(raw, 10),
+                      );
+                    } else if (column.dataType === 'NUMBER') {
+                      const parsed = Number(raw);
+                      setCell(
+                        row.id,
+                        column.id,
+                        Number.isFinite(parsed)
+                          ? parsed
+                          : raw,
+                      );
+                    } else {
+                      setCell(
+                        row.id,
+                        column.id,
+                        raw,
+                      );
+                    }
+                  }}
                 />
               </div>
             ))}

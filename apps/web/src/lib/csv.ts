@@ -30,6 +30,8 @@ const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const integerPattern = /^-?(?:0|[1-9]\d*)$/;
+const numberPattern =
+  /^[+-]?(?:(?:0|[1-9]\d*)?\.\d+|(?:0|[1-9]\d*)[eE][+-]?\d+)$/;
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}(?:[T ][0-2]\d:[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-][0-2]\d:[0-5]\d)?)?$/;
 
 function normalizeRow(row: unknown[]): string[] {
@@ -98,6 +100,7 @@ function inferType(values: string[]): DatasetDataType {
   if (samples.every((value) => uuidPattern.test(value))) return 'UUID';
   if (samples.every((value) => /^(true|false)$/i.test(value))) return 'BOOLEAN';
   if (samples.every((value) => integerPattern.test(value))) return 'INTEGER';
+  if (samples.every((value) => numberPattern.test(value))) return 'NUMBER';
   if (
     samples.every(
       (value) => isoDatePattern.test(value) && !Number.isNaN(Date.parse(value)),
@@ -114,6 +117,10 @@ function coerce(value: string, type: DatasetDataType): DatasetCellValue {
 
   if (type === 'INTEGER') {
     return Number.parseInt(value, 10);
+  }
+
+  if (type === 'NUMBER') {
+    return Number(value);
   }
 
   if (type === 'BOOLEAN') {

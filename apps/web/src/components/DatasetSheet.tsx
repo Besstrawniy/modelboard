@@ -97,6 +97,11 @@ function normalizeInput(value: string, column: DatasetColumn): DatasetCellValue 
     return Number.parseInt(value, 10);
   }
 
+  if (column.dataType === 'NUMBER') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : value;
+  }
+
   return value;
 }
 
@@ -160,6 +165,24 @@ function convertCellValue(
     return {
       ok: false,
       reason: 'Ожидается целое безопасное число',
+    };
+  }
+
+  if (targetType === 'NUMBER') {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return { ok: true, value };
+    }
+
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value.trim());
+      if (Number.isFinite(parsed)) {
+        return { ok: true, value: parsed };
+      }
+    }
+
+    return {
+      ok: false,
+      reason: 'Ожидается конечное число',
     };
   }
 
@@ -1740,6 +1763,7 @@ export function DatasetSheet({
                   >
                     <option value="TEXT">TEXT</option>
                     <option value="INTEGER">INTEGER</option>
+                    <option value="NUMBER">NUMBER</option>
                     <option value="BOOLEAN">BOOLEAN</option>
                     <option value="DATE">DATE</option>
                     <option value="UUID">UUID</option>
@@ -1844,6 +1868,7 @@ export function DatasetSheet({
                 >
                   <option value="TEXT">TEXT</option>
                   <option value="INTEGER">INTEGER</option>
+                  <option value="NUMBER">NUMBER</option>
                   <option value="BOOLEAN">BOOLEAN</option>
                   <option value="DATE">DATE</option>
                   <option value="UUID">UUID</option>

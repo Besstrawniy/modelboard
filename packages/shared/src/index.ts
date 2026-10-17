@@ -70,7 +70,13 @@ export type WorkspaceSearchResult =
     };
 
 export type DatasetKind = 'MANUAL' | 'CSV' | 'SQL' | 'API';
-export type DatasetDataType = 'TEXT' | 'INTEGER' | 'BOOLEAN' | 'DATE' | 'UUID';
+export type DatasetDataType =
+  | 'TEXT'
+  | 'INTEGER'
+  | 'NUMBER'
+  | 'BOOLEAN'
+  | 'DATE'
+  | 'UUID';
 export type DatasetCellValue = string | number | boolean | null;
 
 export type DatasetMeta = {
