@@ -1,6 +1,7 @@
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import type {
   DatasetColumn,
+  DatasetCellFormat,
   DatasetCellValue,
   DatasetFormula,
   DatasetKind,
@@ -32,13 +33,17 @@ export function useCollaborativeDataset(
     () => ydoc.getMap<DatasetFormula>('formulas'),
     [ydoc],
   );
+  const formatsMap = useMemo(
+    () => ydoc.getMap<DatasetCellFormat>('formats'),
+    [ydoc],
+  );
   const undoManager = useMemo(
     () =>
       new Y.UndoManager(
-        [columnsMap, rowsMap, formulasMap],
+        [columnsMap, rowsMap, formulasMap, formatsMap],
         { captureTimeout: 500 },
       ),
-    [columnsMap, formulasMap, rowsMap],
+    [columnsMap, formatsMap, formulasMap, rowsMap],
   );
   const initialSyncDone = useRef(false);
   const [historyTick, setHistoryTick] = useState(0);
@@ -91,6 +96,7 @@ export function useCollaborativeDataset(
         (a, b) => a.ordinal - b.ordinal,
       );
       const formulas = Array.from(formulasMap.values());
+      const formats = Array.from(formatsMap.values());
 
       if (!recalculating && formulas.length > 0) {
         recalculating = true;
@@ -160,6 +166,7 @@ export function useCollaborativeDataset(
         columns,
         rows: freshRows,
         formulas,
+        formats,
         status,
       });
     };
@@ -168,6 +175,7 @@ export function useCollaborativeDataset(
     columnsMap.observe(sync);
     rowsMap.observe(sync);
     formulasMap.observe(sync);
+    formatsMap.observe(sync);
     sync();
 
     return () => {
@@ -175,12 +183,14 @@ export function useCollaborativeDataset(
       columnsMap.unobserve(sync);
       rowsMap.unobserve(sync);
       formulasMap.unobserve(sync);
+      formatsMap.unobserve(sync);
       provider.destroy();
       ydoc.destroy();
     };
   }, [
     columnsMap,
     datasetId,
+    formatsMap,
     formulasMap,
     metaMap,
     rowsMap,
@@ -306,6 +316,57 @@ export function useCollaborativeDataset(
     [formulasMap, readOnly, rowsMap, ydoc],
   );
 
+  const applyFormatBatch = useCallback(
+    (
+      cells: Array<{
+        rowId: string;
+        columnId: string;
+      }>,
+      patch: Partial<
+        Omit<DatasetCellFormat, 'rowId' | 'columnId'>
+      >,
+    ) => {
+      if (readOnly || cells.length === 0) return;
+
+      ydoc.transact(() => {
+        for (const cell of cells) {
+          const key = formulaKey(
+            cell.rowId,
+            cell.columnId,
+          );
+          const current = formatsMap.get(key);
+
+          const next: DatasetCellFormat = {
+            rowId: cell.rowId,
+            columnId: cell.columnId,
+            ...(current ?? {}),
+            ...patch,
+          };
+
+          if (next.align === null) {
+            delete next.align;
+          }
+          if (next.background === null) {
+            delete next.background;
+          }
+
+          const meaningful =
+            Boolean(next.bold) ||
+            Boolean(next.italic) ||
+            Boolean(next.align) ||
+            Boolean(next.background);
+
+          if (meaningful) {
+            formatsMap.set(key, next);
+          } else {
+            formatsMap.delete(key);
+          }
+        }
+      });
+    },
+    [formatsMap, readOnly, ydoc],
+  );
+
   const addColumn = useCallback(
     async (
       name: string,
@@ -341,6 +402,7 @@ export function useCollaborativeDataset(
     [
       columnsMap,
       datasetId,
+      formatsMap,
       readOnly,
       token,
       ydoc,
@@ -419,6 +481,12 @@ export function useCollaborativeDataset(
       ydoc.transact(() => {
         columnsMap.delete(columnId);
 
+        for (const [key, format] of formatsMap.entries()) {
+          if (format.columnId === columnId) {
+            formatsMap.delete(key);
+          }
+        }
+
         for (const [rowId, row] of rowsMap.entries()) {
           if (!(columnId in row.values)) continue;
           const values = { ...row.values };
@@ -484,10 +552,34 @@ export function useCollaborativeDataset(
       if (readOnly || !datasetId || !token) return false;
 
       await api.deleteDatasetRow(datasetId, rowId, token);
-      rowsMap.delete(rowId);
+
+      ydoc.transact(() => {
+        rowsMap.delete(rowId);
+
+        for (const [key, formula] of formulasMap.entries()) {
+          if (formula.rowId === rowId) {
+            formulasMap.delete(key);
+          }
+        }
+
+        for (const [key, format] of formatsMap.entries()) {
+          if (format.rowId === rowId) {
+            formatsMap.delete(key);
+          }
+        }
+      });
+
       return true;
     },
-    [datasetId, readOnly, rowsMap, token],
+    [
+      datasetId,
+      formatsMap,
+      formulasMap,
+      readOnly,
+      rowsMap,
+      token,
+      ydoc,
+    ],
   );
 
   void historyTick;
@@ -504,6 +596,7 @@ export function useCollaborativeDataset(
     setFormula,
     clearFormula,
     applyCellBatch,
+    applyFormatBatch,
     addColumn,
     renameColumn,
     convertColumn,

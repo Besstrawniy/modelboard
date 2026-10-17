@@ -2,6 +2,10 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Bold as BoldIcon,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -10,6 +14,8 @@ import {
   Database,
   Filter,
   FilterX,
+  Italic as ItalicIcon,
+  PaintBucket,
   Pencil,
   Plus,
   Search,
@@ -21,6 +27,7 @@ import {
   X,
 } from 'lucide-react';
 import type {
+  DatasetCellFormat,
   DatasetCellValue,
   DatasetColumn,
   DatasetFormula,
@@ -215,6 +222,7 @@ function SheetCell({
   onFocus,
   onNavigate,
   formulaActive = false,
+  format,
 }: {
   row: DatasetRow;
   column: DatasetColumn;
@@ -225,6 +233,7 @@ function SheetCell({
     direction: 'up' | 'down' | 'left' | 'right',
   ) => void;
   formulaActive?: boolean;
+  format?: DatasetCellFormat;
 }) {
   const raw = row.values[column.id];
 
@@ -232,6 +241,20 @@ function SheetCell({
     return (
       <select
         className="dataset-sheet__cell-editor"
+        style={{
+          fontWeight: format?.bold ? 700 : undefined,
+          fontStyle: format?.italic ? 'italic' : undefined,
+          textAlign:
+            format?.align === 'CENTER'
+              ? 'center'
+              : format?.align === 'RIGHT'
+                ? 'right'
+                : format?.align === 'LEFT'
+                  ? 'left'
+                  : undefined,
+          backgroundColor:
+            format?.background || undefined,
+        }}
         disabled={readOnly}
         value={raw === null || raw === undefined ? '' : String(raw)}
         onFocus={onFocus}
@@ -270,6 +293,20 @@ function SheetCell({
   return (
     <input
       className="dataset-sheet__cell-editor"
+      style={{
+        fontWeight: format?.bold ? 700 : undefined,
+        fontStyle: format?.italic ? 'italic' : undefined,
+        textAlign:
+          format?.align === 'CENTER'
+            ? 'center'
+            : format?.align === 'RIGHT'
+              ? 'right'
+              : format?.align === 'LEFT'
+                ? 'left'
+                : undefined,
+        backgroundColor:
+          format?.background || undefined,
+      }}
       disabled={readOnly}
       value={raw === null || raw === undefined ? '' : String(raw)}
       onFocus={onFocus}
@@ -350,6 +387,7 @@ export function DatasetSheet({
     setFormula,
     clearFormula,
     applyCellBatch,
+    applyFormatBatch,
     addColumn,
     renameColumn,
     convertColumn,
@@ -510,6 +548,17 @@ export function DatasetSheet({
         ]),
       ),
     [dataset?.formulas],
+  );
+
+  const formatByCell = useMemo(
+    () =>
+      new Map(
+        (dataset?.formats ?? []).map((format) => [
+          formulaKey(format.rowId, format.columnId),
+          format,
+        ]),
+      ),
+    [dataset?.formats],
   );
 
   const rowIndexById = useMemo(
@@ -908,6 +957,67 @@ export function DatasetSheet({
       );
     }
   };
+
+  const formatCellsInSelection = (
+    patch: Partial<
+      Omit<DatasetCellFormat, 'rowId' | 'columnId'>
+    >,
+  ) => {
+    if (!dataset || !selectedCell || readOnly) return;
+
+    const fallbackRow = dataset.rows.findIndex(
+      (row) => row.id === selectedCell.rowId,
+    );
+    const fallbackColumn = dataset.columns.findIndex(
+      (column) => column.id === selectedCell.columnId,
+    );
+    if (fallbackRow < 0 || fallbackColumn < 0) return;
+
+    const bounds = selectionBounds ?? {
+      startRow: fallbackRow,
+      endRow: fallbackRow,
+      startColumn: fallbackColumn,
+      endColumn: fallbackColumn,
+    };
+
+    const cells: Array<{
+      rowId: string;
+      columnId: string;
+    }> = [];
+
+    for (
+      let rowIndex = bounds.startRow;
+      rowIndex <= bounds.endRow;
+      rowIndex += 1
+    ) {
+      for (
+        let columnIndex = bounds.startColumn;
+        columnIndex <= bounds.endColumn;
+        columnIndex += 1
+      ) {
+        const row = dataset.rows[rowIndex];
+        const column = dataset.columns[columnIndex];
+        if (!row || !column) continue;
+
+        cells.push({
+          rowId: row.id,
+          columnId: column.id,
+        });
+      }
+    }
+
+    applyFormatBatch(cells, patch);
+  };
+
+  const selectedFormat =
+    selectedCell
+      ? formatByCell.get(
+          formulaKey(
+            selectedCell.rowId,
+            selectedCell.columnId,
+          ),
+        )
+      : undefined;
 
   const focusCell = (
     rowId: string,
@@ -2002,6 +2112,104 @@ export function DatasetSheet({
           </button>
         )}
 
+        {!readOnly && selectedCell && (
+          <div className="dataset-sheet__format-group">
+            <button
+              className={selectedFormat?.bold ? 'is-active' : ''}
+              onClick={() =>
+                formatCellsInSelection({
+                  bold: !selectedFormat?.bold,
+                })
+              }
+              title="Жирный"
+            >
+              <BoldIcon size={14} />
+            </button>
+
+            <button
+              className={selectedFormat?.italic ? 'is-active' : ''}
+              onClick={() =>
+                formatCellsInSelection({
+                  italic: !selectedFormat?.italic,
+                })
+              }
+              title="Курсив"
+            >
+              <ItalicIcon size={14} />
+            </button>
+
+            <button
+              className={selectedFormat?.align === 'LEFT' ? 'is-active' : ''}
+              onClick={() =>
+                formatCellsInSelection({
+                  align: 'LEFT',
+                })
+              }
+              title="По левому краю"
+            >
+              <AlignLeft size={14} />
+            </button>
+
+            <button
+              className={selectedFormat?.align === 'CENTER' ? 'is-active' : ''}
+              onClick={() =>
+                formatCellsInSelection({
+                  align: 'CENTER',
+                })
+              }
+              title="По центру"
+            >
+              <AlignCenter size={14} />
+            </button>
+
+            <button
+              className={selectedFormat?.align === 'RIGHT' ? 'is-active' : ''}
+              onClick={() =>
+                formatCellsInSelection({
+                  align: 'RIGHT',
+                })
+              }
+              title="По правому краю"
+            >
+              <AlignRight size={14} />
+            </button>
+
+            <label
+              className="dataset-sheet__background-picker"
+              title="Цвет фона"
+            >
+              <PaintBucket size={13} />
+              <input
+                type="color"
+                value={
+                  selectedFormat?.background ??
+                  '#ffffff'
+                }
+                onChange={(event) =>
+                  formatCellsInSelection({
+                    background:
+                      event.target.value,
+                  })
+                }
+              />
+            </label>
+
+            <button
+              onClick={() =>
+                formatCellsInSelection({
+                  bold: false,
+                  italic: false,
+                  align: null,
+                  background: null,
+                })
+              }
+              title="Очистить формат"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
+
         <button
           className="dataset-sheet__history-button"
           disabled={readOnly || !canUndo}
@@ -2488,6 +2696,7 @@ export function DatasetSheet({
                           column={column}
                           readOnly={readOnly}
                           formulaActive={Boolean(formula)}
+                          format={formatByCell.get(key)}
                           onFocus={() => {
                             setSelectedCell({
                               rowId: row.id,

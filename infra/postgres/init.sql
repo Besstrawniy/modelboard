@@ -106,6 +106,16 @@ CREATE TABLE IF NOT EXISTS dataset_formulas (
   PRIMARY KEY (dataset_id, row_id, column_id)
 );
 
+CREATE TABLE IF NOT EXISTS dataset_cell_formats (
+  dataset_id uuid NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
+  row_id uuid NOT NULL REFERENCES dataset_rows(id) ON DELETE CASCADE,
+  column_id uuid NOT NULL REFERENCES dataset_columns(id) ON DELETE CASCADE,
+  format jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (dataset_id, row_id, column_id)
+);
+
 CREATE TABLE IF NOT EXISTS dataset_relations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

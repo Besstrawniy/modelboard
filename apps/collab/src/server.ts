@@ -192,6 +192,25 @@ async function projectDatasetStateToPostgres(
       expression: String(formula.expression ?? ''),
     }));
 
+    const formats = Array.from(
+      doc.getMap<any>('formats').values(),
+    ).map((format: any) => ({
+      rowId: String(format.rowId),
+      columnId: String(format.columnId),
+      bold: Boolean(format.bold),
+      italic: Boolean(format.italic),
+      align:
+        format.align === 'LEFT' ||
+        format.align === 'CENTER' ||
+        format.align === 'RIGHT'
+          ? format.align
+          : null,
+      background:
+        typeof format.background === 'string'
+          ? format.background
+          : null,
+    }));
+
     const client = await pool.connect();
 
     try {
@@ -279,6 +298,44 @@ async function projectDatasetStateToPostgres(
         );
       }
 
+      await client.query(
+        'DELETE FROM dataset_cell_formats WHERE dataset_id = $1',
+        [datasetId],
+      );
+
+      if (formats.length > 0) {
+        await client.query(
+          `INSERT INTO dataset_cell_formats (
+             dataset_id, row_id, column_id, format
+           )
+           SELECT
+             $1,
+             source.row_id,
+             source.column_id,
+             source.format
+           FROM jsonb_to_recordset($2::jsonb) AS source(
+             row_id uuid,
+             column_id uuid,
+             format jsonb
+           )`,
+          [
+            datasetId,
+            JSON.stringify(
+              formats.map((format) => ({
+                row_id: format.rowId,
+                column_id: format.columnId,
+                format: {
+                  bold: format.bold,
+                  italic: format.italic,
+                  align: format.align,
+                  background: format.background,
+                },
+              })),
+            ),
+          ],
+        );
+      }
+
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -343,11 +400,29 @@ async function bootstrapDataset(datasetId: string) {
     [datasetId],
   );
 
+  const formatsResult = await query<{
+    row_id: string;
+    column_id: string;
+    format: {
+      bold?: boolean;
+      italic?: boolean;
+      align?: 'LEFT' | 'CENTER' | 'RIGHT' | null;
+      background?: string | null;
+    };
+  }>(
+    `SELECT row_id, column_id, format
+     FROM dataset_cell_formats
+     WHERE dataset_id = $1
+     ORDER BY row_id, column_id`,
+    [datasetId],
+  );
+
   const doc = new Y.Doc();
   const meta = doc.getMap<any>('meta');
   const columns = doc.getMap<any>('columns');
   const rows = doc.getMap<any>('rows');
   const formulas = doc.getMap<any>('formulas');
+  const formats = doc.getMap<any>('formats');
 
   meta.set('id', dataset.id);
   meta.set('workspaceId', dataset.workspace_id);
@@ -379,6 +454,17 @@ async function bootstrapDataset(datasetId: string) {
         rowId: formula.row_id,
         columnId: formula.column_id,
         expression: formula.expression,
+      },
+    );
+  }
+
+  for (const item of formatsResult.rows) {
+    formats.set(
+      `${item.row_id}:${item.column_id}`,
+      {
+        rowId: item.row_id,
+        columnId: item.column_id,
+        ...item.format,
       },
     );
   }

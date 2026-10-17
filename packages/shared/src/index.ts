@@ -101,10 +101,20 @@ export type DatasetFormula = {
   expression: string;
 };
 
+export type DatasetCellFormat = {
+  rowId: string;
+  columnId: string;
+  bold?: boolean;
+  italic?: boolean;
+  align?: 'LEFT' | 'CENTER' | 'RIGHT' | null;
+  background?: string | null;
+};
+
 export type DatasetSnapshot = DatasetMeta & {
   columns: DatasetColumn[];
   rows: DatasetRow[];
   formulas: DatasetFormula[];
+  formats: DatasetCellFormat[];
 };
 
 export type ConvertDatasetColumnInput = {

@@ -88,6 +88,28 @@ export function TableNode({ data, selected }: NodeProps<any>) {
             {dataset.columns.map((column) => (
               <div className="table-grid__cell" key={column.id}>
                 <input
+                  style={(() => {
+                    const format = dataset.formats.find(
+                      (item) =>
+                        item.rowId === row.id &&
+                        item.columnId === column.id,
+                    );
+
+                    return {
+                      fontWeight: format?.bold ? 700 : undefined,
+                      fontStyle: format?.italic ? 'italic' : undefined,
+                      textAlign:
+                        format?.align === 'CENTER'
+                          ? 'center'
+                          : format?.align === 'RIGHT'
+                            ? 'right'
+                            : format?.align === 'LEFT'
+                              ? 'left'
+                              : undefined,
+                      backgroundColor:
+                        format?.background || undefined,
+                    };
+                  })()}
                   className="nodrag nowheel"
                   disabled={readOnly}
                   value={String(row.values[column.id] ?? '')}
