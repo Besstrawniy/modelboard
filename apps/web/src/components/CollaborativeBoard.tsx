@@ -630,6 +630,158 @@ function BoardInner({
     selectedNodeIds,
   ]);
 
+  const deleteSelection = useCallback(async () => {
+    if (readOnly || selectedNodeIds.length === 0) return;
+
+    const selected = new Set(selectedNodeIds);
+    const selectedNodes = nodes.filter((node) =>
+      selected.has(node.id),
+    );
+
+    await Promise.all(
+      selectedNodes
+        .filter((node) => (node.data as any)?.binding)
+        .map((node) =>
+          api
+            .deleteObjectBinding(
+              meta.id,
+              node.id,
+              session.token,
+            )
+            .catch(() => undefined),
+        ),
+    );
+
+    ydoc.transact(() => {
+      for (const nodeId of selectedNodeIds) {
+        nodesMap.delete(nodeId);
+      }
+
+      for (const edge of edgesMap.values()) {
+        if (
+          selected.has(edge.source) ||
+          selected.has(edge.target)
+        ) {
+          edgesMap.delete(edge.id);
+        }
+      }
+    });
+
+    clearSelection();
+  }, [
+    clearSelection,
+    edgesMap,
+    meta.id,
+    nodes,
+    nodesMap,
+    readOnly,
+    selectedNodeIds,
+    session.token,
+    ydoc,
+  ]);
+
+  const wrapSelectionInFrame = useCallback(() => {
+    if (
+      readOnly ||
+      selectedNodeIds.length === 0
+    ) {
+      return;
+    }
+
+    const selected = nodes.filter((node) =>
+      selectedNodeIds.includes(node.id),
+    );
+    if (selected.length === 0) return;
+
+    const bounds = selected.reduce(
+      (result, node) => {
+        const width = nodeSize(
+          node,
+          'width',
+          180,
+        );
+        const height = nodeSize(
+          node,
+          'height',
+          90,
+        );
+
+        return {
+          left: Math.min(
+            result.left,
+            node.position.x,
+          ),
+          top: Math.min(
+            result.top,
+            node.position.y,
+          ),
+          right: Math.max(
+            result.right,
+            node.position.x + width,
+          ),
+          bottom: Math.max(
+            result.bottom,
+            node.position.y + height,
+          ),
+        };
+      },
+      {
+        left: Number.POSITIVE_INFINITY,
+        top: Number.POSITIVE_INFINITY,
+        right: Number.NEGATIVE_INFINITY,
+        bottom: Number.NEGATIVE_INFINITY,
+      },
+    );
+
+    const paddingX = 70;
+    const paddingTop = 78;
+    const paddingBottom = 55;
+    const frameId = crypto.randomUUID();
+
+    const frame: Node = {
+      id: frameId,
+      type: 'frame',
+      position: {
+        x: bounds.left - paddingX,
+        y: bounds.top - paddingTop,
+      },
+      style: {
+        width:
+          bounds.right -
+          bounds.left +
+          paddingX * 2,
+        height:
+          bounds.bottom -
+          bounds.top +
+          paddingTop +
+          paddingBottom,
+      },
+      zIndex: -10,
+      data: {
+        title: 'Новая группа',
+        description: '',
+      },
+    };
+
+    nodesMap.set(frameId, frame);
+    setSelectedNodeIds([frameId]);
+    setSelectedNodeId(frameId);
+
+    requestAnimationFrame(() => {
+      setNodes((current) =>
+        current.map((node) => ({
+          ...node,
+          selected: node.id === frameId,
+        })),
+      );
+    });
+  }, [
+    nodes,
+    nodesMap,
+    readOnly,
+    selectedNodeIds,
+  ]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -2244,6 +2396,43 @@ function BoardInner({
             ) : null)}
           </ViewportPortal>
         </ReactFlow>
+
+        {toolMode === 'select' && selectedNodeIds.length > 0 && !readOnly && (
+          <div className="selection-actions">
+            <span>
+              Выбрано: {selectedNodeIds.length}
+            </span>
+
+            <button
+              onClick={() =>
+                void duplicateSelection()
+              }
+              title="Дублировать (Ctrl+D)"
+            >
+              <Copy size={14} />
+              Дублировать
+            </button>
+
+            <button
+              onClick={wrapSelectionInFrame}
+              title="Создать Frame вокруг выделения"
+            >
+              <FrameIcon size={14} />
+              Во Frame
+            </button>
+
+            <button
+              className="is-danger"
+              onClick={() =>
+                void deleteSelection()
+              }
+              title="Удалить выделение"
+            >
+              <Trash2 size={14} />
+              Удалить
+            </button>
+          </div>
+        )}
 
         {(toolMode === 'pen' || toolMode === 'eraser') && !readOnly && (
           <div

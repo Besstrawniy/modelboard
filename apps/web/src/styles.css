@@ -3133,3 +3133,61 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   margin: 5px 4px;
   background: #eceef1;
 }
+
+
+/* Canvas selection quick actions */
+.selection-actions {
+  position: absolute;
+  z-index: 35;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  min-height: 40px;
+  padding: 5px 7px 5px 10px;
+  border: 1px solid #d9dde4;
+  border-radius: 11px;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 12px 34px rgba(25,30,40,.16);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  backdrop-filter: blur(8px);
+}
+.selection-actions > span {
+  margin-right: 3px;
+  color: #838a94;
+  font-size: 8px;
+  font-weight: 700;
+}
+.selection-actions > button {
+  min-height: 29px;
+  padding: 0 8px;
+  border: 1px solid #dfe2e7;
+  border-radius: 7px;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #545d68;
+  font-size: 8px;
+  font-weight: 750;
+}
+.selection-actions > button:hover {
+  background: #f5f6f8;
+}
+.selection-actions > button.is-danger {
+  color: #9b4747;
+  border-color: #ead6d6;
+}
+.selection-actions > button.is-danger:hover {
+  background: #fff1f1;
+}
+
+@media (max-width: 760px) {
+  .selection-actions > span {
+    display: none;
+  }
+  .selection-actions {
+    max-width: calc(100% - 20px);
+  }
+}
