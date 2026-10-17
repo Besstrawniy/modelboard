@@ -52,6 +52,7 @@ import { CommentsPanel } from './CommentsPanel';
 import { DatasetsPanel } from './DatasetsPanel';
 import { CsvImportDialog } from './CsvImportDialog';
 import { parseCsvFile, type ParsedCsv } from '../lib/csv';
+import { shouldPersistCanvasNodeChange } from '../lib/canvasInteraction';
 import { api } from '../lib/api';
 import { RelationDialog, type PendingRelation } from './RelationDialog';
 import { InspectorPanel } from './InspectorPanel';
@@ -981,21 +982,47 @@ function BoardInner({
   ]);
 
   const persistNodeChanges = useCallback((changes: NodeChange[]) => {
+    // Position and size previews remain local while the pointer moves.
+    // Persist their final state only on drag/resize completion to reduce
+    // network traffic and prevent remote Yjs sync from fighting local drag.
     setNodes((current) => {
       const next = applyNodeChanges(changes, current);
-      const changedIds = new Set(changes.map((change: any) => change.id).filter(Boolean));
+      const persistent = changes.filter(shouldPersistCanvasNodeChange);
+      if (persistent.length === 0) return next;
+
+      const changedIds = new Set(
+        persistent
+          .map((change: any) => change.id as string | undefined)
+          .filter((id): id is string => Boolean(id)),
+      );
+
       ydoc.transact(() => {
-        for (const change of changes as any[]) {
+        for (const change of persistent as any[]) {
           if (change.type === 'remove') nodesMap.delete(change.id);
-          if (change.type === 'add') nodesMap.set(change.item.id, change.item);
+          if (change.type === 'add') {
+            nodesMap.set(change.item.id, {
+              ...change.item,
+              selected: false,
+              dragging: false,
+            });
+          }
         }
+
         for (const id of changedIds) {
-          const change = changes.find((entry: any) => entry.id === id) as any;
-          if (change?.type === 'select' || change?.type === 'remove') continue;
+          const change = persistent.find((entry: any) => entry.id === id) as any;
+          if (change?.type === 'remove') continue;
+
           const node = next.find((entry) => entry.id === id);
-          if (node) nodesMap.set(id, node);
+          if (node) {
+            nodesMap.set(id, {
+              ...node,
+              selected: false,
+              dragging: false,
+            });
+          }
         }
       });
+
       return next;
     });
   }, [nodesMap, ydoc]);
