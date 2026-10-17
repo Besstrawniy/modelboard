@@ -20,7 +20,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { ChevronDown, ClipboardPaste, Copy, Database, Eraser, Frame as FrameIcon, Grid3X3, Hand, LayoutDashboard, HelpCircle, Maximize2, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X, ZoomIn, ZoomOut } from 'lucide-react';
 import {
   DEMO_BOARD_ID,
@@ -52,7 +52,7 @@ import { CommentsPanel } from './CommentsPanel';
 import { DatasetsPanel } from './DatasetsPanel';
 import { CsvImportDialog } from './CsvImportDialog';
 import { parseCsvFile, type ParsedCsv } from '../lib/csv';
-import { shouldPersistCanvasNodeChange } from '../lib/canvasInteraction';
+import { reconcileCanvasNodes, persistedCanvasGeometry, shouldPersistCanvasNodeChange, type CanvasPreview } from '../lib/canvasInteraction';
 import { api } from '../lib/api';
 import { RelationDialog, type PendingRelation } from './RelationDialog';
 import { InspectorPanel } from './InspectorPanel';
@@ -236,7 +236,16 @@ function BoardInner({
   );
   const initialSyncDone = useRef(false);
   const pasteOffsetRef = useRef(0);
-  const [nodes, setNodes] = useState<Node[]>([]);
+  const [nodes, setNodesState] = useState<Node[]>([]);
+  const nodesRef = useRef<Node[]>([]);
+  const previewsRef = useRef(new Map<string, CanvasPreview>());
+  // Event handlers and synchronous Yjs observers share the latest local state.
+  // Document writes must stay outside React state updater functions.
+  const setNodes = useCallback((update: SetStateAction<Node[]>) => {
+    const next = typeof update === 'function' ? update(nodesRef.current) : update;
+    nodesRef.current = next;
+    setNodesState(next);
+  }, []);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [strokes, setStrokes] = useState<FreehandStroke[]>([]);
   const [draftStroke, setDraftStroke] =
@@ -246,9 +255,9 @@ function BoardInner({
   const erasingRef = useRef(false);
   const frameDragRef = useRef<{
     frameId: string;
-    lastX: number;
-    lastY: number;
-    nodeIds: string[];
+    startX: number;
+    startY: number;
+    positions: Map<string, { x: number; y: number }>;
   } | null>(null);
   const [status, setStatus] = useState('connecting');
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
@@ -367,20 +376,9 @@ function BoardInner({
     setProvider(instance);
 
     const syncNodes = () =>
-      setNodes((current) => {
-        const selected = new Set(
-          current
-            .filter((node) => node.selected)
-            .map((node) => node.id),
-        );
-
-        return Array.from(nodesMap.values()).map(
-          (node: Node) => ({
-            ...node,
-            selected: selected.has(node.id),
-          }),
-        );
-      });
+      setNodes((current) => reconcileCanvasNodes(
+        Array.from(nodesMap.values()) as Node[], current, previewsRef.current,
+      ));
     const syncEdges = () => setEdges(Array.from(edgesMap.values()));
     const syncStrokes = () =>
       setStrokes(Array.from(strokesMap.values()));
@@ -998,50 +996,61 @@ function BoardInner({
   ]);
 
   const persistNodeChanges = useCallback((changes: NodeChange[]) => {
-    // Position and size previews remain local while the pointer moves.
-    // Persist their final state only on drag/resize completion to reduce
-    // network traffic and prevent remote Yjs sync from fighting local drag.
-    setNodes((current) => {
-      const next = applyNodeChanges(changes, current);
-      const persistent = changes.filter(shouldPersistCanvasNodeChange);
-      if (persistent.length === 0) return next;
-
-      const changedIds = new Set(
-        persistent
-          .map((change: any) => change.id as string | undefined)
-          .filter((id): id is string => Boolean(id)),
-      );
-
-      ydoc.transact(() => {
-        for (const change of persistent as any[]) {
-          if (change.type === 'remove') nodesMap.delete(change.id);
-          if (change.type === 'add') {
-            nodesMap.set(change.item.id, {
-              ...change.item,
-              selected: false,
-              dragging: false,
-            });
-          }
-        }
-
-        for (const id of changedIds) {
-          const change = persistent.find((entry: any) => entry.id === id) as any;
-          if (change?.type === 'remove') continue;
-
-          const node = next.find((entry) => entry.id === id);
+    const resizeState = new Map<string, boolean>();
+    for (const change of changes) {
+      if (change.type === 'dimensions' && change.resizing !== undefined) {
+        resizeState.set(change.id, change.resizing);
+      }
+    }
+    // Resizing from a top/left handle also emits position changes without a
+    // dragging flag. Keep those local until the dimensions gesture completes.
+    const gestureChanges = changes.map((change) =>
+      change.type === 'position' && (resizeState.get(change.id) === true ||
+        (previewsRef.current.get(change.id)?.resizing && resizeState.get(change.id) !== false))
+        ? { ...change, dragging: true } : change);
+    const current = nodesRef.current;
+    const next = applyNodeChanges<Node>(gestureChanges, current);
+    for (const change of gestureChanges) {
+      if (change.type === 'position' || change.type === 'dimensions') {
+        const active = change.type === 'position' ? change.dragging : change.resizing;
+        if (active === true) {
+          if (!previewsRef.current.size) undoManager.stopCapturing();
+          const node = next.find((entry) => entry.id === change.id);
           if (node) {
-            nodesMap.set(id, {
-              ...node,
-              selected: false,
-              dragging: false,
+            const preview = previewsRef.current.get(change.id) ?? {};
+            previewsRef.current.set(change.id, { ...preview,
+              ...(change.type === 'position'
+                ? { position: node.position, dragging: true }
+                : { measured: node.measured, width: node.width, height: node.height,
+                    resizing: true }),
             });
           }
+        } else {
+          previewsRef.current.delete(change.id);
         }
-      });
+      } else if (change.type === 'remove') {
+        previewsRef.current.delete(change.id);
+      }
+    }
+    setNodes(next);
+    const persistent = gestureChanges.filter(shouldPersistCanvasNodeChange);
+    if (!persistent.length) return;
 
-      return next;
+    ydoc.transact(() => {
+      for (const change of persistent) {
+        if (change.type === 'remove') nodesMap.delete(change.id);
+        else if (change.type === 'add' || change.type === 'replace') {
+          nodesMap.set(change.item.id, { ...change.item, selected: false, dragging: false });
+        } else if (change.type === 'position' || change.type === 'dimensions') {
+          const shared = nodesMap.get(change.id) as Node | undefined;
+          const local = next.find((node) => node.id === change.id);
+          // A remote deletion wins; a move must never resurrect a removed node.
+          if (shared && local) nodesMap.set(change.id, persistedCanvasGeometry(shared, local, change.type));
+        }
+      }
     });
-  }, [nodesMap, ydoc]);
+    if (!previewsRef.current.size && !frameDragRef.current) undoManager.stopCapturing();
+  }, [nodesMap, setNodes, undoManager, ydoc]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     if (readOnly) {
@@ -1948,7 +1957,9 @@ function BoardInner({
 
   const handleFrameDragStart = useCallback(
     (_event: any, frame: Node) => {
-      if (readOnly || frame.type !== 'frame') {
+      if (readOnly) return;
+      undoManager.stopCapturing();
+      if (frame.type !== 'frame') {
         frameDragRef.current = null;
         return;
       }
@@ -1987,12 +1998,13 @@ function BoardInner({
 
       frameDragRef.current = {
         frameId: frame.id,
-        lastX: frame.position.x,
-        lastY: frame.position.y,
-        nodeIds,
+        startX: frame.position.x,
+        startY: frame.position.y,
+        positions: new Map(nodes.filter((node) => nodeIds.includes(node.id))
+          .map((node) => [node.id, { ...node.position }])),
       };
     },
-    [nodes, readOnly, selectedNodeIds],
+    [nodes, readOnly, selectedNodeIds, undoManager],
   );
 
   const handleFrameDrag = useCallback(
@@ -2000,34 +2012,37 @@ function BoardInner({
       const state = frameDragRef.current;
       if (!state || state.frameId !== frame.id) return;
 
-      const dx = frame.position.x - state.lastX;
-      const dy = frame.position.y - state.lastY;
-      if (!dx && !dy) return;
-
-      ydoc.transact(() => {
-        for (const nodeId of state.nodeIds) {
-          const current = nodesMap.get(nodeId) as Node | undefined;
-          if (!current) continue;
-
-          nodesMap.set(nodeId, {
-            ...current,
-            position: {
-              x: current.position.x + dx,
-              y: current.position.y + dy,
-            },
-          });
-        }
-      });
-
-      state.lastX = frame.position.x;
-      state.lastY = frame.position.y;
+      const dx = frame.position.x - state.startX;
+      const dy = frame.position.y - state.startY;
+      setNodes((current) => current.map((node) => {
+        const start = state.positions.get(node.id);
+        if (!start) return node;
+        const position = { x: start.x + dx, y: start.y + dy };
+        previewsRef.current.set(node.id, { position, dragging: true });
+        return { ...node, position, dragging: true };
+      }));
     },
-    [nodesMap, ydoc],
+    [setNodes],
   );
 
-  const handleFrameDragStop = useCallback(() => {
+  const handleFrameDragStop = useCallback((_event: any, frame: Node) => {
+    const state = frameDragRef.current;
+    if (state && state.frameId === frame.id) {
+      // Include the final pointer position even if there was no last move callback.
+      handleFrameDrag(_event, frame);
+      const local = new Map(nodesRef.current.map((node) => [node.id, node]));
+      for (const id of state.positions.keys()) previewsRef.current.delete(id);
+      ydoc.transact(() => {
+        for (const id of state.positions.keys()) {
+          const shared = nodesMap.get(id) as Node | undefined;
+          const node = local.get(id);
+          if (shared && node) nodesMap.set(id, persistedCanvasGeometry(shared, node, 'position'));
+        }
+      });
+    }
     frameDragRef.current = null;
-  }, []);
+    undoManager.stopCapturing();
+  }, [handleFrameDrag, nodesMap, undoManager, ydoc]);
 
   const onPointerMove = useCallback((event: React.PointerEvent) => {
     if (!provider || !rf) return;
