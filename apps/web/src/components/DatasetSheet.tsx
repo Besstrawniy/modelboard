@@ -17,6 +17,8 @@ import {
   Italic as ItalicIcon,
   PaintBucket,
   Pencil,
+  Pin,
+  PinOff,
   Plus,
   Search,
   Sigma,
@@ -494,6 +496,8 @@ export function DatasetSheet({
   const [columnWidths, setColumnWidths] = useState<
     Record<string, number>
   >({});
+  const [frozenColumns, setFrozenColumns] = useState(0);
+  const [frozenRows, setFrozenRows] = useState(0);
   const [cellMenu, setCellMenu] = useState<{
     x: number;
     y: number;
@@ -569,6 +573,29 @@ export function DatasetSheet({
       JSON.stringify(columnWidths),
     );
   }, [columnWidths, datasetId]);
+  useEffect(() => {
+    try {
+      const value = JSON.parse(
+        localStorage.getItem(`modelboard:dataset-freeze:${datasetId}`) || '{}',
+      );
+      setFrozenColumns(Math.max(0, Math.min(5, Number(value.columns) || 0)));
+      setFrozenRows(Math.max(0, Math.min(5, Number(value.rows) || 0)));
+    } catch {
+      setFrozenColumns(0);
+      setFrozenRows(0);
+    }
+  }, [datasetId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        `modelboard:dataset-freeze:${datasetId}`,
+        JSON.stringify({ columns: frozenColumns, rows: frozenRows }),
+      );
+    } catch {
+      // Local view preference is optional.
+    }
+  }, [datasetId, frozenColumns, frozenRows]);
 
   useEffect(() => {
     if (!dataset || !focusRowId || query || sort) return;
@@ -1428,6 +1455,33 @@ export function DatasetSheet({
       90,
       Math.min(640, columnWidths[columnId] ?? 180),
     );
+
+  const frozenLeftOffset = (columnIndex: number) => {
+    if (!dataset) return 54;
+    let offset = 54;
+    for (let i = 0; i < columnIndex; i += 1) {
+      offset += columnWidth(dataset.columns[i].id);
+    }
+    return offset;
+  };
+
+  const frozenTopOffset = (pageRowIndex: number) =>
+    48 + (filtersOpen ? 36 : 0) + pageRowIndex * 35;
+
+  const frozenCellStyle = (
+    columnIndex: number,
+    pageRowIndex?: number,
+  ): React.CSSProperties => {
+    const col = columnIndex < frozenColumns;
+    const row = pageRowIndex !== undefined && pageRowIndex < frozenRows;
+    return {
+      ...(col ? { position: 'sticky', left: frozenLeftOffset(columnIndex) } : {}),
+      ...(row ? { position: 'sticky', top: frozenTopOffset(pageRowIndex) } : {}),
+      ...(col || row ? {
+        zIndex: col && row ? 6 : row ? 4 : pageRowIndex === undefined ? 11 : 3,
+      } : {}),
+    };
+  };
 
   const beginColumnResize = (
     event: React.PointerEvent<HTMLSpanElement>,
@@ -2453,6 +2507,31 @@ export function DatasetSheet({
           </button>
         )}
 
+        <div className="dataset-sheet__freeze-buttons">
+          <button
+            title="Закрепить до выбранной ячейки: не более пяти верхних строк и левых колонок"
+            onClick={() => {
+              setFrozenRows(Math.min(5, Math.max(1, selectedRowIndex + 1)));
+              setFrozenColumns(Math.min(5, Math.max(1, selectedColumnIndex + 1)));
+            }}
+          >
+            <Pin size={13} /> Закрепить
+          </button>
+          {(frozenRows > 0 || frozenColumns > 0) && (
+            <>
+              <button
+                title="Снять закрепление"
+                onClick={() => {
+                  setFrozenRows(0);
+                  setFrozenColumns(0);
+                }}
+              >
+                <PinOff size={13} /> Снять
+              </button>
+              <span>{frozenRows} стр. · {frozenColumns} кол.</span>
+            </>
+          )}
+        </div>
         <div className="dataset-sheet__page-info">
           Показано {pageRows.length} из {visibleRows.length}
         </div>
@@ -2486,7 +2565,9 @@ export function DatasetSheet({
                         width: columnWidth(column.id),
                         minWidth: columnWidth(column.id),
                         maxWidth: columnWidth(column.id),
+                        ...frozenCellStyle(columnIndex),
                       }}
+                      className={columnIndex < frozenColumns ? 'is-frozen-column' : ''}
                     >
                       <button
                         className="dataset-sheet__column-header"
@@ -2635,13 +2716,15 @@ export function DatasetSheet({
                   <th className="dataset-sheet__row-number">
                     <Filter size={12} />
                   </th>
-                  {dataset.columns.map((column) => (
+                  {dataset.columns.map((column, columnIndex) => (
                     <th
                       key={column.id}
+                      className={columnIndex < frozenColumns ? 'is-frozen-column' : ''}
                       style={{
                         width: columnWidth(column.id),
                         minWidth: columnWidth(column.id),
                         maxWidth: columnWidth(column.id),
+                        ...frozenCellStyle(columnIndex),
                       }}
                     >
                       <input
@@ -2668,6 +2751,10 @@ export function DatasetSheet({
                 >
                   <th
                     className="dataset-sheet__row-number"
+                    style={rowIndex < frozenRows ? {
+                      top: frozenTopOffset(rowIndex),
+                      zIndex: 7,
+                    } : undefined}
                     onClick={() => selectWholeRow(row.id)}
                     title="Выделить строку"
                   >
@@ -2772,9 +2859,12 @@ export function DatasetSheet({
                           width: columnWidth(column.id),
                           minWidth: columnWidth(column.id),
                           maxWidth: columnWidth(column.id),
+                          ...frozenCellStyle(columnIndex, rowIndex),
                         }}
                         data-column-id={column.id}
                         className={[
+                          columnIndex < frozenColumns ? 'is-frozen-column' : '',
+                          rowIndex < frozenRows ? 'is-frozen-row' : '',
                           selected ? 'is-selected-cell' : '',
                           inRange ? 'is-range-selected' : '',
                           fillPreview ? 'is-fill-preview' : '',

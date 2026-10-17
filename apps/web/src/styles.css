@@ -3296,3 +3296,36 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   outline: 2px solid #8fa2f5;
   outline-offset: -2px;
 }
+
+/* Freeze panes only changes local spreadsheet presentation. */
+.dataset-sheet__freeze-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.dataset-sheet__freeze-buttons button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  min-height: 30px;
+  border: 1px solid #dce0e6;
+  border-radius: 7px;
+  background: #fff;
+  color: #536173;
+  font-size: 9px;
+}
+.dataset-sheet__freeze-buttons button:hover { background: #f2f5fc; }
+.dataset-sheet__freeze-buttons span { font-size: 8px; color: #778294; }
+.dataset-sheet__table thead tr:first-child th { z-index: 12; }
+.dataset-sheet__table thead tr.dataset-sheet__filter-row th { z-index: 10; }
+.dataset-sheet__table thead tr:first-child th.is-frozen-column { z-index: 13 !important; }
+.dataset-sheet__table thead tr.dataset-sheet__filter-row th.is-frozen-column { z-index: 11 !important; }
+.dataset-sheet__table thead th.dataset-sheet__row-number { z-index: 15 !important; }
+.dataset-sheet__table tbody td.is-frozen-column,
+.dataset-sheet__table tbody td.is-frozen-row { background: #fff; }
+.dataset-sheet__table tbody td.is-frozen-column.is-range-selected,
+.dataset-sheet__table tbody td.is-frozen-row.is-range-selected { background: #f6f8ff; }
+.dataset-sheet__table tbody td.is-frozen-column.is-selected-cell,
+.dataset-sheet__table tbody td.is-frozen-row.is-selected-cell { background: #eef2ff; }
