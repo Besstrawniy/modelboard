@@ -63,6 +63,11 @@ import { TemplateNode } from './TemplateNode';
 import { RelationViewNode } from './RelationViewNode';
 import { WorkspaceSearch } from './WorkspaceSearch';
 import { FrameNode } from './FrameNode';
+import { CanvasSelectionActions } from './CanvasSelectionActions';
+import {
+  alignCanvasNodes, distributeCanvasNodes, includeCanvasFrameContents, reorderCanvasLayers,
+  canvasNodeSize, type CanvasAlignment, type CanvasDistribution, type CanvasLayerAction,
+} from '../lib/canvasGeometry';
 
 type PresenceState = {
   user?: { id: string; name: string; role: string };
@@ -122,16 +127,7 @@ function pointDistance(left: FreehandPoint, right: FreehandPoint) {
   return Math.hypot(left.x - right.x, left.y - right.y);
 }
 
-function nodeSize(node: Node, key: 'width' | 'height', fallback: number) {
-  const measured = Number((node as any).measured?.[key]);
-  if (Number.isFinite(measured) && measured > 0) return measured;
-
-  const direct = Number((node as any)[key]);
-  if (Number.isFinite(direct) && direct > 0) return direct;
-
-  const styled = Number((node.style as any)?.[key]);
-  return Number.isFinite(styled) && styled > 0 ? styled : fallback;
-}
+const nodeSize = canvasNodeSize;
 
 function seedDocument(nodesMap: Y.Map<any>, edgesMap: Y.Map<any>) {
   const usersId = 'seed-users';
@@ -787,6 +783,41 @@ function BoardInner({
   ]);
 
 
+  const layoutSelection = useCallback((mode: CanvasAlignment | CanvasDistribution) => {
+    if (readOnly || previewsRef.current.size > 0) return;
+    const current = nodesRef.current;
+    const selected = new Set(current.filter((node) => node.selected).map((node) => node.id));
+    const positions = mode === 'horizontal' || mode === 'vertical'
+      ? distributeCanvasNodes(current, selected, mode)
+      : alignCanvasNodes(current, selected, mode);
+    const targets = includeCanvasFrameContents(current, positions, selected);
+    if (!targets.size) return;
+    undoManager.stopCapturing();
+    ydoc.transact(() => {
+      for (const [id, position] of targets) {
+        const node = nodesMap.get(id) as Node | undefined;
+        if (node) nodesMap.set(id, { ...node, position, dragging: false });
+      }
+    });
+    undoManager.stopCapturing();
+  }, [nodesMap, readOnly, undoManager, ydoc]);
+
+  const changeSelectionLayer = useCallback((action: CanvasLayerAction) => {
+    if (readOnly || previewsRef.current.size > 0) return;
+    const current = nodesRef.current;
+    const selected = new Set(current.filter((node) => node.selected).map((node) => node.id));
+    const layers = reorderCanvasLayers(current, selected, action);
+    if (!layers.size) return;
+    undoManager.stopCapturing();
+    ydoc.transact(() => {
+      for (const [id, zIndex] of layers) {
+        const node = nodesMap.get(id) as Node | undefined;
+        if (node) nodesMap.set(id, { ...node, zIndex });
+      }
+    });
+    undoManager.stopCapturing();
+  }, [nodesMap, readOnly, undoManager, ydoc]);
+
   const activateTool = useCallback(
     (next: ToolMode) => {
       setDraftStroke(null);
@@ -881,6 +912,14 @@ function BoardInner({
         return;
       }
 
+      if (!readOnly && effectiveToolMode === 'select' && mod && !event.altKey &&
+        (event.code === 'BracketLeft' || event.code === 'BracketRight')) {
+        event.preventDefault();
+        changeSelectionLayer(event.code === 'BracketRight'
+          ? (event.shiftKey ? 'front' : 'forward')
+          : (event.shiftKey ? 'back' : 'backward'));
+        return;
+      }
       if (!readOnly && mod && key === 'z') {
         event.preventDefault();
         if (event.shiftKey) undoManager.redo();
@@ -976,6 +1015,8 @@ function BoardInner({
     boardMenuOpen,
     canvasHelpOpen,
     changeZoom,
+    changeSelectionLayer,
+    effectiveToolMode,
     clearSelection,
     clipboard,
     commentsOpen,
@@ -2459,6 +2500,8 @@ function BoardInner({
           nodesDraggable={!readOnly && effectiveToolMode === 'select'}
           nodesConnectable={!readOnly && effectiveToolMode === 'select'}
           elementsSelectable={effectiveToolMode === 'select'}
+          multiSelectionKeyCode="Shift"
+          elevateNodesOnSelect={false}
           deleteKeyCode={readOnly || effectiveToolMode !== 'select' || sheetTarget || workspaceSearchOpen ? null : ['Backspace', 'Delete']}
           fitView
           snapToGrid={snapToGrid}
@@ -2637,41 +2680,18 @@ function BoardInner({
           </ViewportPortal>
         </ReactFlow>
 
-        {toolMode === 'select' && selectedNodeIds.length > 0 && !readOnly && (
-          <div className="selection-actions">
-            <span>
-              Выбрано: {selectedNodeIds.length}
-            </span>
-
-            <button
-              onClick={() =>
-                void duplicateSelection()
-              }
-              title="Дублировать (Ctrl+D)"
-            >
-              <Copy size={14} />
-              Дублировать
-            </button>
-
-            <button
-              onClick={wrapSelectionInFrame}
-              title="Создать Frame вокруг выделения"
-            >
-              <FrameIcon size={14} />
-              Во Frame
-            </button>
-
-            <button
-              className="is-danger"
-              onClick={() =>
-                void deleteSelection()
-              }
-              title="Удалить выделение"
-            >
-              <Trash2 size={14} />
-              Удалить
-            </button>
-          </div>
+        {effectiveToolMode === 'select' && selectedNodeIds.length > 0 && !readOnly && (
+          <CanvasSelectionActions
+            key={selectedNodeIds.join(':')}
+            count={selectedNodeIds.length}
+            busy={nodes.some((node) => node.dragging || node.resizing)}
+            onAlign={layoutSelection}
+            onDistribute={layoutSelection}
+            onLayer={changeSelectionLayer}
+            onDuplicate={() => void duplicateSelection()}
+            onFrame={wrapSelectionInFrame}
+            onDelete={() => void deleteSelection()}
+          />
         )}
 
         {(effectiveToolMode === 'pen' || effectiveToolMode === 'eraser') && !readOnly && (
@@ -2800,6 +2820,8 @@ function BoardInner({
                     <div><dt>Дублировать</dt><dd>Ctrl + D</dd></div>
                     <div><dt>Выбрать все объекты</dt><dd>Ctrl + A</dd></div>
                     <div><dt>Отменить / повторить</dt><dd>Ctrl + Z / Y</dd></div>
+                    <div><dt>На слой назад / вперёд</dt><dd>Ctrl + [ / ]</dd></div>
+                    <div><dt>На задний / передний план</dt><dd>Ctrl + Shift + [ / ]</dd></div>
                     <div><dt>Удалить объект</dt><dd>Delete</dd></div>
                   </dl>
                 </section>
