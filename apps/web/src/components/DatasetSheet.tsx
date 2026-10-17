@@ -404,18 +404,43 @@ export function DatasetSheet({
   const [columnWidths, setColumnWidths] = useState<
     Record<string, number>
   >({});
+  const [cellMenu, setCellMenu] = useState<{
+    x: number;
+    y: number;
+    rowId: string;
+    columnId: string;
+  } | null>(null);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        onClose();
+      if (event.key !== 'Escape') return;
+
+      event.stopPropagation();
+
+      if (cellMenu) {
+        setCellMenu(null);
+        return;
       }
+
+      onClose();
     };
 
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [onClose]);
+  }, [cellMenu, onClose]);
+
+  useEffect(() => {
+    if (!cellMenu) return;
+
+    const close = () => setCellMenu(null);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+
+    return () => {
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [cellMenu]);
 
   useEffect(() => {
     const onHistoryKey = (event: KeyboardEvent) => {
@@ -1257,6 +1282,56 @@ export function DatasetSheet({
     }
   };
 
+  const clearSelectedCells = () => {
+    if (!dataset || !selectedCell || readOnly) return;
+
+    const fallbackRow = dataset.rows.findIndex(
+      (row) => row.id === selectedCell.rowId,
+    );
+    const fallbackColumn = dataset.columns.findIndex(
+      (column) => column.id === selectedCell.columnId,
+    );
+    if (fallbackRow < 0 || fallbackColumn < 0) return;
+
+    const bounds = selectionBounds ?? {
+      startRow: fallbackRow,
+      endRow: fallbackRow,
+      startColumn: fallbackColumn,
+      endColumn: fallbackColumn,
+    };
+
+    const writes = [];
+
+    for (
+      let rowIndex = bounds.startRow;
+      rowIndex <= bounds.endRow;
+      rowIndex += 1
+    ) {
+      const row = dataset.rows[rowIndex];
+
+      for (
+        let columnIndex = bounds.startColumn;
+        columnIndex <= bounds.endColumn;
+        columnIndex += 1
+      ) {
+        const column = dataset.columns[columnIndex];
+        if (!row || !column) continue;
+
+        writes.push({
+          rowId: row.id,
+          columnId: column.id,
+          value: null as DatasetCellValue,
+          formulaExpression: null,
+        });
+      }
+    }
+
+    applyCellBatch(writes);
+    setClipboardMessage(
+      `Очищено ячеек: ${writes.length}`,
+    );
+  };
+
   const visibleRows = useMemo(() => {
     if (!dataset) return [];
 
@@ -1367,7 +1442,13 @@ export function DatasetSheet({
   };
 
   return (
-    <div className="dataset-sheet" ref={sheetRef}>
+    <div
+      className="dataset-sheet"
+      ref={sheetRef}
+      onMouseDown={() => {
+        if (cellMenu) setCellMenu(null);
+      }}
+    >
       {columnDialog && (
         <div className="dataset-sheet__dialog-backdrop">
           <section className="dataset-sheet__column-dialog">
@@ -2198,6 +2279,36 @@ export function DatasetSheet({
                             column.id,
                           )
                         }
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+
+                          setSelectedCell({
+                            rowId: row.id,
+                            columnId: column.id,
+                          });
+
+                          if (!event.shiftKey) {
+                            setSelectionRange({
+                              startRowId: row.id,
+                              endRowId: row.id,
+                              startColumnId: column.id,
+                              endColumnId: column.id,
+                            });
+                          }
+
+                          setCellMenu({
+                            x: Math.min(
+                              event.clientX,
+                              window.innerWidth - 245,
+                            ),
+                            y: Math.min(
+                              event.clientY,
+                              window.innerHeight - 330,
+                            ),
+                            rowId: row.id,
+                            columnId: column.id,
+                          });
+                        }}
                       >
                         {formula && (
                           <span
@@ -2278,6 +2389,165 @@ export function DatasetSheet({
       {rowError && (
         <div className="dataset-sheet__error">
           {rowError}
+        </div>
+      )}
+
+      {cellMenu && dataset && (
+        <div
+          className="dataset-sheet__context-menu"
+          style={{
+            left: cellMenu.x,
+            top: cellMenu.y,
+          }}
+          onMouseDown={(event) =>
+            event.stopPropagation()
+          }
+        >
+          <button
+            onClick={() => {
+              void copyCells();
+              setCellMenu(null);
+            }}
+          >
+            <Copy size={13} />
+            Копировать
+            <kbd>Ctrl+C</kbd>
+          </button>
+
+          {!readOnly && (
+            <button
+              onClick={() => {
+                void pasteCells();
+                setCellMenu(null);
+              }}
+            >
+              <ClipboardPaste size={13} />
+              Вставить
+              <kbd>Ctrl+V</kbd>
+            </button>
+          )}
+
+          {!readOnly && (
+            <button
+              onClick={() => {
+                clearSelectedCells();
+                setCellMenu(null);
+              }}
+            >
+              <X size={13} />
+              Очистить ячейку / диапазон
+            </button>
+          )}
+
+          {!readOnly && (
+            <>
+              <div className="dataset-sheet__context-separator" />
+
+              <button
+                onClick={async () => {
+                  const created = await addRow(
+                    {},
+                    cellMenu.rowId,
+                  );
+                  setCellMenu(null);
+
+                  if (created) {
+                    focusCell(
+                      created.id,
+                      cellMenu.columnId,
+                    );
+                  }
+                }}
+              >
+                <Plus size={13} />
+                Вставить строку ниже
+              </button>
+
+              <button
+                className="is-danger"
+                onClick={async () => {
+                  setRowError('');
+                  try {
+                    await deleteRow(cellMenu.rowId);
+                    setSelectedCell(null);
+                    setSelectionRange(null);
+                  } catch (error) {
+                    setRowError(
+                      error instanceof Error
+                        ? error.message
+                        : String(error),
+                    );
+                  } finally {
+                    setCellMenu(null);
+                  }
+                }}
+              >
+                <Trash2 size={13} />
+                Удалить строку
+              </button>
+
+              <div className="dataset-sheet__context-separator" />
+
+              <button
+                onClick={() => {
+                  setColumnDialog({
+                    mode: 'create',
+                    afterColumnId:
+                      cellMenu.columnId,
+                  });
+                  setColumnName('');
+                  setColumnType('TEXT');
+                  setColumnError('');
+                  setCellMenu(null);
+                }}
+              >
+                <Plus size={13} />
+                Вставить колонку справа
+              </button>
+
+              <button
+                onClick={() => {
+                  const column =
+                    dataset.columns.find(
+                      (item) =>
+                        item.id === cellMenu.columnId,
+                    );
+                  if (!column) return;
+
+                  setColumnDialog({
+                    mode: 'rename',
+                    columnId: column.id,
+                    initialName: column.name,
+                  });
+                  setColumnName(column.name);
+                  setColumnType(column.dataType);
+                  setColumnError('');
+                  setCellMenu(null);
+                }}
+              >
+                <Pencil size={13} />
+                Переименовать колонку
+              </button>
+
+              <button
+                className="is-danger"
+                onClick={() => {
+                  const column =
+                    dataset.columns.find(
+                      (item) =>
+                        item.id === cellMenu.columnId,
+                    );
+                  if (column) {
+                    setDeleteColumnTarget(column);
+                  }
+                  setCellMenu(null);
+                }}
+              >
+                <Trash2 size={13} />
+                Удалить колонку
+              </button>
+            </>
+          )}
         </div>
       )}
 

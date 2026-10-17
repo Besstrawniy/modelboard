@@ -3086,3 +3086,50 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .dataset-sheet__row-to-canvas:hover {
   background: #eef0ff;
 }
+
+
+/* Spreadsheet cell context menu */
+.dataset-sheet__context-menu {
+  position: fixed;
+  z-index: 80;
+  width: 235px;
+  padding: 6px;
+  border: 1px solid #d9dde4;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 16px 46px rgba(25,30,40,.2);
+}
+.dataset-sheet__context-menu > button {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  color: #4f5864;
+  text-align: left;
+  font-size: 9px;
+}
+.dataset-sheet__context-menu > button:hover {
+  background: #f4f5f7;
+}
+.dataset-sheet__context-menu > button.is-danger {
+  color: #9b4747;
+}
+.dataset-sheet__context-menu > button.is-danger:hover {
+  background: #fff1f1;
+}
+.dataset-sheet__context-menu kbd {
+  color: #9aa0a8;
+  font-family: inherit;
+  font-size: 7px;
+}
+.dataset-sheet__context-separator {
+  height: 1px;
+  margin: 5px 4px;
+  background: #eceef1;
+}
