@@ -974,6 +974,22 @@ export class AppController {
       );
     }
 
+    const formulaReference = await query<{ row_id: string }>(
+      `SELECT row_id
+       FROM dataset_formulas
+       WHERE dataset_id = $1
+         AND row_id <> $2
+         AND position('#{' || $2::text || '}' in expression) > 0
+       LIMIT 1`,
+      [datasetId, rowId],
+    );
+
+    if (formulaReference.rows[0]) {
+      throw new ConflictException(
+        'Row is referenced by another formula. Change the formula before deleting this row.',
+      );
+    }
+
     const result = await query<{ id: string }>(
       `DELETE FROM dataset_rows
        WHERE id = $1 AND dataset_id = $2

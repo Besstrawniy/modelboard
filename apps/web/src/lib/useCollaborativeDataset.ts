@@ -96,6 +96,7 @@ export function useCollaborativeDataset(
         recalculating = true;
         const calculated = evaluateDatasetFormulas(
           rows,
+          columns,
           formulas,
         );
 

@@ -30,6 +30,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
 import { useBoardActions } from './BoardContext';
 import {
+  columnLabel,
   compileFormula,
   formatFormula,
   formulaKey,
@@ -590,6 +591,23 @@ export function DatasetSheet({
       )
     : undefined;
 
+  const selectedRowIndex = selectedCell
+    ? dataset?.rows.findIndex(
+        (row) => row.id === selectedCell.rowId,
+      ) ?? -1
+    : -1;
+  const selectedColumnIndex = selectedCell
+    ? dataset?.columns.findIndex(
+        (column) =>
+          column.id === selectedCell.columnId,
+      ) ?? -1
+    : -1;
+  const selectedAddress =
+    selectedRowIndex >= 0 &&
+    selectedColumnIndex >= 0
+      ? `${columnLabel(selectedColumnIndex)}${selectedRowIndex + 1}`
+      : '';
+
   const selectedRow = selectedCell
     ? dataset?.rows.find((row) => row.id === selectedCell.rowId)
     : undefined;
@@ -616,6 +634,7 @@ export function DatasetSheet({
         ? formatFormula(
             selectedFormula.expression,
             dataset?.columns ?? [],
+            dataset?.rows ?? [],
           )
         : String(
             selectedRow.values[selectedColumn.id] ?? '',
@@ -650,6 +669,7 @@ export function DatasetSheet({
         const canonical = compileFormula(
           trimmed,
           dataset?.columns ?? [],
+          dataset?.rows ?? [],
         );
         setFormula(
           selectedCell.rowId,
@@ -1030,6 +1050,7 @@ export function DatasetSheet({
               ? formatFormula(
                   formula.expression,
                   dataset.columns,
+                  dataset.rows,
                 )
               : String(
                   row.values[column.id] ?? '',
@@ -1169,6 +1190,7 @@ export function DatasetSheet({
               formulaExpression: compileFormula(
                 raw.trim(),
                 dataset.columns,
+                dataset.rows,
               ),
             });
           } else {
@@ -1790,7 +1812,7 @@ export function DatasetSheet({
       <div className="dataset-sheet__formula-bar">
         <div className="dataset-sheet__formula-cell">
           {selectedCell && selectedColumn && selectedRow
-            ? `${selectedColumn.name} · строка ${selectedRow.ordinal + 1}`
+            ? `${selectedAddress} · ${selectedColumn.name} · строка ${selectedRow.ordinal + 1}`
             : 'Ячейка не выбрана'}
         </div>
 
@@ -1799,7 +1821,7 @@ export function DatasetSheet({
           <input
             value={formulaInput}
             disabled={!selectedCell || readOnly}
-            placeholder="Значение или формула: =[price]*[quantity]"
+            placeholder="Формула: =B2*C2, =SUM(B2:B10) или =[price]*[quantity]"
             onChange={(event) =>
               setFormulaInput(event.target.value)
             }
@@ -1985,7 +2007,7 @@ export function DatasetSheet({
             <thead>
               <tr>
                 <th className="dataset-sheet__row-number">#</th>
-                {dataset.columns.map((column) => {
+                {dataset.columns.map((column, columnIndex) => {
                   const activeSort = sort?.columnId === column.id;
 
                   return (
@@ -2003,6 +2025,9 @@ export function DatasetSheet({
                       >
                         <span>
                           <strong>
+                            <em className="dataset-sheet__column-letter">
+                              {columnLabel(columnIndex)}
+                            </em>
                             {column.name}
                             {!readOnly && (
                               <>
@@ -2316,6 +2341,7 @@ export function DatasetSheet({
                             title={formatFormula(
                               formula.expression,
                               dataset.columns,
+                              dataset.rows,
                             )}
                           >
                             fx

@@ -3191,3 +3191,19 @@ button:disabled { cursor: not-allowed; opacity: .42; }
     max-width: calc(100% - 20px);
   }
 }
+
+
+/* Excel-like A1 addressing */
+.dataset-sheet__column-letter {
+  flex: 0 0 auto;
+  min-width: 20px;
+  margin-right: 5px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: #eceff5;
+  color: #7a828e;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 900;
+  text-align: center;
+}
