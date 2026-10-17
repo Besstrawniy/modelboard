@@ -5,6 +5,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  ClipboardPaste,
+  Copy,
   Database,
   Pencil,
   Plus,
@@ -19,7 +21,7 @@ import type {
   DatasetFormula,
   DatasetRow,
 } from '@modelboard/shared';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
 import {
   compileFormula,
@@ -202,6 +204,7 @@ function SheetCell({
   readOnly,
   onChange,
   onFocus,
+  onNavigate,
   formulaActive = false,
 }: {
   row: DatasetRow;
@@ -209,6 +212,9 @@ function SheetCell({
   readOnly: boolean;
   onChange: (value: DatasetCellValue) => void;
   onFocus?: () => void;
+  onNavigate?: (
+    direction: 'up' | 'down' | 'left' | 'right',
+  ) => void;
   formulaActive?: boolean;
 }) {
   const raw = row.values[column.id];
@@ -220,6 +226,20 @@ function SheetCell({
         disabled={readOnly}
         value={raw === null || raw === undefined ? '' : String(raw)}
         onFocus={onFocus}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === 'Tab') {
+            event.preventDefault();
+            onNavigate?.(
+              event.key === 'Tab'
+                ? event.shiftKey
+                  ? 'left'
+                  : 'right'
+                : event.shiftKey
+                  ? 'up'
+                  : 'down',
+            );
+          }
+        }}
         onChange={(event) => {
           const value = event.target.value;
           onChange(
@@ -244,6 +264,50 @@ function SheetCell({
       disabled={readOnly}
       value={raw === null || raw === undefined ? '' : String(raw)}
       onFocus={onFocus}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === 'Tab') {
+          event.preventDefault();
+          onNavigate?.(
+            event.key === 'Tab'
+              ? event.shiftKey
+                ? 'left'
+                : 'right'
+              : event.shiftKey
+                ? 'up'
+                : 'down',
+          );
+          return;
+        }
+
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          event.preventDefault();
+          onNavigate?.(
+            event.key === 'ArrowUp' ? 'up' : 'down',
+          );
+          return;
+        }
+
+        if (
+          event.key === 'ArrowLeft' &&
+          event.currentTarget.selectionStart === 0 &&
+          event.currentTarget.selectionEnd === 0
+        ) {
+          event.preventDefault();
+          onNavigate?.('left');
+          return;
+        }
+
+        if (
+          event.key === 'ArrowRight' &&
+          event.currentTarget.selectionStart ===
+            event.currentTarget.value.length &&
+          event.currentTarget.selectionEnd ===
+            event.currentTarget.value.length
+        ) {
+          event.preventDefault();
+          onNavigate?.('right');
+        }
+      }}
       onChange={(event) =>
         onChange(normalizeInput(event.target.value, column))
       }
@@ -267,6 +331,7 @@ export function DatasetSheet({
   const {
     dataset,
     status,
+    synced,
     setCell,
     setFormula,
     clearFormula,
@@ -313,6 +378,8 @@ export function DatasetSheet({
     useState<CellSelectionRange | null>(null);
   const [autofillDrag, setAutofillDrag] =
     useState<AutofillDrag | null>(null);
+  const [clipboardMessage, setClipboardMessage] = useState('');
+  const sheetRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -711,6 +778,293 @@ export function DatasetSheet({
     }
   };
 
+  const focusCell = (
+    rowId: string,
+    columnId: string,
+  ) => {
+    if (!dataset) return;
+
+    const rowIndex = dataset.rows.findIndex(
+      (row) => row.id === rowId,
+    );
+    if (rowIndex >= 0) {
+      setPage(Math.floor(rowIndex / PAGE_SIZE));
+    }
+
+    setSelectedCell({ rowId, columnId });
+    setSelectionRange({
+      columnId,
+      startRowId: rowId,
+      endRowId: rowId,
+    });
+
+    window.requestAnimationFrame(() => {
+      const editor = sheetRef.current?.querySelector(
+        `td[data-row-id="${rowId}"][data-column-id="${columnId}"] .dataset-sheet__cell-editor`,
+      ) as HTMLInputElement | HTMLSelectElement | null;
+
+      editor?.focus();
+      if (editor instanceof HTMLInputElement) {
+        editor.select();
+      }
+    });
+  };
+
+  const moveSelectedCell = (
+    direction: 'up' | 'down' | 'left' | 'right',
+  ) => {
+    if (!dataset || !selectedCell) return;
+
+    const rowIndex = dataset.rows.findIndex(
+      (row) => row.id === selectedCell.rowId,
+    );
+    const columnIndex = dataset.columns.findIndex(
+      (column) => column.id === selectedCell.columnId,
+    );
+    if (rowIndex < 0 || columnIndex < 0) return;
+
+    let nextRow = rowIndex;
+    let nextColumn = columnIndex;
+
+    if (direction === 'up') nextRow -= 1;
+    if (direction === 'down') nextRow += 1;
+    if (direction === 'left') nextColumn -= 1;
+    if (direction === 'right') nextColumn += 1;
+
+    if (nextColumn >= dataset.columns.length) {
+      nextColumn = 0;
+      nextRow += 1;
+    }
+    if (nextColumn < 0) {
+      nextColumn = dataset.columns.length - 1;
+      nextRow -= 1;
+    }
+
+    nextRow = Math.max(
+      0,
+      Math.min(dataset.rows.length - 1, nextRow),
+    );
+
+    const row = dataset.rows[nextRow];
+    const column = dataset.columns[nextColumn];
+    if (row && column) {
+      focusCell(row.id, column.id);
+    }
+  };
+
+  const copyCells = async () => {
+    if (!dataset || !selectedCell) return;
+
+    setClipboardMessage('');
+
+    const column = dataset.columns.find(
+      (item) => item.id === selectedCell.columnId,
+    );
+    if (!column) return;
+
+    const rows =
+      selectionBounds?.columnId === column.id
+        ? dataset.rows.slice(
+            selectionBounds.start,
+            selectionBounds.end + 1,
+          )
+        : dataset.rows.filter(
+            (row) => row.id === selectedCell.rowId,
+          );
+
+    const text = rows
+      .map((row) => {
+        const formula = formulaByCell.get(
+          formulaKey(row.id, column.id),
+        );
+
+        return formula
+          ? formatFormula(
+              formula.expression,
+              dataset.columns,
+            )
+          : String(row.values[column.id] ?? '');
+      })
+      .join('\n');
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setClipboardMessage(
+        rows.length > 1
+          ? `Скопировано ячеек: ${rows.length}`
+          : 'Ячейка скопирована',
+      );
+    } catch {
+      setClipboardMessage(
+        'Браузер не разрешил доступ к clipboard.',
+      );
+    }
+  };
+
+  const pasteCells = async () => {
+    if (
+      readOnly ||
+      !dataset ||
+      !selectedCell
+    ) {
+      return;
+    }
+
+    if (query || sort) {
+      setClipboardMessage(
+        'Перед вставкой уберите поиск и сортировку, чтобы порядок строк был однозначным.',
+      );
+      return;
+    }
+
+    setClipboardMessage('');
+
+    let text = '';
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      setClipboardMessage(
+        'Браузер не разрешил чтение clipboard.',
+      );
+      return;
+    }
+
+    const matrix = text
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .split('\n')
+      .filter((line, index, all) =>
+        !(index === all.length - 1 && line === ''),
+      )
+      .map((line) => line.split('\t'));
+
+    if (matrix.length === 0) return;
+
+    const startRowIndex = dataset.rows.findIndex(
+      (row) => row.id === selectedCell.rowId,
+    );
+    const startColumnIndex = dataset.columns.findIndex(
+      (column) => column.id === selectedCell.columnId,
+    );
+
+    if (startRowIndex < 0 || startColumnIndex < 0) {
+      return;
+    }
+
+    const requiredColumns =
+      Math.max(...matrix.map((row) => row.length));
+
+    if (
+      startColumnIndex + requiredColumns >
+      dataset.columns.length
+    ) {
+      setClipboardMessage(
+        'В clipboard больше колонок, чем помещается справа. Сначала добавьте колонки.',
+      );
+      return;
+    }
+
+    const targetRows = [...dataset.rows];
+    const requiredRows = startRowIndex + matrix.length;
+
+    while (
+      targetRows.length < requiredRows &&
+      !readOnly
+    ) {
+      const row = await addRow();
+      if (!row) break;
+      targetRows.push(row);
+    }
+
+    if (targetRows.length < requiredRows) {
+      setClipboardMessage(
+        'Не удалось создать достаточно строк для вставки.',
+      );
+      return;
+    }
+
+    const writes: Array<{
+      rowId: string;
+      columnId: string;
+      value?: DatasetCellValue;
+      formulaExpression?: string | null;
+    }> = [];
+
+    try {
+      for (
+        let rowOffset = 0;
+        rowOffset < matrix.length;
+        rowOffset += 1
+      ) {
+        const targetRow =
+          targetRows[startRowIndex + rowOffset];
+
+        for (
+          let columnOffset = 0;
+          columnOffset < matrix[rowOffset].length;
+          columnOffset += 1
+        ) {
+          const column =
+            dataset.columns[
+              startColumnIndex + columnOffset
+            ];
+          const raw = matrix[rowOffset][columnOffset];
+
+          if (raw.trim().startsWith('=')) {
+            writes.push({
+              rowId: targetRow.id,
+              columnId: column.id,
+              formulaExpression: compileFormula(
+                raw.trim(),
+                dataset.columns,
+              ),
+            });
+          } else {
+            writes.push({
+              rowId: targetRow.id,
+              columnId: column.id,
+              value: normalizeInput(raw, column),
+              formulaExpression: null,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      setClipboardMessage(
+        error instanceof Error
+          ? error.message
+          : String(error),
+      );
+      return;
+    }
+
+    applyCellBatch(writes);
+
+    const lastRow =
+      targetRows[startRowIndex + matrix.length - 1];
+    const lastColumn =
+      dataset.columns[
+        startColumnIndex + requiredColumns - 1
+      ];
+
+    if (lastRow && lastColumn) {
+      setSelectedCell({
+        rowId: lastRow.id,
+        columnId: lastColumn.id,
+      });
+      setPage(
+        Math.floor(
+          (startRowIndex + matrix.length - 1) /
+            PAGE_SIZE,
+        ),
+      );
+    }
+
+    setClipboardMessage(
+      `Вставлено ячеек: ${writes.length}`,
+    );
+  };
+
   const visibleRows = useMemo(() => {
     if (!dataset) return [];
 
@@ -807,7 +1161,7 @@ export function DatasetSheet({
   };
 
   return (
-    <div className="dataset-sheet">
+    <div className="dataset-sheet" ref={sheetRef}>
       {columnDialog && (
         <div className="dataset-sheet__dialog-backdrop">
           <section className="dataset-sheet__column-dialog">
@@ -1190,6 +1544,28 @@ export function DatasetSheet({
           />
         </label>
 
+        <button
+          className="dataset-sheet__clipboard-button"
+          disabled={!selectedCell}
+          onClick={() => void copyCells()}
+          title="Копировать выбранную ячейку/диапазон"
+        >
+          <Copy size={14} />
+          Копировать
+        </button>
+
+        {!readOnly && (
+          <button
+            className="dataset-sheet__clipboard-button"
+            disabled={!selectedCell}
+            onClick={() => void pasteCells()}
+            title="Вставить из Excel / Google Sheets / clipboard"
+          >
+            <ClipboardPaste size={14} />
+            Вставить
+          </button>
+        )}
+
         {!readOnly && (
           <button
             className="dataset-sheet__add-column"
@@ -1240,8 +1616,10 @@ export function DatasetSheet({
       </div>
 
       <div className="dataset-sheet__viewport">
-        {!dataset ? (
-          <div className="dataset-sheet__loading">Загрузка Dataset…</div>
+        {!dataset || !synced ? (
+          <div className="dataset-sheet__loading">
+            Синхронизация Dataset…
+          </div>
         ) : dataset.columns.length === 0 ? (
           <div className="dataset-sheet__loading">В Dataset нет колонок.</div>
         ) : (
@@ -1476,6 +1854,7 @@ export function DatasetSheet({
                               });
                             }
                           }}
+                          onNavigate={moveSelectedCell}
                           onChange={(value) =>
                             setCell(row.id, column.id, value)
                           }
@@ -1516,6 +1895,17 @@ export function DatasetSheet({
       {rowError && (
         <div className="dataset-sheet__error">
           {rowError}
+        </div>
+      )}
+
+      {clipboardMessage && (
+        <div className="dataset-sheet__clipboard-toast">
+          {clipboardMessage}
+          <button
+            onClick={() => setClipboardMessage('')}
+          >
+            ×
+          </button>
         </div>
       )}
 
