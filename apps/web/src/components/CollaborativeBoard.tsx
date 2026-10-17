@@ -21,7 +21,7 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
-import { ChevronDown, ClipboardPaste, Copy, Database, Eraser, Frame as FrameIcon, Grid3X3, Hand, LayoutDashboard, HelpCircle, Maximize2, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronDown, Layers3, ClipboardPaste, Copy, Database, Eraser, Frame as FrameIcon, Grid3X3, Hand, LayoutDashboard, HelpCircle, Maximize2, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X, ZoomIn, ZoomOut } from 'lucide-react';
 import {
   DEMO_BOARD_ID,
   DEMO_ROLES_DATASET_ID,
@@ -66,6 +66,7 @@ import { FrameNode } from './FrameNode';
 import { appendFreehandPoint, eraserHitsStroke, freehandPath, prepareFreehandStroke } from '../lib/freehandGeometry';
 import { CanvasSelectionActions } from './CanvasSelectionActions';
 import { CanvasContextMenu } from './CanvasContextMenu';
+import { CanvasObjectsPanel } from './CanvasObjectsPanel';
 import { canvasPasteOffset, selectCanvasContextTarget, type CanvasContextCommand } from '../lib/canvasContextMenu';
 import {
   alignCanvasNodes, distributeCanvasNodes, includeCanvasFrameContents, reorderCanvasLayers,
@@ -294,6 +295,12 @@ function BoardInner({
     rowId?: string;
   } | null>(null);
   const [devicesOpen, setDevicesOpen] = useState(false);
+  const [objectsOpen, setObjectsOpen] = useState(false);
+  const objectsButtonRef = useRef<HTMLButtonElement>(null);
+  const closeObjectsPanel = useCallback(() => {
+    setObjectsOpen(false);
+    objectsButtonRef.current?.focus({ preventScroll: true });
+  }, []);
   const [workspaceTemplates, setWorkspaceTemplates] =
     useState<WorkspaceObjectTemplate[]>([]);
   const [boardMenuOpen, setBoardMenuOpen] = useState(false);
@@ -322,6 +329,7 @@ function BoardInner({
     setCommentsOpen(false);
     setDatasetsOpen(false);
     setDevicesOpen(false);
+    setObjectsOpen(false);
     setBoardMenuOpen(false);
     setToolMode('select');
     cancelDrawing();
@@ -866,6 +874,31 @@ function BoardInner({
     [cancelDrawing, clearSelection],
   );
 
+  const selectPanelObjects = useCallback((ids: string[]) => {
+    if (previewsRef.current.size > 0) return;
+    activateTool('select');
+    const requested = new Set(ids);
+    const next = nodesRef.current.map((node) => ({ ...node, selected: requested.has(node.id) }));
+    const selected = next.filter((node) => node.selected).map((node) => node.id);
+    setNodes(next);
+    setSelectedNodeIds(selected);
+    setSelectedNodeId(selected.length === 1 ? selected[0] : null);
+  }, [activateTool, setNodes]);
+
+  const focusPanelObject = useCallback((id: string) => {
+    if (previewsRef.current.size > 0) return;
+    const node = nodesRef.current.find((item) => item.id === id);
+    if (!node) return;
+    selectPanelObjects([id]);
+    const shell = objectsButtonRef.current?.closest('.board-shell');
+    const listBounds = shell?.querySelector('.canvas-objects')?.getBoundingClientRect();
+    const shellBounds = shell?.getBoundingClientRect();
+    const left = listBounds && shellBounds ? listBounds.right - shellBounds.left + 16 : 32;
+    void rf?.fitView({ nodes: [node], maxZoom: 1.5, duration: 280,
+      padding: { left: `${left}px`, right: window.innerWidth > 1000 ? '360px' : '24px', top: '64px', bottom: '88px' },
+    });
+  }, [rf, selectPanelObjects]);
+
   const fitCanvas = useCallback(
     (selectionOnly = false) => {
       if (!rf) return;
@@ -968,6 +1001,7 @@ function BoardInner({
       const key = event.key.toLowerCase();
 
       if (event.code === 'Space' && !mod && !event.altKey) {
+        if (target?.closest('button')) return;
         event.preventDefault();
         if (!event.repeat) {
           cancelDrawing();
@@ -2251,7 +2285,7 @@ function BoardInner({
       }}
     >
       <div
-        className="board-shell"
+        className={`board-shell${objectsOpen ? ' has-objects-panel' : ''}`}
         onPointerMove={onPointerMove}
         onPointerLeave={() => provider?.awareness?.setLocalStateField('cursor', null)}
         onDragEnter={handleDragOver}
@@ -2659,6 +2693,11 @@ function BoardInner({
                 <Grid3X3 size={17} />
               </button>
               <div className="toolbar-separator" />
+              <button ref={objectsButtonRef} className={objectsOpen ? 'is-active' : ''}
+                title="Объекты и слои" aria-label="Объекты и слои" aria-pressed={objectsOpen}
+                onClick={() => { cancelDrawing(); setObjectsOpen((value) => !value); }}>
+                <Layers3 size={19} />
+              </button>
               <button onClick={() => setDatasetsOpen(true)} title="Данные"><Database size={19} /></button>
               <button onClick={() => setDevicesOpen(true)} title="Инфраструктура"><Network size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('sticky')} title="Стикер"><StickyNote size={19} /></button>
@@ -2931,6 +2970,18 @@ function BoardInner({
           <div className="readonly-banner">
             Board editing is read-only for {meta.role}. Comments follow the role policy.
           </div>
+        )}
+
+        {objectsOpen && (
+          <CanvasObjectsPanel
+            nodes={nodes}
+            readOnly={readOnly}
+            busy={nodes.some((node) => node.dragging || node.resizing)}
+            onSelect={selectPanelObjects}
+            onFocus={focusPanelObject}
+            onLayer={changeSelectionLayer}
+            onClose={closeObjectsPanel}
+          />
         )}
 
         {selectedNode && (
