@@ -14,6 +14,7 @@ import {
   Plus,
   Search,
   Sigma,
+  Shapes,
   Trash2,
   Undo2,
   Redo2,
@@ -27,6 +28,7 @@ import type {
 } from '@modelboard/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
+import { useBoardActions } from './BoardContext';
 import {
   compileFormula,
   formatFormula,
@@ -333,6 +335,7 @@ export function DatasetSheet({
   focusRowId?: string;
   onClose: () => void;
 }) {
+  const { createBoundRowObject } = useBoardActions();
   const {
     dataset,
     status,
@@ -2052,6 +2055,31 @@ export function DatasetSheet({
                     <span>
                       {safePage * PAGE_SIZE + rowIndex + 1}
                     </span>
+                    {!readOnly && dataset && (
+                      <button
+                        className="dataset-sheet__row-to-canvas"
+                        onClick={async () => {
+                          setRowError('');
+                          try {
+                            await createBoundRowObject(
+                              dataset,
+                              row,
+                            );
+                            onClose();
+                          } catch (error) {
+                            setRowError(
+                              error instanceof Error
+                                ? error.message
+                                : String(error),
+                            );
+                          }
+                        }}
+                        title="Создать привязанный объект на canvas"
+                      >
+                        <Shapes size={12} />
+                      </button>
+                    )}
+
                     {!readOnly && (
                       <button
                         className="dataset-sheet__delete-row"

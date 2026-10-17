@@ -45,6 +45,10 @@ export type BoardActions = {
     datasetId: string,
     rowId?: string,
   ) => void;
+  createBoundRowObject: (
+    dataset: DatasetSnapshot,
+    row: DatasetRow,
+  ) => Promise<string | null>;
   navigateToDatasetLocation: (
     location: BoardDatasetLocation,
     rowId?: string,
@@ -64,6 +68,7 @@ const BoardActionsContext = createContext<BoardActions>({
   hideMaterializedRelated: async () => 0,
   materializedRelatedCount: () => 0,
   openDatasetSheet: () => undefined,
+  createBoundRowObject: async () => null,
   navigateToDatasetLocation: async () => undefined,
 });
 

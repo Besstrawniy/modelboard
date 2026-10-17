@@ -872,6 +872,102 @@ function BoardInner({
     nodesMap.set(nodeId, { ...current, data: { ...(current.data as any), ...patch } });
   }, [nodesMap, readOnly]);
 
+  const createBoundRowObject = useCallback(
+    async (
+      dataset: DatasetSnapshot,
+      row: DatasetRow,
+    ) => {
+      if (readOnly) return null;
+
+      const titleCandidates = [
+        'hostname',
+        'name',
+        'title',
+        'label',
+        'service',
+        'device',
+        'server',
+        'id',
+      ];
+      const subtitleCandidates = [
+        'ip',
+        'ip_address',
+        'address',
+        'fqdn',
+        'status',
+        'port',
+      ];
+
+      const findColumn = (names: string[]) =>
+        dataset.columns.find((column) =>
+          names.includes(
+            column.name.trim().toLowerCase(),
+          ),
+        )?.id;
+
+      const titleColumnId =
+        findColumn(titleCandidates) ??
+        dataset.columns[0]?.id;
+      const subtitleColumnId =
+        findColumn(subtitleCandidates) ??
+        dataset.columns.find(
+          (column) =>
+            column.id !== titleColumnId,
+        )?.id;
+
+      const nodeId = crypto.randomUUID();
+      const binding = await api.upsertObjectBinding(
+        meta.id,
+        nodeId,
+        session.token,
+        {
+          type: 'ROW',
+          datasetId: dataset.id,
+          rowId: row.id,
+          presentation: {
+            ...(titleColumnId
+              ? { titleColumnId }
+              : {}),
+            ...(subtitleColumnId
+              ? { subtitleColumnId }
+              : {}),
+          },
+        },
+      );
+
+      const center = viewportCenter();
+      const node: Node = {
+        id: nodeId,
+        type: 'shape',
+        position: {
+          x: center.x - 110,
+          y: center.y - 60,
+        },
+        style: {
+          width: 220,
+          height: 120,
+        },
+        data: {
+          binding,
+        },
+      };
+
+      nodesMap.set(nodeId, node);
+      setSelectedNodeId(nodeId);
+      setSelectedNodeIds([nodeId]);
+      setToolMode('select');
+
+      return nodeId;
+    },
+    [
+      meta.id,
+      nodesMap,
+      readOnly,
+      session.token,
+      viewportCenter,
+    ],
+  );
+
   const materializeRelated = useCallback(async ({
     parentNodeId,
     relation,
@@ -1731,6 +1827,7 @@ function BoardInner({
         materializedRelatedCount,
         openDatasetSheet: (datasetId, rowId) =>
           setSheetTarget({ datasetId, rowId }),
+        createBoundRowObject,
         navigateToDatasetLocation,
       }}
     >
