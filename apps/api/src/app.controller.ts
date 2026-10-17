@@ -393,6 +393,7 @@ export class AppController {
     body: {
       name?: string;
       dataType?: DatasetColumn['dataType'];
+      afterColumnId?: string;
     },
   ) {
     const access = await getDatasetAccess(datasetId, req.user.sub);
@@ -433,18 +434,51 @@ export class AppController {
         [datasetId],
       );
 
-      const ordinalResult = await client.query<{ ordinal: number }>(
-        `SELECT COALESCE(MAX(ordinal), -1) + 1 AS ordinal
-         FROM dataset_columns
-         WHERE dataset_id = $1`,
-        [datasetId],
-      );
+      let ordinal: number;
+
+      if (body.afterColumnId) {
+        const anchor = await client.query<{ ordinal: number }>(
+          `SELECT ordinal
+           FROM dataset_columns
+           WHERE id = $1 AND dataset_id = $2`,
+          [body.afterColumnId, datasetId],
+        );
+
+        if (!anchor.rows[0]) {
+          throw new BadRequestException(
+            'Anchor column does not belong to this dataset',
+          );
+        }
+
+        ordinal = anchor.rows[0].ordinal + 1;
+
+        await client.query(
+          `UPDATE dataset_columns
+           SET ordinal = -ordinal - 1000000
+           WHERE dataset_id = $1 AND ordinal >= $2`,
+          [datasetId, ordinal],
+        );
+        await client.query(
+          `UPDATE dataset_columns
+           SET ordinal = -ordinal - 999999
+           WHERE dataset_id = $1 AND ordinal <= -1000000`,
+          [datasetId],
+        );
+      } else {
+        const ordinalResult = await client.query<{ ordinal: number }>(
+          `SELECT COALESCE(MAX(ordinal), -1) + 1 AS ordinal
+           FROM dataset_columns
+           WHERE dataset_id = $1`,
+          [datasetId],
+        );
+        ordinal = ordinalResult.rows[0]?.ordinal ?? 0;
+      }
 
       const column: DatasetColumn = {
         id: randomUUID(),
         name,
         dataType,
-        ordinal: ordinalResult.rows[0]?.ordinal ?? 0,
+        ordinal,
       };
 
       await client.query(
@@ -815,7 +849,11 @@ export class AppController {
   async createDatasetRow(
     @Param('id') datasetId: string,
     @Req() req: any,
-    @Body() body: { values?: DatasetRow['values'] },
+    @Body()
+    body: {
+      values?: DatasetRow['values'];
+      afterRowId?: string;
+    },
   ) {
     const access = await getDatasetAccess(datasetId, req.user.sub);
     if (!access) throw new ForbiddenException();
@@ -847,16 +885,49 @@ export class AppController {
         [datasetId],
       );
 
-      const ordinalResult = await client.query<{ ordinal: number }>(
-        `SELECT COALESCE(MAX(ordinal), -1) + 1 AS ordinal
-         FROM dataset_rows
-         WHERE dataset_id = $1`,
-        [datasetId],
-      );
+      let ordinal: number;
+
+      if (body.afterRowId) {
+        const anchor = await client.query<{ ordinal: number }>(
+          `SELECT ordinal
+           FROM dataset_rows
+           WHERE id = $1 AND dataset_id = $2`,
+          [body.afterRowId, datasetId],
+        );
+
+        if (!anchor.rows[0]) {
+          throw new BadRequestException(
+            'Anchor row does not belong to this dataset',
+          );
+        }
+
+        ordinal = anchor.rows[0].ordinal + 1;
+
+        await client.query(
+          `UPDATE dataset_rows
+           SET ordinal = -ordinal - 1000000
+           WHERE dataset_id = $1 AND ordinal >= $2`,
+          [datasetId, ordinal],
+        );
+        await client.query(
+          `UPDATE dataset_rows
+           SET ordinal = -ordinal - 999999
+           WHERE dataset_id = $1 AND ordinal <= -1000000`,
+          [datasetId],
+        );
+      } else {
+        const ordinalResult = await client.query<{ ordinal: number }>(
+          `SELECT COALESCE(MAX(ordinal), -1) + 1 AS ordinal
+           FROM dataset_rows
+           WHERE dataset_id = $1`,
+          [datasetId],
+        );
+        ordinal = ordinalResult.rows[0]?.ordinal ?? 0;
+      }
 
       const row: DatasetRow = {
         id: randomUUID(),
-        ordinal: ordinalResult.rows[0]?.ordinal ?? 0,
+        ordinal,
         values,
       };
 

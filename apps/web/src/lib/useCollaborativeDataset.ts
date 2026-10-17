@@ -309,18 +309,41 @@ export function useCollaborativeDataset(
     async (
       name: string,
       dataType: DatasetColumn['dataType'] = 'TEXT',
+      afterColumnId?: string,
     ) => {
       if (readOnly || !datasetId || !token) return null;
 
       const column = await api.createDatasetColumn(
         datasetId,
         token,
-        { name, dataType },
+        {
+          name,
+          dataType,
+          ...(afterColumnId ? { afterColumnId } : {}),
+        },
       );
-      columnsMap.set(column.id, column);
+
+      ydoc.transact(() => {
+        for (const [id, current] of columnsMap.entries()) {
+          if (current.ordinal >= column.ordinal) {
+            columnsMap.set(id, {
+              ...current,
+              ordinal: current.ordinal + 1,
+            });
+          }
+        }
+        columnsMap.set(column.id, column);
+      });
+
       return column;
     },
-    [columnsMap, datasetId, readOnly, token],
+    [
+      columnsMap,
+      datasetId,
+      readOnly,
+      token,
+      ydoc,
+    ],
   );
 
   const renameColumn = useCallback(
@@ -419,18 +442,40 @@ export function useCollaborativeDataset(
   );
 
   const addRow = useCallback(
-    async (values: DatasetRow['values'] = {}) => {
+    async (
+      values: DatasetRow['values'] = {},
+      afterRowId?: string,
+    ) => {
       if (readOnly || !datasetId || !token) return null;
 
       const row = await api.createDatasetRow(
         datasetId,
         token,
         values,
+        afterRowId,
       );
-      rowsMap.set(row.id, row);
+
+      ydoc.transact(() => {
+        for (const [id, current] of rowsMap.entries()) {
+          if (current.ordinal >= row.ordinal) {
+            rowsMap.set(id, {
+              ...current,
+              ordinal: current.ordinal + 1,
+            });
+          }
+        }
+        rowsMap.set(row.id, row);
+      });
+
       return row;
     },
-    [datasetId, readOnly, rowsMap, token],
+    [
+      datasetId,
+      readOnly,
+      rowsMap,
+      token,
+      ydoc,
+    ],
   );
 
   const deleteRow = useCallback(

@@ -131,7 +131,9 @@ export const api = {
   createDatasetColumn: (
     datasetId: string,
     token: string,
-    input: Pick<DatasetColumn, 'name' | 'dataType'>,
+    input: Pick<DatasetColumn, 'name' | 'dataType'> & {
+      afterColumnId?: string;
+    },
   ) =>
     json<DatasetColumn>(`/datasets/${datasetId}/columns`, {
       method: 'POST',
@@ -195,6 +197,7 @@ export const api = {
     datasetId: string,
     token: string,
     values: DatasetRow['values'] = {},
+    afterRowId?: string,
   ) =>
     json<DatasetRow>(`/datasets/${datasetId}/rows`, {
       method: 'POST',
@@ -202,7 +205,10 @@ export const api = {
         ...authHeaders(token),
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ values }),
+      body: JSON.stringify({
+        values,
+        ...(afterRowId ? { afterRowId } : {}),
+      }),
     }),
 
   deleteDatasetRow: (

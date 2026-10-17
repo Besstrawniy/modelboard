@@ -371,6 +371,7 @@ export function DatasetSheet({
     mode: 'create' | 'rename';
     columnId?: string;
     initialName?: string;
+    afterColumnId?: string;
   } | null>(null);
   const [columnName, setColumnName] = useState('');
   const [columnType, setColumnType] =
@@ -1448,10 +1449,21 @@ export function DatasetSheet({
                         columnName.trim(),
                       );
                     } else {
-                      await addColumn(
+                      const created = await addColumn(
                         columnName.trim(),
                         columnType,
+                        columnDialog.afterColumnId,
                       );
+
+                      if (
+                        created &&
+                        selectedCell
+                      ) {
+                        focusCell(
+                          selectedCell.rowId,
+                          created.id,
+                        );
+                      }
                     }
                     setColumnDialog(null);
                   } catch (error) {
@@ -1815,14 +1827,20 @@ export function DatasetSheet({
           <button
             className="dataset-sheet__add-column"
             onClick={() => {
-              setColumnDialog({ mode: 'create' });
+              setColumnDialog({
+                mode: 'create',
+                afterColumnId:
+                  selectedCell?.columnId,
+              });
               setColumnName('');
               setColumnType('TEXT');
               setColumnError('');
             }}
           >
             <Plus size={14} />
-            Добавить колонку
+            {selectedCell
+              ? 'Вставить колонку справа'
+              : 'Добавить колонку'}
           </button>
         )}
 
@@ -1836,11 +1854,23 @@ export function DatasetSheet({
               try {
                 setQuery('');
                 setSort(null);
-                const nextPage = Math.floor(
-                  (dataset?.rows.length ?? 0) / PAGE_SIZE,
+                const created = await addRow(
+                  {},
+                  selectedCell?.rowId,
                 );
-                await addRow();
-                setPage(nextPage);
+
+                if (created && dataset) {
+                  const targetColumnId =
+                    selectedCell?.columnId ??
+                    dataset.columns[0]?.id;
+
+                  if (targetColumnId) {
+                    focusCell(
+                      created.id,
+                      targetColumnId,
+                    );
+                  }
+                }
               } catch (error) {
                 setRowError(
                   error instanceof Error ? error.message : String(error),
@@ -1851,7 +1881,9 @@ export function DatasetSheet({
             }}
           >
             <Plus size={14} />
-            Добавить строку
+            {selectedCell
+              ? 'Вставить строку ниже'
+              : 'Добавить строку'}
           </button>
         )}
 
