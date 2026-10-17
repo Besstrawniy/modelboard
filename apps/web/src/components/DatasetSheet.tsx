@@ -34,6 +34,7 @@ import {
   compileFormula,
   formatFormula,
   formulaKey,
+  translateFormulaForCopy,
 } from '../lib/formulas';
 
 const PAGE_SIZE = 200;
@@ -752,6 +753,7 @@ export function DatasetSheet({
     }
 
     const source = sourceRows.map((row) => ({
+      rowId: row.id,
       value: row.values[drag.columnId] ?? null,
       formula: formulaByCell.get(
         formulaKey(row.id, drag.columnId),
@@ -804,7 +806,15 @@ export function DatasetSheet({
           rowId: row.id,
           columnId: drag.columnId,
           formulaExpression:
-            template.formula.expression,
+            translateFormulaForCopy(
+              template.formula.expression,
+              template.rowId,
+              drag.columnId,
+              row.id,
+              drag.columnId,
+              dataset.rows,
+              dataset.columns,
+            ),
         };
       }
 

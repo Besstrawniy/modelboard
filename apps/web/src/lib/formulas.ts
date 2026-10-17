@@ -755,6 +755,111 @@ export function formatFormula(
   );
 }
 
+export function translateFormulaForCopy(
+  canonical: string,
+  sourceRowId: string,
+  sourceColumnId: string,
+  targetRowId: string,
+  targetColumnId: string,
+  rows: DatasetRow[],
+  columns: DatasetColumn[],
+) {
+  const sourceRow = rows.findIndex(
+    (row) => row.id === sourceRowId,
+  );
+  const targetRow = rows.findIndex(
+    (row) => row.id === targetRowId,
+  );
+  const sourceColumn = columns.findIndex(
+    (column) => column.id === sourceColumnId,
+  );
+  const targetColumn = columns.findIndex(
+    (column) => column.id === targetColumnId,
+  );
+
+  if (
+    sourceRow < 0 ||
+    targetRow < 0 ||
+    sourceColumn < 0 ||
+    targetColumn < 0
+  ) {
+    return canonical;
+  }
+
+  const rowDelta = targetRow - sourceRow;
+  const columnDelta =
+    targetColumn - sourceColumn;
+
+  const referencePattern = new RegExp(
+    `#\\{(${UUID})\\}@\\{(${UUID})\\}(?::#\\{(${UUID})\\}@\\{(${UUID})\\})?`,
+    'gi',
+  );
+
+  return canonical.replace(
+    referencePattern,
+    (
+      match,
+      firstRowId: string,
+      firstColumnId: string,
+      secondRowId?: string,
+      secondColumnId?: string,
+    ) => {
+      const shiftCell = (
+        rowId: string,
+        columnId: string,
+      ) => {
+        const rowIndex = rows.findIndex(
+          (row) => row.id === rowId,
+        );
+        const columnIndex = columns.findIndex(
+          (column) => column.id === columnId,
+        );
+
+        const nextRow =
+          rowIndex + rowDelta;
+        const nextColumn =
+          columnIndex + columnDelta;
+
+        if (
+          rowIndex < 0 ||
+          columnIndex < 0 ||
+          nextRow < 0 ||
+          nextRow >= rows.length ||
+          nextColumn < 0 ||
+          nextColumn >= columns.length
+        ) {
+          return null;
+        }
+
+        return `#{${rows[nextRow].id}}@{${columns[nextColumn].id}}`;
+      };
+
+      const first = shiftCell(
+        firstRowId,
+        firstColumnId,
+      );
+
+      if (!first) {
+        return match;
+      }
+
+      if (!secondRowId || !secondColumnId) {
+        return first;
+      }
+
+      const second = shiftCell(
+        secondRowId,
+        secondColumnId,
+      );
+
+      return second
+        ? `${first}:${second}`
+        : match;
+    },
+  );
+}
+
+
 function scalar(
   value: FormulaValue,
 ): DatasetCellValue {
