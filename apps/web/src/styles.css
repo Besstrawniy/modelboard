@@ -2788,3 +2788,108 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .freehand-options__done:hover {
   background: #f4f5f7;
 }
+
+
+/* Guided object binding UX */
+.binding-guide {
+  padding: 10px;
+  border: 1px solid #dfe4f2;
+  border-radius: 9px;
+  background: #f7f9ff;
+}
+.binding-guide > strong {
+  display: block;
+  color: #3d4654;
+  font-size: 10px;
+}
+.binding-guide > p {
+  margin: 5px 0 8px;
+  color: #78818d;
+  font-size: 8px;
+  line-height: 1.45;
+}
+.binding-guide > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 7px;
+  color: #67717e;
+  font-size: 8px;
+}
+.binding-guide > div span,
+.binding-step-label b {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  background: #596bd3;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 850;
+}
+.binding-current {
+  padding: 8px 9px;
+  border: 1px solid #d6eadb;
+  border-radius: 8px;
+  background: #f5fbf6;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.binding-current > span {
+  color: #4c875b;
+  font-size: 7px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+.binding-current > strong {
+  overflow: hidden;
+  color: #385442;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.binding-current > small {
+  color: #83a08b;
+  font-size: 7px;
+}
+.binding-step-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.binding-row-picker {
+  display: grid;
+  gap: 5px;
+}
+.binding-row-picker select {
+  min-height: 58px;
+  padding: 4px;
+}
+.binding-preview {
+  min-height: 66px;
+  padding: 9px 10px;
+  border: 1px solid #dfe3e9;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #fff, #f8f9fb);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.binding-preview > small {
+  margin-bottom: 4px;
+  color: #969ca5;
+  font-size: 7px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.binding-preview > strong {
+  color: #333a44;
+  font-size: 11px;
+}
+.binding-preview > span {
+  margin-top: 3px;
+  color: #717a86;
+  font-size: 8px;
+}

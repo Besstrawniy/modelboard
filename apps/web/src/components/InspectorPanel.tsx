@@ -26,6 +26,50 @@ function rowLabel(
   return parts.length ? parts.join(' · ') : row.id;
 }
 
+function suggestedPresentationFields(
+  columns: Array<{ id: string; name: string }>,
+) {
+  const normalized = new Map(
+    columns.map((column) => [
+      column.name.trim().toLowerCase(),
+      column.id,
+    ]),
+  );
+
+  const first = (names: string[]) =>
+    names
+      .map((name) => normalized.get(name))
+      .find((value): value is string => Boolean(value)) ?? '';
+
+  const title =
+    first([
+      'hostname',
+      'name',
+      'title',
+      'label',
+      'service',
+      'device',
+      'server',
+      'id',
+    ]) ||
+    columns[0]?.id ||
+    '';
+
+  const subtitle =
+    first([
+      'ip',
+      'ip_address',
+      'address',
+      'fqdn',
+      'status',
+      'port',
+    ]) ||
+    columns.find((column) => column.id !== title)?.id ||
+    '';
+
+  return { title, subtitle };
+}
+
 export function InspectorPanel({
   node,
   boardId,
@@ -61,6 +105,7 @@ export function InspectorPanel({
   const [error, setError] = useState('');
   const [datasetLocations, setDatasetLocations] =
     useState<BoardDatasetLocation[]>([]);
+  const [rowSearch, setRowSearch] = useState('');
 
   const { dataset } = useCollaborativeDataset(
     datasetId || undefined,
@@ -109,6 +154,7 @@ export function InspectorPanel({
     setSubtitleColumnId(
       (binding?.presentation?.subtitleColumnId as string | undefined) ?? '',
     );
+    setRowSearch('');
     setError('');
   }, [node.id, node.data]);
 
@@ -116,6 +162,55 @@ export function InspectorPanel({
     () => datasets.find((item) => item.id === datasetId),
     [datasetId, datasets],
   );
+
+  useEffect(() => {
+    if (!dataset || dataset.id !== datasetId) return;
+
+    const suggested = suggestedPresentationFields(
+      dataset.columns,
+    );
+
+    if (!titleColumnId) {
+      setTitleColumnId(suggested.title);
+    }
+    if (!subtitleColumnId) {
+      setSubtitleColumnId(suggested.subtitle);
+    }
+  }, [
+    dataset?.id,
+    dataset?.columns,
+    datasetId,
+    subtitleColumnId,
+    titleColumnId,
+  ]);
+
+  const filteredRows = useMemo(() => {
+    if (!dataset) return [];
+
+    const needle = rowSearch.trim().toLowerCase();
+    if (!needle) return dataset.rows;
+
+    return dataset.rows.filter((row) =>
+      rowLabel(row, dataset.columns)
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [dataset, rowSearch]);
+
+  const previewRow =
+    rowId && dataset
+      ? dataset.rows.find((row) => row.id === rowId)
+      : undefined;
+
+  const previewTitle =
+    previewRow && titleColumnId
+      ? String(previewRow.values[titleColumnId] ?? '—')
+      : '—';
+
+  const previewSubtitle =
+    previewRow && subtitleColumnId
+      ? String(previewRow.values[subtitleColumnId] ?? '—')
+      : '';
 
   const boundRow =
     existingBinding?.rowId &&
@@ -298,14 +393,41 @@ export function InspectorPanel({
           <section className="inspector-section">
             <h3><Link2 size={14} /> Привязка данных</h3>
 
+            <div className="binding-guide">
+              <strong>Связать объект с реальной строкой Dataset</strong>
+              <p>
+                После привязки изменение данных в таблице автоматически
+                обновляет этот объект на canvas.
+              </p>
+              <div>
+                <span>1</span> Dataset
+                <span>2</span> Строка
+                <span>3</span> Что показывать
+                <span>4</span> Привязать
+              </div>
+            </div>
+
+            {existingBinding && dataset && boundRow && (
+              <div className="binding-current">
+                <span>Привязано</span>
+                <strong>
+                  {dataset.name} → {rowLabel(boundRow, dataset.columns)}
+                </strong>
+                <small>rowId: {boundRow.id.slice(0, 8)}…</small>
+              </div>
+            )}
+
             <label>
-              Dataset
+              <span className="binding-step-label">
+                <b>1</b> Dataset
+              </span>
               <select
                 disabled={readOnly || busy}
                 value={datasetId}
                 onChange={(event) => {
                   setDatasetId(event.target.value);
                   setRowId('');
+                  setRowSearch('');
                   setTitleColumnId('');
                   setSubtitleColumnId('');
                 }}
@@ -320,27 +442,56 @@ export function InspectorPanel({
             </label>
 
             {datasetId && (
-              <label>
-                Строка
-                <select
-                  disabled={readOnly || busy || !dataset}
-                  value={rowId}
-                  onChange={(event) => setRowId(event.target.value)}
-                >
-                  <option value="">Выберите строку</option>
-                  {dataset?.rows.map((row) => (
-                    <option key={row.id} value={row.id}>
-                      {rowLabel(row, dataset.columns)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="binding-row-picker">
+                <label>
+                  <span className="binding-step-label">
+                    <b>2</b> Строка Dataset
+                  </span>
+                  <input
+                    disabled={readOnly || busy || !dataset}
+                    value={rowSearch}
+                    placeholder="Поиск по значениям строки…"
+                    onChange={(event) =>
+                      setRowSearch(event.target.value)
+                    }
+                  />
+                </label>
+
+                <label>
+                  <select
+                    disabled={readOnly || busy || !dataset}
+                    value={rowId}
+                    onChange={(event) =>
+                      setRowId(event.target.value)
+                    }
+                    size={Math.min(
+                      7,
+                      Math.max(2, filteredRows.length + 1),
+                    )}
+                  >
+                    <option value="">Выберите строку</option>
+                    {filteredRows.map((row) => (
+                      <option key={row.id} value={row.id}>
+                        {rowLabel(row, dataset!.columns)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {dataset && filteredRows.length === 0 && (
+                  <p className="inspector-muted">
+                    По запросу строк не найдено.
+                  </p>
+                )}
+              </div>
             )}
 
             {rowId && dataset && (
               <>
                 <label>
-                  Поле заголовка
+                  <span className="binding-step-label">
+                    <b>3</b> Поле заголовка
+                  </span>
                   <select
                     disabled={readOnly || busy}
                     value={titleColumnId}
@@ -373,9 +524,18 @@ export function InspectorPanel({
               </>
             )}
 
+            {previewRow && (
+              <div className="binding-preview">
+                <small>Предпросмотр объекта</small>
+                <strong>{previewTitle}</strong>
+                {previewSubtitle && <span>{previewSubtitle}</span>}
+              </div>
+            )}
+
             {selectedDatasetMeta && (
               <p className="inspector-muted">
                 Источник: <strong>{selectedDatasetMeta.name}</strong>
+                {dataset ? ` · ${dataset.rows.length} строк` : ''}
               </p>
             )}
 
@@ -387,7 +547,11 @@ export function InspectorPanel({
                   onClick={saveBinding}
                 >
                   <Link2 size={14} />
-                  {busy ? 'Сохранение…' : 'Привязать'}
+                  {busy
+                    ? 'Сохранение…'
+                    : existingBinding
+                      ? 'Обновить привязку'
+                      : 'Привязать строку к объекту'}
                 </button>
 
                 {existingBinding && (
