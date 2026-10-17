@@ -796,6 +796,10 @@ function BoardInner({
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
 
+      if (sheetTarget || workspaceSearchOpen) {
+        return;
+      }
+
       if (mod && key === 'k') {
         event.preventDefault();
         setWorkspaceSearchOpen(true);
@@ -876,7 +880,9 @@ function BoardInner({
     nodes,
     pasteClipboard,
     readOnly,
+    sheetTarget,
     undoManager,
+    workspaceSearchOpen,
   ]);
 
   const persistNodeChanges = useCallback((changes: NodeChange[]) => {

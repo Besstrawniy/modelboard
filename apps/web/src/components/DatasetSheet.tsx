@@ -444,41 +444,6 @@ export function DatasetSheet({
     };
   }, [cellMenu]);
 
-  useEffect(() => {
-    const onHistoryKey = (event: KeyboardEvent) => {
-      const mod = event.ctrlKey || event.metaKey;
-      if (!mod) return;
-
-      const target = event.target as HTMLElement | null;
-      const isFormulaInput =
-        target?.closest('.dataset-sheet__formula-input-wrap') !== null;
-
-      if (isFormulaInput) return;
-
-      const key = event.key.toLowerCase();
-
-      if (!readOnly && key === 'z') {
-        event.preventDefault();
-        if (event.shiftKey) redo();
-        else undo();
-        return;
-      }
-
-      if (!readOnly && key === 'y') {
-        event.preventDefault();
-        redo();
-      }
-    };
-
-    window.addEventListener('keydown', onHistoryKey);
-    return () =>
-      window.removeEventListener('keydown', onHistoryKey);
-  }, [readOnly, redo, undo]);
-
-  const filterSignature = JSON.stringify(columnFilters);
-  const hasColumnFilters = Object.values(
-    columnFilters,
-  ).some((value) => value.trim() !== '');
 
   useEffect(() => {
     setPage(0);
@@ -1314,6 +1279,61 @@ export function DatasetSheet({
     }
   };
 
+  const selectWholeRow = (rowId: string) => {
+    if (!dataset || dataset.columns.length === 0) return;
+
+    setSelectedCell({
+      rowId,
+      columnId: dataset.columns[0].id,
+    });
+    setSelectionRange({
+      startRowId: rowId,
+      endRowId: rowId,
+      startColumnId: dataset.columns[0].id,
+      endColumnId:
+        dataset.columns[dataset.columns.length - 1].id,
+    });
+  };
+
+  const selectWholeColumn = (columnId: string) => {
+    if (!dataset || dataset.rows.length === 0) return;
+
+    setSelectedCell({
+      rowId: dataset.rows[0].id,
+      columnId,
+    });
+    setSelectionRange({
+      startRowId: dataset.rows[0].id,
+      endRowId:
+        dataset.rows[dataset.rows.length - 1].id,
+      startColumnId: columnId,
+      endColumnId: columnId,
+    });
+  };
+
+  const selectAllCells = () => {
+    if (
+      !dataset ||
+      dataset.rows.length === 0 ||
+      dataset.columns.length === 0
+    ) {
+      return;
+    }
+
+    setSelectedCell({
+      rowId: dataset.rows[0].id,
+      columnId: dataset.columns[0].id,
+    });
+    setSelectionRange({
+      startRowId: dataset.rows[0].id,
+      endRowId:
+        dataset.rows[dataset.rows.length - 1].id,
+      startColumnId: dataset.columns[0].id,
+      endColumnId:
+        dataset.columns[dataset.columns.length - 1].id,
+    });
+  };
+
   const clearSelectedCells = () => {
     if (!dataset || !selectedCell || readOnly) return;
 
@@ -1363,6 +1383,85 @@ export function DatasetSheet({
       `Очищено ячеек: ${writes.length}`,
     );
   };
+
+  useEffect(() => {
+    const onDatasetKey = (event: KeyboardEvent) => {
+      const mod = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable;
+
+      const isFormulaInput =
+        target?.closest(
+          '.dataset-sheet__formula-input-wrap',
+        ) !== null;
+
+      if (mod && key === 'a' && !typing) {
+        event.preventDefault();
+        selectAllCells();
+        return;
+      }
+
+      if (mod && key === 'c' && !typing) {
+        event.preventDefault();
+        void copyCells();
+        return;
+      }
+
+      if (!readOnly && mod && key === 'v' && !typing) {
+        event.preventDefault();
+        void pasteCells();
+        return;
+      }
+
+      if (
+        !readOnly &&
+        !typing &&
+        (event.key === 'Delete' ||
+          event.key === 'Backspace')
+      ) {
+        event.preventDefault();
+        clearSelectedCells();
+        return;
+      }
+
+      if (!mod || isFormulaInput) return;
+
+      if (!readOnly && key === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+
+      if (!readOnly && key === 'y') {
+        event.preventDefault();
+        redo();
+      }
+    };
+
+    window.addEventListener(
+      'keydown',
+      onDatasetKey,
+    );
+    return () =>
+      window.removeEventListener(
+        'keydown',
+        onDatasetKey,
+      );
+  }, [
+    clearSelectedCells,
+    copyCells,
+    pasteCells,
+    readOnly,
+    redo,
+    selectAllCells,
+    undo,
+  ]);
 
   const visibleRows = useMemo(() => {
     if (!dataset) return [];
@@ -2016,7 +2115,13 @@ export function DatasetSheet({
           <table className="dataset-sheet__table">
             <thead>
               <tr>
-                <th className="dataset-sheet__row-number">#</th>
+                <th
+                  className="dataset-sheet__row-number dataset-sheet__select-all"
+                  onClick={selectAllCells}
+                  title="Выделить весь Dataset"
+                >
+                  #
+                </th>
                 {dataset.columns.map((column, columnIndex) => {
                   const activeSort = sort?.columnId === column.id;
 
@@ -2035,7 +2140,15 @@ export function DatasetSheet({
                       >
                         <span>
                           <strong>
-                            <em className="dataset-sheet__column-letter">
+                            <em
+                              className="dataset-sheet__column-letter"
+                              title="Выделить колонку"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                selectWholeColumn(column.id);
+                              }}
+                            >
                               {columnLabel(columnIndex)}
                             </em>
                             {column.name}
@@ -2199,14 +2312,19 @@ export function DatasetSheet({
                   key={row.id}
                   className={row.id === focusRowId ? 'is-focused' : ''}
                 >
-                  <th className="dataset-sheet__row-number">
+                  <th
+                    className="dataset-sheet__row-number"
+                    onClick={() => selectWholeRow(row.id)}
+                    title="Выделить строку"
+                  >
                     <span>
                       {safePage * PAGE_SIZE + rowIndex + 1}
                     </span>
                     {!readOnly && dataset && (
                       <button
                         className="dataset-sheet__row-to-canvas"
-                        onClick={async () => {
+                        onClick={async (event) => {
+                          event.stopPropagation();
                           setRowError('');
                           try {
                             await createBoundRowObject(
@@ -2232,7 +2350,8 @@ export function DatasetSheet({
                       <button
                         className="dataset-sheet__delete-row"
                         disabled={rowAction === row.id}
-                        onClick={async () => {
+                        onClick={async (event) => {
+                          event.stopPropagation();
                           setRowAction(row.id);
                           setRowError('');
                           try {

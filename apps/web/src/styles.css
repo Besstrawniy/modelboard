@@ -3207,3 +3207,21 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   font-weight: 900;
   text-align: center;
 }
+
+
+/* Spreadsheet whole row / column selection */
+.dataset-sheet__select-all,
+.dataset-sheet__row-number > span,
+.dataset-sheet__column-letter {
+  cursor: pointer;
+}
+.dataset-sheet__select-all:hover,
+.dataset-sheet__table tbody
+  .dataset-sheet__row-number:hover {
+  background: #eef1f7;
+  color: #5363c8;
+}
+.dataset-sheet__column-letter:hover {
+  background: #dfe4ff;
+  color: #4f61cc;
+}
