@@ -935,7 +935,12 @@ function BoardInner({
         },
       );
 
-      const center = viewportCenter();
+      const center = rf
+        ? rf.screenToFlowPosition({
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+          })
+        : { x: 480, y: 320 };
       const node: Node = {
         id: nodeId,
         type: 'shape',
@@ -963,8 +968,8 @@ function BoardInner({
       meta.id,
       nodesMap,
       readOnly,
+      rf,
       session.token,
-      viewportCenter,
     ],
   );
 
