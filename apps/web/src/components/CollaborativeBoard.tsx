@@ -4,7 +4,6 @@ import {
   applyNodeChanges,
   Background,
   BackgroundVariant,
-  Controls,
   MarkerType,
   MiniMap,
   Panel,
@@ -22,7 +21,7 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ClipboardPaste, Copy, Database, Eraser, Frame as FrameIcon, Grid3X3, Hand, LayoutDashboard, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X } from 'lucide-react';
+import { ChevronDown, ClipboardPaste, Copy, Database, Eraser, Frame as FrameIcon, Grid3X3, Hand, LayoutDashboard, Maximize2, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X, ZoomIn, ZoomOut } from 'lucide-react';
 import {
   DEMO_BOARD_ID,
   DEMO_ROLES_DATASET_ID,
@@ -267,6 +266,9 @@ function BoardInner({
     localStorage.getItem('modelboard:snap-to-grid') !== 'false',
   );
   const [toolMode, setToolMode] = useState<ToolMode>('select');
+  const [spacePressed, setSpacePressed] = useState(false);
+  const [canvasZoom, setCanvasZoom] = useState(1);
+  const effectiveToolMode: ToolMode = spacePressed ? 'hand' : toolMode;
   const [historyTick, setHistoryTick] = useState(0);
   const [sheetTarget, setSheetTarget] = useState<{
     datasetId: string;
@@ -293,6 +295,8 @@ function BoardInner({
   useEffect(() => {
     setSelectedNodeId(null);
     setSelectedNodeIds([]);
+    setSpacePressed(false);
+    setToolMode('select');
     setSheetTarget(null);
     setPendingRelation(null);
     setCommentsOpen(false);
@@ -782,21 +786,73 @@ function BoardInner({
     selectedNodeIds,
   ]);
 
+
+  const activateTool = useCallback(
+    (next: ToolMode) => {
+      setDraftStroke(null);
+      erasingRef.current = false;
+      setSpacePressed(false);
+      if (next !== 'select') clearSelection();
+      setToolMode(next);
+    },
+    [clearSelection],
+  );
+
+  const fitCanvas = useCallback(
+    (selectionOnly = false) => {
+      if (!rf) return;
+      const selectedNodes = selectionOnly
+        ? nodes.filter((node) => selectedNodeIds.includes(node.id))
+        : [];
+      if (selectionOnly && selectedNodes.length === 0) return;
+      void rf.fitView({
+        ...(selectedNodes.length > 0 ? { nodes: selectedNodes } : {}),
+        padding: 0.22,
+        duration: 260,
+      });
+    },
+    [nodes, rf, selectedNodeIds],
+  );
+
+  const changeZoom = useCallback(
+    (direction: 'in' | 'out' | 'reset') => {
+      if (!rf) return;
+      if (direction === 'reset') {
+        void rf.zoomTo(1, { duration: 180 });
+      } else if (direction === 'in') {
+        void rf.zoomIn({ duration: 180 });
+      } else {
+        void rf.zoomOut({ duration: 180 });
+      }
+    },
+    [rf],
+  );
+
   useEffect(() => {
+    const modalOpen = Boolean(
+      sheetTarget ||
+      workspaceSearchOpen ||
+      datasetsOpen ||
+      devicesOpen ||
+      commentsOpen ||
+      csvDrop ||
+      pendingRelation ||
+      boardMenuOpen,
+    );
+
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing =
-        target?.tagName === 'INPUT' ||
-        target?.tagName === 'TEXTAREA' ||
-        target?.tagName === 'SELECT' ||
-        target?.isContentEditable;
+        target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]') !== null;
 
-      if (typing) return;
+      if (typing || modalOpen) return;
 
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
 
-      if (sheetTarget || workspaceSearchOpen) {
+      if (event.code === 'Space' && !mod && !event.altKey) {
+        event.preventDefault();
+        if (!event.repeat) setSpacePressed(true);
         return;
       }
 
@@ -806,80 +862,119 @@ function BoardInner({
         return;
       }
 
+      if (mod && key === '0') {
+        event.preventDefault();
+        fitCanvas();
+        return;
+      }
+      if (mod && key === '1') {
+        event.preventDefault();
+        changeZoom('reset');
+        return;
+      }
+
       if (!readOnly && mod && key === 'z') {
         event.preventDefault();
         if (event.shiftKey) undoManager.redo();
         else undoManager.undo();
         return;
       }
-
       if (!readOnly && mod && key === 'y') {
         event.preventDefault();
         undoManager.redo();
         return;
       }
-
       if (mod && key === 'c') {
+        if (selectedNodeIds.length === 0) return;
         event.preventDefault();
         copySelection();
         return;
       }
-
       if (!readOnly && mod && key === 'v') {
+        if (!clipboard) return;
         event.preventDefault();
         void pasteClipboard();
         return;
       }
-
       if (!readOnly && mod && key === 'd') {
         event.preventDefault();
         void duplicateSelection();
         return;
       }
-
       if (mod && key === 'a') {
         event.preventDefault();
         const ids = nodes.map((node) => node.id);
         setNodes((current) =>
-          current.map((node) => ({
-            ...node,
-            selected: true,
-          })),
+          current.map((node) => ({ ...node, selected: true })),
         );
         setSelectedNodeIds(ids);
-        setSelectedNodeId(
-          ids.length === 1 ? ids[0] : null,
-        );
+        setSelectedNodeId(ids.length === 1 ? ids[0] : null);
         return;
       }
 
       if (event.key === 'Escape') {
-        clearSelection();
+        event.preventDefault();
+        activateTool('select');
         setPendingRelation(null);
-        setToolMode('select');
+        clearSelection();
+        return;
       }
 
-      if (event.key === 'v') setToolMode('select');
-      if (event.key === 'h') setToolMode('hand');
-      if (!readOnly && event.key === 'p') {
-        setSelectedNodeId(null);
-        setToolMode('pen');
-      }
-      if (!readOnly && event.key === 'e') {
-        setSelectedNodeId(null);
-        setToolMode('eraser');
+      if (mod || event.altKey) return;
+
+      if (key === 'v') {
+        activateTool('select');
+      } else if (key === 'h') {
+        activateTool('hand');
+      } else if (!readOnly && key === 'p') {
+        activateTool('pen');
+      } else if (!readOnly && key === 'e') {
+        activateTool('eraser');
+      } else if (key === 'f') {
+        fitCanvas(selectedNodeIds.length > 0);
+      } else if (key === '+' || key === '=') {
+        event.preventDefault();
+        changeZoom('in');
+      } else if (key === '-' || key === '_') {
+        event.preventDefault();
+        changeZoom('out');
       }
     };
 
+    const stopTemporaryHand = (event: KeyboardEvent) => {
+      if (event.code === 'Space') {
+        setSpacePressed(false);
+      }
+    };
+
+    const resetTemporaryHand = () => setSpacePressed(false);
+
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', stopTemporaryHand);
+    window.addEventListener('blur', resetTemporaryHand);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', stopTemporaryHand);
+      window.removeEventListener('blur', resetTemporaryHand);
+    };
   }, [
+    activateTool,
+    boardMenuOpen,
+    changeZoom,
     clearSelection,
+    clipboard,
+    commentsOpen,
     copySelection,
+    csvDrop,
+    datasetsOpen,
+    devicesOpen,
     duplicateSelection,
+    fitCanvas,
     nodes,
     pasteClipboard,
+    pendingRelation,
     readOnly,
+    selectedNodeIds.length,
     sheetTarget,
     undoManager,
     workspaceSearchOpen,
@@ -2275,11 +2370,15 @@ function BoardInner({
         </header>
 
         <ReactFlow
-          className={`canvas-flow canvas-flow--${toolMode}`}
+          className={`canvas-flow canvas-flow--${effectiveToolMode}`}
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
-          onInit={setRf}
+          onInit={(instance) => {
+            setRf(instance);
+            setCanvasZoom(instance.getZoom());
+          }}
+          onMoveEnd={(_, viewport) => setCanvasZoom(viewport.zoom)}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
@@ -2298,40 +2397,74 @@ function BoardInner({
               ids.length === 1 ? ids[0] : null,
             );
           }}
-          onPaneClick={clearSelection}
-          nodesDraggable={!readOnly && toolMode === 'select'}
-          nodesConnectable={!readOnly && toolMode === 'select'}
-          elementsSelectable={toolMode === 'select'}
-          deleteKeyCode={readOnly || toolMode !== 'select' ? null : ['Backspace', 'Delete']}
+          onPaneClick={effectiveToolMode === 'select' ? clearSelection : undefined}
+          nodesDraggable={!readOnly && effectiveToolMode === 'select'}
+          nodesConnectable={!readOnly && effectiveToolMode === 'select'}
+          elementsSelectable={effectiveToolMode === 'select'}
+          deleteKeyCode={readOnly || effectiveToolMode !== 'select' || sheetTarget || workspaceSearchOpen ? null : ['Backspace', 'Delete']}
           fitView
           snapToGrid={snapToGrid}
           snapGrid={[22, 22]}
-          panOnScroll
-          selectionOnDrag={toolMode === 'select'}
-          panOnDrag={toolMode === 'hand' ? true : [1, 2]}
+          panOnScroll={false}
+          zoomOnScroll
+          zoomOnPinch
+          zoomOnDoubleClick={false}
+          selectionOnDrag={effectiveToolMode === 'select'}
+          panOnDrag={effectiveToolMode === 'hand' ? true : [1, 2]}
           minZoom={0.15}
           maxZoom={2.5}
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
-          <Controls />
           <MiniMap pannable zoomable />
+
+          <Panel position="bottom-left" className="canvas-navigation-panel">
+            <div className="canvas-navigation" aria-label="Масштаб и навигация">
+              <button
+                title="Уменьшить масштаб (-)"
+                onClick={() => changeZoom('out')}
+                disabled={!rf || canvasZoom <= 0.151}
+              >
+                <ZoomOut size={16} />
+              </button>
+              <button
+                className="canvas-navigation__zoom"
+                title="Масштаб 100% (Ctrl+1)"
+                onClick={() => changeZoom('reset')}
+                disabled={!rf}
+              >
+                {Math.round(canvasZoom * 100)}%
+              </button>
+              <button
+                title="Увеличить масштаб (+)"
+                onClick={() => changeZoom('in')}
+                disabled={!rf || canvasZoom >= 2.49}
+              >
+                <ZoomIn size={16} />
+              </button>
+              <span className="canvas-navigation__separator" />
+              <button
+                title="Вписать все объекты (Ctrl+0)"
+                onClick={() => fitCanvas()}
+                disabled={!rf || nodes.length === 0}
+              >
+                <Maximize2 size={15} />
+              </button>
+            </div>
+          </Panel>
 
           <Panel position="center-left" className="toolbar-panel">
             <div className="toolbar">
               <button
                 className={toolMode === 'select' ? 'is-active' : ''}
                 title="Выбор (V)"
-                onClick={() => setToolMode('select')}
+                onClick={() => activateTool('select')}
               >
                 <MousePointer2 size={19} />
               </button>
               <button
                 className={toolMode === 'hand' ? 'is-active' : ''}
                 title="Рука / перемещение canvas (H)"
-                onClick={() => {
-                  clearSelection();
-                  setToolMode('hand');
-                }}
+                onClick={() => activateTool('hand')}
               >
                 <Hand size={19} />
               </button>
@@ -2339,12 +2472,9 @@ function BoardInner({
                 className={toolMode === 'pen' ? 'is-active' : ''}
                 disabled={readOnly}
                 title="Перо / свободное рисование (P)"
-                onClick={() => {
-                  clearSelection();
-                  setToolMode((current) =>
-                    current === 'pen' ? 'select' : 'pen',
-                  );
-                }}
+                onClick={() =>
+                  activateTool(toolMode === 'pen' ? 'select' : 'pen')
+                }
               >
                 <PenLine size={19} />
               </button>
@@ -2352,12 +2482,9 @@ function BoardInner({
                 className={toolMode === 'eraser' ? 'is-active' : ''}
                 disabled={readOnly}
                 title="Ластик для рисунков (E)"
-                onClick={() => {
-                  clearSelection();
-                  setToolMode((current) =>
-                    current === 'eraser' ? 'select' : 'eraser',
-                  );
-                }}
+                onClick={() =>
+                  activateTool(toolMode === 'eraser' ? 'select' : 'eraser')
+                }
               >
                 <Eraser size={19} />
               </button>
@@ -2483,20 +2610,20 @@ function BoardInner({
           </div>
         )}
 
-        {(toolMode === 'pen' || toolMode === 'eraser') && !readOnly && (
+        {(effectiveToolMode === 'pen' || effectiveToolMode === 'eraser') && !readOnly && (
           <div
-            className={`freehand-capture freehand-capture--${toolMode}`}
+            className={`freehand-capture freehand-capture--${effectiveToolMode}`}
             onPointerDown={
-              toolMode === 'pen' ? beginFreehand : beginErase
+              effectiveToolMode === 'pen' ? beginFreehand : beginErase
             }
             onPointerMove={
-              toolMode === 'pen' ? moveFreehand : moveErase
+              effectiveToolMode === 'pen' ? moveFreehand : moveErase
             }
             onPointerUp={
-              toolMode === 'pen' ? finishFreehand : finishErase
+              effectiveToolMode === 'pen' ? finishFreehand : finishErase
             }
             onPointerCancel={
-              toolMode === 'pen' ? finishFreehand : finishErase
+              effectiveToolMode === 'pen' ? finishFreehand : finishErase
             }
           />
         )}
@@ -2543,9 +2670,7 @@ function BoardInner({
             <button
               className="freehand-options__done"
               onClick={() => {
-                setDraftStroke(null);
-                erasingRef.current = false;
-                setToolMode('select');
+                activateTool('select');
               }}
             >
               <MousePointer2 size={13} />

@@ -3329,3 +3329,42 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .dataset-sheet__table tbody td.is-frozen-row.is-range-selected { background: #f6f8ff; }
 .dataset-sheet__table tbody td.is-frozen-column.is-selected-cell,
 .dataset-sheet__table tbody td.is-frozen-row.is-selected-cell { background: #eef2ff; }
+
+
+/* Canvas navigation: intentionally separate from object inspector and minimap. */
+.canvas-navigation-panel {
+  z-index: 29 !important;
+  margin: 0 0 13px 14px !important;
+}
+.canvas-navigation {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px;
+  border: 1px solid #dfe3e9;
+  border-radius: 11px;
+  background: rgba(255,255,255,.97);
+  box-shadow: 0 8px 24px rgba(24,29,43,.11);
+}
+.canvas-navigation button {
+  min-width: 33px;
+  height: 33px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #536071;
+  font-size: 11px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+.canvas-navigation button:not(:disabled):hover { background: #edf1fa; color: #364f9d; }
+.canvas-navigation button:disabled { opacity: .35; cursor: default; }
+.canvas-navigation__zoom { min-width: 56px !important; }
+.canvas-navigation__separator { width: 1px; height: 22px; margin: 0 3px; background: #e1e5ed; }
+.canvas-flow--hand .react-flow__pane,
+.canvas-flow--hand .react-flow__node { cursor: grab; }
+.canvas-flow--hand .react-flow__pane:active { cursor: grabbing; }
