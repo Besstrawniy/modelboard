@@ -21,7 +21,7 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ClipboardPaste, Copy, Database, Eraser, Frame as FrameIcon, Grid3X3, Hand, LayoutDashboard, Maximize2, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronDown, ClipboardPaste, Copy, Database, Eraser, Frame as FrameIcon, Grid3X3, Hand, LayoutDashboard, HelpCircle, Maximize2, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X, ZoomIn, ZoomOut } from 'lucide-react';
 import {
   DEMO_BOARD_ID,
   DEMO_ROLES_DATASET_ID,
@@ -268,6 +268,7 @@ function BoardInner({
   );
   const [toolMode, setToolMode] = useState<ToolMode>('select');
   const [spacePressed, setSpacePressed] = useState(false);
+  const [canvasHelpOpen, setCanvasHelpOpen] = useState(false);
   const [canvasZoom, setCanvasZoom] = useState(1);
   const effectiveToolMode: ToolMode = spacePressed ? 'hand' : toolMode;
   const [historyTick, setHistoryTick] = useState(0);
@@ -846,6 +847,14 @@ function BoardInner({
       const typing =
         target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]') !== null;
 
+      if (canvasHelpOpen) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          setCanvasHelpOpen(false);
+        }
+        return;
+      }
+
       if (typing || modalOpen) return;
 
       const mod = event.ctrlKey || event.metaKey;
@@ -923,6 +932,12 @@ function BoardInner({
 
       if (mod || event.altKey) return;
 
+      if (event.key === '?' || (event.shiftKey && event.code === 'Slash')) {
+        event.preventDefault();
+        setCanvasHelpOpen(true);
+        return;
+      }
+
       if (key === 'v') {
         activateTool('select');
       } else if (key === 'h') {
@@ -961,6 +976,7 @@ function BoardInner({
   }, [
     activateTool,
     boardMenuOpen,
+    canvasHelpOpen,
     changeZoom,
     clearSelection,
     clipboard,
@@ -2476,6 +2492,12 @@ function BoardInner({
               >
                 <Maximize2 size={15} />
               </button>
+              <button
+                title="Управление Canvas (?)"
+                onClick={() => setCanvasHelpOpen(true)}
+              >
+                <HelpCircle size={16} />
+              </button>
             </div>
           </Panel>
 
@@ -2703,6 +2725,77 @@ function BoardInner({
               <MousePointer2 size={13} />
               Готово
             </button>
+          </div>
+        )}
+
+        {canvasHelpOpen && (
+          <div
+            className="canvas-help-backdrop"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setCanvasHelpOpen(false);
+              }
+            }}
+          >
+            <section
+              className="canvas-help"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Управление Canvas"
+            >
+              <header>
+                <div>
+                  <strong>Управление Canvas</strong>
+                  <p>Основные действия и горячие клавиши ModelBoard</p>
+                </div>
+                <button
+                  aria-label="Закрыть справку"
+                  onClick={() => setCanvasHelpOpen(false)}
+                >
+                  <X size={18} />
+                </button>
+              </header>
+              <div className="canvas-help__groups">
+                <section>
+                  <h3>Инструменты</h3>
+                  <dl>
+                    <div><dt>Выбрать объект</dt><dd>V</dd></div>
+                    <div><dt>Постоянный режим руки</dt><dd>H</dd></div>
+                    <div><dt>Рука на время удержания</dt><dd>Пробел</dd></div>
+                    <div><dt>Перо / ластик</dt><dd>P / E</dd></div>
+                    <div><dt>Выход из инструмента</dt><dd>Esc</dd></div>
+                    <div><dt>Дополнительное выделение</dt><dd>Shift + клик</dd></div>
+                  </dl>
+                </section>
+                <section>
+                  <h3>Доска и масштаб</h3>
+                  <dl>
+                    <div><dt>Увеличить / уменьшить</dt><dd>Колесо / + / −</dd></div>
+                    <div><dt>Передвигать доску</dt><dd>Рука / средняя кнопка</dd></div>
+                    <div><dt>Показать всё</dt><dd>Ctrl + 0</dd></div>
+                    <div><dt>Масштаб 100%</dt><dd>Ctrl + 1</dd></div>
+                    <div><dt>Фокус на выделении</dt><dd>F</dd></div>
+                    <div><dt>Поиск по Workspace</dt><dd>Ctrl + K</dd></div>
+                  </dl>
+                </section>
+                <section>
+                  <h3>Работа с объектами</h3>
+                  <dl>
+                    <div><dt>Копировать / вставить</dt><dd>Ctrl + C / V</dd></div>
+                    <div><dt>Дублировать</dt><dd>Ctrl + D</dd></div>
+                    <div><dt>Выбрать все объекты</dt><dd>Ctrl + A</dd></div>
+                    <div><dt>Отменить / повторить</dt><dd>Ctrl + Z / Y</dd></div>
+                    <div><dt>Удалить объект</dt><dd>Delete</dd></div>
+                  </dl>
+                </section>
+              </div>
+              <footer>
+                <span>Во время ввода текста горячие клавиши доски отключаются.</span>
+                <button onClick={() => setCanvasHelpOpen(false)}>
+                  Понятно
+                </button>
+              </footer>
+            </section>
           </div>
         )}
 
