@@ -36,6 +36,7 @@ import type {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
 import { useBoardActions } from './BoardContext';
+import { displayCellValue } from '../lib/cellFormatting';
 import {
   columnLabel,
   compileFormula,
@@ -259,6 +260,7 @@ function SheetCell({
   format?: DatasetCellFormat;
 }) {
   const raw = row.values[column.id];
+  const [editDraft, setEditDraft] = useState<string | null>(null);
 
   if (column.dataType === 'BOOLEAN' && !formulaActive) {
     return (
@@ -331,8 +333,21 @@ function SheetCell({
           format?.background || undefined,
       }}
       disabled={readOnly}
-      value={raw === null || raw === undefined ? '' : String(raw)}
-      onFocus={onFocus}
+      value={
+        editDraft !== null
+          ? editDraft
+          : displayCellValue(raw, format)
+      }
+      onFocus={() => {
+        setEditDraft(raw === null || raw === undefined ? '' : String(raw));
+        onFocus?.();
+      }}
+      onBlur={() => {
+        if (editDraft !== null) {
+          onChange(normalizeInput(editDraft, column));
+          setEditDraft(null);
+        }
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === 'Tab') {
           event.preventDefault();
@@ -377,9 +392,16 @@ function SheetCell({
           onNavigate?.('right');
         }
       }}
-      onChange={(event) =>
-        onChange(normalizeInput(event.target.value, column))
-      }
+      onChange={(event) => {
+        const next = event.target.value;
+        setEditDraft(next);
+        if (
+          column.dataType !== 'INTEGER' &&
+          column.dataType !== 'NUMBER'
+        ) {
+          onChange(normalizeInput(next, column));
+        }
+      }}
     />
   );
 }
@@ -2186,6 +2208,49 @@ export function DatasetSheet({
 
         {!readOnly && selectedCell && (
           <div className="dataset-sheet__format-group">
+            <select
+              className="dataset-sheet__number-format"
+              title="Числовой формат выделения (исходные значения не изменяются)"
+              value={selectedFormat?.numberFormat ?? 'GENERAL'}
+              onChange={(event) =>
+                formatCellsInSelection({
+                  numberFormat: event.target.value as DatasetCellFormat['numberFormat'],
+                })
+              }
+            >
+              <option value="GENERAL">Общий</option>
+              <option value="NUMBER">Число</option>
+              <option value="PERCENT">%</option>
+              <option value="RUB">₽</option>
+              <option value="USD">$</option>
+              <option value="EUR">€</option>
+            </select>
+            <button
+              title="Уменьшить количество знаков после запятой"
+              onClick={() =>
+                formatCellsInSelection({
+                  decimalPlaces: Math.max(
+                    0,
+                    (selectedFormat?.decimalPlaces ?? 2) - 1,
+                  ),
+                })
+              }
+            >
+              −.0
+            </button>
+            <button
+              title="Увеличить количество знаков после запятой"
+              onClick={() =>
+                formatCellsInSelection({
+                  decimalPlaces: Math.min(
+                    6,
+                    (selectedFormat?.decimalPlaces ?? 2) + 1,
+                  ),
+                })
+              }
+            >
+              +.0
+            </button>
             <button
               className={selectedFormat?.bold ? 'is-active' : ''}
               onClick={() =>
@@ -2273,6 +2338,8 @@ export function DatasetSheet({
                   italic: false,
                   align: null,
                   background: null,
+                  numberFormat: null,
+                  decimalPlaces: null,
                 })
               }
               title="Очистить формат"

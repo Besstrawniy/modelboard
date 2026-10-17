@@ -114,6 +114,8 @@ export type DatasetCellFormat = {
   italic?: boolean;
   align?: 'LEFT' | 'CENTER' | 'RIGHT' | null;
   background?: string | null;
+  numberFormat?: 'GENERAL' | 'NUMBER' | 'PERCENT' | 'RUB' | 'USD' | 'EUR' | null;
+  decimalPlaces?: number | null;
 };
 
 export type DatasetSnapshot = DatasetMeta & {

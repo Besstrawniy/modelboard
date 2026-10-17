@@ -349,12 +349,20 @@ export function useCollaborativeDataset(
           if (next.background === null) {
             delete next.background;
           }
+          if (next.numberFormat === null || next.numberFormat === 'GENERAL') {
+            delete next.numberFormat;
+          }
+          if (next.decimalPlaces === null) {
+            delete next.decimalPlaces;
+          }
 
           const meaningful =
             Boolean(next.bold) ||
             Boolean(next.italic) ||
             Boolean(next.align) ||
-            Boolean(next.background);
+            Boolean(next.background) ||
+            Boolean(next.numberFormat) ||
+            next.decimalPlaces !== undefined;
 
           if (meaningful) {
             formatsMap.set(key, next);

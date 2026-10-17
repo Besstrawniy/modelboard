@@ -2,6 +2,7 @@ import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react';
 import type { TableNodeData } from '@modelboard/shared';
 import { useBoardActions } from './BoardContext';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
+import { displayCellValue } from '../lib/cellFormatting';
 
 export function TableNode({ data, selected }: NodeProps<any>) {
   const { readOnly, sessionToken } = useBoardActions();
@@ -111,8 +112,21 @@ export function TableNode({ data, selected }: NodeProps<any>) {
                     };
                   })()}
                   className="nodrag nowheel"
-                  disabled={readOnly}
-                  value={String(row.values[column.id] ?? '')}
+                  disabled={readOnly || Boolean(dataset.formats.find(
+                    (item) =>
+                      item.rowId === row.id &&
+                      item.columnId === column.id &&
+                      item.numberFormat &&
+                      item.numberFormat !== 'GENERAL',
+                  ))}
+                  value={displayCellValue(
+                    row.values[column.id],
+                    dataset.formats.find(
+                      (item) =>
+                        item.rowId === row.id &&
+                        item.columnId === column.id,
+                    ),
+                  )}
                   onChange={(event) => {
                     const raw = event.target.value;
 

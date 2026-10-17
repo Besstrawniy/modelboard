@@ -209,6 +209,18 @@ async function projectDatasetStateToPostgres(
         typeof format.background === 'string'
           ? format.background
           : null,
+      numberFormat:
+        ['GENERAL', 'NUMBER', 'PERCENT', 'RUB', 'USD', 'EUR'].includes(
+          format.numberFormat,
+        )
+          ? format.numberFormat
+          : null,
+      decimalPlaces:
+        Number.isInteger(format.decimalPlaces) &&
+        format.decimalPlaces >= 0 &&
+        format.decimalPlaces <= 6
+          ? format.decimalPlaces
+          : null,
     }));
 
     const client = await pool.connect();
@@ -329,6 +341,8 @@ async function projectDatasetStateToPostgres(
                   italic: format.italic,
                   align: format.align,
                   background: format.background,
+                  numberFormat: format.numberFormat,
+                  decimalPlaces: format.decimalPlaces,
                 },
               })),
             ),
@@ -408,6 +422,8 @@ async function bootstrapDataset(datasetId: string) {
       italic?: boolean;
       align?: 'LEFT' | 'CENTER' | 'RIGHT' | null;
       background?: string | null;
+      numberFormat?: 'GENERAL' | 'NUMBER' | 'PERCENT' | 'RUB' | 'USD' | 'EUR' | null;
+      decimalPlaces?: number | null;
     };
   }>(
     `SELECT row_id, column_id, format

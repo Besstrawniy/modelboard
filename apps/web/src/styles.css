@@ -3280,3 +3280,19 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .dataset-sheet__table td.is-range-selected {
   box-shadow: inset 0 0 0 1px rgba(74, 106, 216, .22);
 }
+
+/* Spreadsheet numeric formats */
+.dataset-sheet__number-format {
+  width: 84px;
+  height: 27px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 5px;
+  background: #fff;
+  color: #485363;
+  font-size: 10px;
+}
+.dataset-sheet__number-format:focus {
+  outline: 2px solid #8fa2f5;
+  outline-offset: -2px;
+}
