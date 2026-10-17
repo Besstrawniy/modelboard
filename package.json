@@ -13,7 +13,8 @@
     "dev:api": "npm run dev --workspace @modelboard/api",
     "dev:collab": "npm run dev --workspace @modelboard/collab",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "node --experimental-transform-types --test tests/*.test.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.0.0"
