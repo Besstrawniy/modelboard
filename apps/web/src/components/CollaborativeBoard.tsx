@@ -1093,21 +1093,64 @@ function BoardInner({
             y: window.innerHeight / 2,
           })
         : { x: 480, y: 320 };
-      const node: Node = {
-        id: nodeId,
-        type: 'shape',
-        position: {
-          x: center.x - 110,
-          y: center.y - 60,
-        },
-        style: {
-          width: 220,
-          height: 120,
-        },
-        data: {
-          binding,
-        },
-      };
+      const datasetName =
+        dataset.name.trim().toLowerCase();
+
+      const deviceKind: DeviceKind | null =
+        /(^|[_\s-])(vm|machine|virtual)([_\s-]|$)/i.test(
+          datasetName,
+        )
+          ? 'VM'
+          : /server|host|node/i.test(datasetName)
+            ? 'SERVER'
+            : /database|db|postgres|mysql|sql/i.test(
+                  datasetName,
+                )
+              ? 'DATABASE'
+              : /firewall|(^|[_\s-])fw([_\s-]|$)/i.test(
+                    datasetName,
+                  )
+                ? 'FIREWALL'
+                : /switch/i.test(datasetName)
+                  ? 'SWITCH'
+                  : /router|gateway/i.test(datasetName)
+                    ? 'ROUTER'
+                    : /cloud/i.test(datasetName)
+                      ? 'CLOUD'
+                      : null;
+
+      const node: Node = deviceKind
+        ? {
+            id: nodeId,
+            type: 'device',
+            position: {
+              x: center.x - 110,
+              y: center.y - 65,
+            },
+            style: {
+              width: 220,
+              height: 130,
+            },
+            data: {
+              deviceKind,
+              binding,
+            },
+          }
+        : {
+            id: nodeId,
+            type: 'shape',
+            position: {
+              x: center.x - 110,
+              y: center.y - 60,
+            },
+            style: {
+              width: 220,
+              height: 120,
+            },
+            data: {
+              binding,
+            },
+          };
 
       nodesMap.set(nodeId, node);
       setSelectedNodeId(nodeId);
