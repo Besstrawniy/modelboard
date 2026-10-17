@@ -37,9 +37,10 @@ type SortState = {
 } | null;
 
 type CellSelectionRange = {
-  columnId: string;
   startRowId: string;
   endRowId: string;
+  startColumnId: string;
+  endColumnId: string;
 };
 
 type AutofillDrag = {
@@ -469,21 +470,35 @@ export function DatasetSheet({
   const selectionBounds = useMemo(() => {
     if (!selectionRange || !dataset) return null;
 
-    const start = rowIndexById.get(
+    const startRow = rowIndexById.get(
       selectionRange.startRowId,
     );
-    const end = rowIndexById.get(
+    const endRow = rowIndexById.get(
       selectionRange.endRowId,
     );
+    const startColumn = dataset.columns.findIndex(
+      (column) =>
+        column.id === selectionRange.startColumnId,
+    );
+    const endColumn = dataset.columns.findIndex(
+      (column) =>
+        column.id === selectionRange.endColumnId,
+    );
 
-    if (start === undefined || end === undefined) {
+    if (
+      startRow === undefined ||
+      endRow === undefined ||
+      startColumn < 0 ||
+      endColumn < 0
+    ) {
       return null;
     }
 
     return {
-      columnId: selectionRange.columnId,
-      start: Math.min(start, end),
-      end: Math.max(start, end),
+      startRow: Math.min(startRow, endRow),
+      endRow: Math.max(startRow, endRow),
+      startColumn: Math.min(startColumn, endColumn),
+      endColumn: Math.max(startColumn, endColumn),
     };
   }, [dataset, rowIndexById, selectionRange]);
 
@@ -593,21 +608,20 @@ export function DatasetSheet({
   ) => {
     setSelectedCell({ rowId, columnId });
 
-    if (
-      event.shiftKey &&
-      selectionRange?.columnId === columnId
-    ) {
+    if (event.shiftKey && selectionRange) {
       setSelectionRange({
         ...selectionRange,
         endRowId: rowId,
+        endColumnId: columnId,
       });
       return;
     }
 
     setSelectionRange({
-      columnId,
       startRowId: rowId,
       endRowId: rowId,
+      startColumnId: columnId,
+      endColumnId: columnId,
     });
   };
 
@@ -707,10 +721,11 @@ export function DatasetSheet({
 
     if (targetRow) {
       setSelectionRange({
-        columnId: drag.columnId,
         startRowId:
           dataset.rows[drag.sourceStart].id,
         endRowId: targetRow.id,
+        startColumnId: drag.columnId,
+        endColumnId: drag.columnId,
       });
       setSelectedCell({
         rowId: targetRow.id,
@@ -725,6 +740,8 @@ export function DatasetSheet({
     if (
       readOnly ||
       !selectionBounds ||
+      selectionBounds.startColumn !==
+        selectionBounds.endColumn ||
       query ||
       sort
     ) {
@@ -738,10 +755,11 @@ export function DatasetSheet({
     );
 
     setAutofillDrag({
-      columnId: selectionBounds.columnId,
-      sourceStart: selectionBounds.start,
-      sourceEnd: selectionBounds.end,
-      targetEnd: selectionBounds.end,
+      columnId:
+        dataset!.columns[selectionBounds.startColumn].id,
+      sourceStart: selectionBounds.startRow,
+      sourceEnd: selectionBounds.endRow,
+      targetEnd: selectionBounds.endRow,
     });
   };
 
@@ -821,9 +839,10 @@ export function DatasetSheet({
 
     setSelectedCell({ rowId, columnId });
     setSelectionRange({
-      columnId,
       startRowId: rowId,
       endRowId: rowId,
+      startColumnId: columnId,
+      endColumnId: columnId,
     });
 
     window.requestAnimationFrame(() => {
@@ -885,41 +904,63 @@ export function DatasetSheet({
 
     setClipboardMessage('');
 
-    const column = dataset.columns.find(
-      (item) => item.id === selectedCell.columnId,
-    );
-    if (!column) return;
+    const fallbackColumnIndex =
+      dataset.columns.findIndex(
+        (item) => item.id === selectedCell.columnId,
+      );
+    const fallbackRowIndex =
+      dataset.rows.findIndex(
+        (item) => item.id === selectedCell.rowId,
+      );
+    if (
+      fallbackColumnIndex < 0 ||
+      fallbackRowIndex < 0
+    ) {
+      return;
+    }
 
-    const rows =
-      selectionBounds?.columnId === column.id
-        ? dataset.rows.slice(
-            selectionBounds.start,
-            selectionBounds.end + 1,
-          )
-        : dataset.rows.filter(
-            (row) => row.id === selectedCell.rowId,
-          );
+    const bounds = selectionBounds ?? {
+      startRow: fallbackRowIndex,
+      endRow: fallbackRowIndex,
+      startColumn: fallbackColumnIndex,
+      endColumn: fallbackColumnIndex,
+    };
+
+    const rows = dataset.rows.slice(
+      bounds.startRow,
+      bounds.endRow + 1,
+    );
+    const columns = dataset.columns.slice(
+      bounds.startColumn,
+      bounds.endColumn + 1,
+    );
 
     const text = rows
-      .map((row) => {
-        const formula = formulaByCell.get(
-          formulaKey(row.id, column.id),
-        );
+      .map((row) =>
+        columns
+          .map((column) => {
+            const formula = formulaByCell.get(
+              formulaKey(row.id, column.id),
+            );
 
-        return formula
-          ? formatFormula(
-              formula.expression,
-              dataset.columns,
-            )
-          : String(row.values[column.id] ?? '');
-      })
+            return formula
+              ? formatFormula(
+                  formula.expression,
+                  dataset.columns,
+                )
+              : String(
+                  row.values[column.id] ?? '',
+                );
+          })
+          .join('\t'),
+      )
       .join('\n');
 
     try {
       await navigator.clipboard.writeText(text);
       setClipboardMessage(
-        rows.length > 1
-          ? `Скопировано ячеек: ${rows.length}`
+        rows.length * columns.length > 1
+          ? `Скопировано ячеек: ${rows.length * columns.length}`
           : 'Ячейка скопирована',
       );
     } catch {
@@ -1621,8 +1662,8 @@ export function DatasetSheet({
           </div>
         ) : (
           <div className="dataset-sheet__formula-hint">
-            Shift-клик по второй ячейке колонки → потяните маркер вниз.
-            Числа продолжают последовательность, формулы копируются по строкам.
+            Shift-клик расширяет выделение до прямоугольного диапазона.
+            Для одной колонки маркер в углу включает autofill.
           </div>
         )}
       </div>
@@ -1908,10 +1949,18 @@ export function DatasetSheet({
                       selectedCell?.columnId === column.id;
                     const rowIndex =
                       rowIndexById.get(row.id) ?? -1;
+                    const columnIndex =
+                      dataset.columns.findIndex(
+                        (item) => item.id === column.id,
+                      );
                     const inRange =
-                      selectionBounds?.columnId === column.id &&
-                      rowIndex >= selectionBounds.start &&
-                      rowIndex <= selectionBounds.end;
+                      Boolean(selectionBounds) &&
+                      rowIndex >= selectionBounds!.startRow &&
+                      rowIndex <= selectionBounds!.endRow &&
+                      columnIndex >=
+                        selectionBounds!.startColumn &&
+                      columnIndex <=
+                        selectionBounds!.endColumn;
                     const fillPreview =
                       autofillDrag?.columnId === column.id &&
                       rowIndex > autofillDrag.sourceEnd &&
@@ -1920,8 +1969,13 @@ export function DatasetSheet({
                       !readOnly &&
                       !query &&
                       !sort &&
-                      selectionBounds?.columnId === column.id &&
-                      rowIndex === selectionBounds.end;
+                      Boolean(selectionBounds) &&
+                      selectionBounds!.startColumn ===
+                        selectionBounds!.endColumn &&
+                      columnIndex ===
+                        selectionBounds!.endColumn &&
+                      rowIndex ===
+                        selectionBounds!.endRow;
 
                     return (
                       <td
@@ -1969,15 +2023,19 @@ export function DatasetSheet({
                               columnId: column.id,
                             });
                             if (
-                              selectionRange?.columnId !== column.id ||
                               !selectionBounds ||
-                              rowIndex < selectionBounds.start ||
-                              rowIndex > selectionBounds.end
+                              rowIndex < selectionBounds.startRow ||
+                              rowIndex > selectionBounds.endRow ||
+                              columnIndex <
+                                selectionBounds.startColumn ||
+                              columnIndex >
+                                selectionBounds.endColumn
                             ) {
                               setSelectionRange({
-                                columnId: column.id,
                                 startRowId: row.id,
                                 endRowId: row.id,
+                                startColumnId: column.id,
+                                endColumnId: column.id,
                               });
                             }
                           }}
