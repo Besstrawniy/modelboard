@@ -6,10 +6,13 @@ export function shouldPersistCanvasNodeChange(change: {
   type: string;
   dragging?: boolean;
   resizing?: boolean;
+  setAttributes?: boolean | 'width' | 'height';
 }): boolean {
   if (change.type === 'select') return false;
   if (change.type === 'position' && change.dragging === true) return false;
   if (change.type === 'dimensions' && change.resizing === true) return false;
+  // ResizeObserver measurements are per-client layout, not document edits.
+  if (change.type === 'dimensions' && change.resizing === undefined && !change.setAttributes) return false;
   return true;
 }
 
@@ -22,7 +25,11 @@ export type CanvasPreview = {
   height?: number;
 };
 
-type CanvasNode = CanvasPreview & { id: string; selected?: boolean };
+type CanvasNode = CanvasPreview & {
+  id: string;
+  selected?: boolean;
+  style?: { width?: number | string; height?: number | string };
+};
 
 /** Shared data wins, except geometry currently controlled by a local gesture. */
 export function reconcileCanvasNodes<T extends CanvasNode>(
@@ -31,11 +38,17 @@ export function reconcileCanvasNodes<T extends CanvasNode>(
   const local = new Map(current.map((node) => [node.id, node]));
   const ids = new Set(shared.map((node) => node.id));
   for (const id of previews.keys()) if (!ids.has(id)) previews.delete(id);
-  return shared.map((node) => ({
-    ...node,
-    ...previews.get(node.id),
-    selected: local.get(node.id)?.selected ?? false,
-  }));
+  return shared.map((node) => {
+    const previous = local.get(node.id);
+    const sameSize = previous && previous.width === node.width && previous.height === node.height &&
+      previous.style?.width === node.style?.width && previous.style?.height === node.style?.height;
+    return {
+      ...node,
+      ...(sameSize && previous.measured ? { measured: previous.measured } : {}),
+      ...previews.get(node.id),
+      selected: previous?.selected ?? false,
+    };
+  });
 }
 
 /** A geometry commit must retain concurrent text, style and binding edits. */

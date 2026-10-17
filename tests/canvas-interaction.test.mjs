@@ -98,3 +98,35 @@ test('a frame and its contents undo together, successive gestures stay separate'
   undo.destroy();
   doc.destroy();
 });
+
+test('initial layout measurements stay local and never become an extra Undo step', () => {
+  assert.equal(shouldPersistCanvasNodeChange({ type: 'dimensions' }), false);
+  assert.equal(shouldPersistCanvasNodeChange({ type: 'dimensions', setAttributes: true }), true);
+  const current = [{ id: 'a', width: 100, height: 80, measured: { width: 100, height: 80 }, selected: true }];
+  const shared = [{ id: 'a', width: 100, height: 80, data: { text: 'remote edit' } }];
+  const synced = reconcileCanvasNodes(shared, current, new Map());
+  assert.deepEqual(synced[0].measured, current[0].measured);
+  assert.deepEqual(synced[0].data, shared[0].data);
+  const resized = reconcileCanvasNodes([{ ...shared[0], width: 200 }], current, new Map());
+  assert.equal(resized[0].measured, undefined, 'remote size changes invalidate stale measurements');
+});
+
+test('copy creation is removed by one Undo even after its local dimensions are measured', async () => {
+  const Y = await import('yjs');
+  const doc = new Y.Doc();
+  const nodes = doc.getMap('nodes');
+  const undo = new Y.UndoManager(nodes);
+  undo.stopCapturing();
+  nodes.set('copy', { id: 'copy', position: { x: 80, y: 90 }, data: { text: 'copy' } });
+  undo.stopCapturing();
+  const local = [{ ...nodes.get('copy'), measured: { width: 140, height: 84 } }];
+  if (shouldPersistCanvasNodeChange({ type: 'dimensions' })) nodes.set('copy', local[0]);
+  assert.equal(undo.undoStack.length, 1);
+  assert.deepEqual(reconcileCanvasNodes(Array.from(nodes.values()), local, new Map())[0].measured, local[0].measured);
+  undo.undo();
+  assert.equal(nodes.has('copy'), false);
+  undo.redo();
+  assert.equal(nodes.get('copy').data.text, 'copy');
+  undo.destroy();
+  doc.destroy();
+});

@@ -64,6 +64,8 @@ import { RelationViewNode } from './RelationViewNode';
 import { WorkspaceSearch } from './WorkspaceSearch';
 import { FrameNode } from './FrameNode';
 import { CanvasSelectionActions } from './CanvasSelectionActions';
+import { CanvasContextMenu } from './CanvasContextMenu';
+import { canvasPasteOffset, selectCanvasContextTarget, type CanvasContextCommand } from '../lib/canvasContextMenu';
 import {
   alignCanvasNodes, distributeCanvasNodes, includeCanvasFrameContents, reorderCanvasLayers,
   canvasNodeSize, type CanvasAlignment, type CanvasDistribution, type CanvasLayerAction,
@@ -274,6 +276,10 @@ function BoardInner({
   const [toolMode, setToolMode] = useState<ToolMode>('select');
   const [spacePressed, setSpacePressed] = useState(false);
   const [canvasHelpOpen, setCanvasHelpOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number; y: number; kind: 'pane' | 'selection'; flowPosition: { x: number; y: number };
+  } | null>(null);
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
   const [canvasZoom, setCanvasZoom] = useState(1);
   const effectiveToolMode: ToolMode = spacePressed ? 'hand' : toolMode;
   const [historyTick, setHistoryTick] = useState(0);
@@ -302,6 +308,7 @@ function BoardInner({
   useEffect(() => {
     setSelectedNodeId(null);
     setSelectedNodeIds([]);
+    setContextMenu(null);
     setSpacePressed(false);
     setToolMode('select');
     setSheetTarget(null);
@@ -477,12 +484,13 @@ function BoardInner({
     async (
       sourceNodes: Node[],
       sourceEdges: Edge[],
-      offset: number,
+      offset: number | { x: number; y: number },
     ) => {
       if (readOnly || sourceNodes.length === 0) {
         return [] as string[];
       }
 
+      const translation = typeof offset === 'number' ? { x: offset, y: offset } : offset;
       const idMap = new Map<string, string>();
       for (const source of sourceNodes) {
         idMap.set(source.id, crypto.randomUUID());
@@ -527,8 +535,8 @@ function BoardInner({
           const clone = structuredClone(source);
           clone.id = id;
           clone.position = {
-            x: source.position.x + offset,
-            y: source.position.y + offset,
+            x: source.position.x + translation.x,
+            y: source.position.y + translation.y,
           };
           clone.data = data;
           clone.selected = false;
@@ -548,6 +556,7 @@ function BoardInner({
         return clone;
       });
 
+      undoManager.stopCapturing();
       ydoc.transact(() => {
         for (const node of clonedNodes) {
           const persisted = {
@@ -561,6 +570,8 @@ function BoardInner({
           edgesMap.set(edge.id, edge);
         }
       });
+
+      undoManager.stopCapturing();
 
       const ids = clonedNodes.map((node) => node.id);
 
@@ -585,20 +596,21 @@ function BoardInner({
       nodesMap,
       readOnly,
       session.token,
+      undoManager,
       ydoc,
     ],
   );
 
-  const pasteClipboard = useCallback(async () => {
+  const pasteClipboard = useCallback(async (target?: { x: number; y: number }) => {
     if (!clipboard || readOnly) return;
 
-    pasteOffsetRef.current += 1;
+    if (!target) pasteOffsetRef.current += 1;
     const offset = 28 + pasteOffsetRef.current * 12;
 
     await cloneToBoard(
       clipboard.nodes,
       clipboard.edges,
-      offset,
+      target ? canvasPasteOffset(clipboard.nodes, target) : offset,
     );
   }, [clipboard, cloneToBoard, readOnly]);
 
@@ -652,6 +664,7 @@ function BoardInner({
         ),
     );
 
+    undoManager.stopCapturing();
     ydoc.transact(() => {
       for (const nodeId of selectedNodeIds) {
         nodesMap.delete(nodeId);
@@ -667,6 +680,8 @@ function BoardInner({
       }
     });
 
+    undoManager.stopCapturing();
+
     clearSelection();
   }, [
     clearSelection,
@@ -677,6 +692,7 @@ function BoardInner({
     readOnly,
     selectedNodeIds,
     session.token,
+    undoManager,
     ydoc,
   ]);
 
@@ -763,7 +779,9 @@ function BoardInner({
       },
     };
 
+    undoManager.stopCapturing();
     nodesMap.set(frameId, frame);
+    undoManager.stopCapturing();
     setSelectedNodeIds([frameId]);
     setSelectedNodeId(frameId);
 
@@ -780,6 +798,7 @@ function BoardInner({
     nodesMap,
     readOnly,
     selectedNodeIds,
+    undoManager,
   ]);
 
 
@@ -820,6 +839,7 @@ function BoardInner({
 
   const activateTool = useCallback(
     (next: ToolMode) => {
+      setContextMenu(null);
       setDraftStroke(null);
       erasingRef.current = false;
       setSpacePressed(false);
@@ -844,6 +864,46 @@ function BoardInner({
     },
     [nodes, rf, selectedNodeIds],
   );
+
+  const openContextMenu = useCallback((event: React.MouseEvent | MouseEvent, targetId?: string) => {
+    // Keep native spelling, selection and clipboard actions in editable fields.
+    if (event.shiftKey || (event.target instanceof Element &&
+      event.target.closest('input, textarea, select, [contenteditable="true"]'))) return;
+    if (effectiveToolMode !== 'select' || !rf || previewsRef.current.size > 0) return;
+    if (targetId && !nodesRef.current.some((node) => node.id === targetId)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (targetId) {
+      const next = selectCanvasContextTarget(nodesRef.current, targetId);
+      setNodes(next);
+      const ids = next.filter((node) => node.selected).map((node) => node.id);
+      setSelectedNodeIds(ids);
+      setSelectedNodeId(ids.length === 1 ? ids[0] : null);
+    }
+    setContextMenu({ x: event.clientX, y: event.clientY, kind: targetId ? 'selection' : 'pane',
+      flowPosition: rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+    });
+  }, [effectiveToolMode, rf, setNodes]);
+
+  const runContextCommand = useCallback((command: CanvasContextCommand) => {
+    const run = async () => {
+      if (command === 'fit-board') { fitCanvas(); return; }
+      if (command === 'fit-selection') { fitCanvas(true); return; }
+      if (command === 'copy') { copySelection(); return; }
+      if (readOnly) return;
+      if (command === 'paste') await pasteClipboard(contextMenu?.flowPosition);
+      else if (command === 'duplicate') await duplicateSelection();
+      else if (command === 'frame') wrapSelectionInFrame();
+      else if (command === 'delete') await deleteSelection();
+      else if (command === 'undo') undoManager.undo();
+      else if (command === 'redo') undoManager.redo();
+      else if (command.startsWith('align:')) layoutSelection(command.slice(6) as CanvasAlignment);
+      else if (command.startsWith('distribute:')) layoutSelection(command.slice(11) as CanvasDistribution);
+      else if (command.startsWith('layer:')) changeSelectionLayer(command.slice(6) as CanvasLayerAction);
+    };
+    void run().catch((error) => setDropError(error instanceof Error ? error.message : String(error)));
+  }, [changeSelectionLayer, contextMenu, copySelection, deleteSelection, duplicateSelection, fitCanvas,
+    layoutSelection, pasteClipboard, readOnly, undoManager, wrapSelectionInFrame]);
 
   const changeZoom = useCallback(
     (direction: 'in' | 'out' | 'reset') => {
@@ -884,6 +944,7 @@ function BoardInner({
         return;
       }
 
+      if (contextMenu) return;
       if (typing || modalOpen) return;
 
       const mod = event.ctrlKey || event.metaKey;
@@ -1014,6 +1075,7 @@ function BoardInner({
     activateTool,
     boardMenuOpen,
     canvasHelpOpen,
+    contextMenu,
     changeZoom,
     changeSelectionLayer,
     effectiveToolMode,
@@ -2477,7 +2539,13 @@ function BoardInner({
             setRf(instance);
             setCanvasZoom(instance.getZoom());
           }}
+          onMoveStart={closeContextMenu}
           onMoveEnd={(_, viewport) => setCanvasZoom(viewport.zoom)}
+          onNodeContextMenu={(event, node) => openContextMenu(event, node.id)}
+          onSelectionContextMenu={(event, selection) => {
+            if (selection[0]) openContextMenu(event, selection[0].id);
+          }}
+          onPaneContextMenu={(event) => openContextMenu(event)}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
@@ -2511,7 +2579,7 @@ function BoardInner({
           zoomOnPinch
           zoomOnDoubleClick={false}
           selectionOnDrag={effectiveToolMode === 'select'}
-          panOnDrag={effectiveToolMode === 'hand' ? true : [1, 2]}
+          panOnDrag={effectiveToolMode === 'hand' ? true : [1]}
           minZoom={0.15}
           maxZoom={2.5}
         >
@@ -2680,6 +2748,18 @@ function BoardInner({
           </ViewportPortal>
         </ReactFlow>
 
+        {contextMenu && (
+          <CanvasContextMenu
+            key={`${contextMenu.kind}:${contextMenu.x}:${contextMenu.y}`}
+            x={contextMenu.x} y={contextMenu.y}
+            options={{ readOnly, selectionCount: contextMenu.kind === 'selection' ? selectedNodeIds.length : 0,
+              canPaste: Boolean(clipboard), canUndo, canRedo,
+              busy: nodes.some((node) => node.dragging || node.resizing) }}
+            onCommand={runContextCommand}
+            onClose={closeContextMenu}
+          />
+        )}
+
         {effectiveToolMode === 'select' && selectedNodeIds.length > 0 && !readOnly && (
           <CanvasSelectionActions
             key={selectedNodeIds.join(':')}
@@ -2800,6 +2880,8 @@ function BoardInner({
                     <div><dt>Перо / ластик</dt><dd>P / E</dd></div>
                     <div><dt>Выход из инструмента</dt><dd>Esc</dd></div>
                     <div><dt>Дополнительное выделение</dt><dd>Shift + клик</dd></div>
+                    <div><dt>Действия с объектом / доской</dt><dd>Правая кнопка</dd></div>
+                    <div><dt>Меню браузера</dt><dd>Shift + правая кнопка</dd></div>
                   </dl>
                 </section>
                 <section>
