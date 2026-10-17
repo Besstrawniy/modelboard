@@ -455,6 +455,11 @@ export function DatasetSheet({
   const [formulaError, setFormulaError] = useState('');
   const [selectionRange, setSelectionRange] =
     useState<CellSelectionRange | null>(null);
+  const rangeDragRef = useRef<{
+    anchorRowId: string;
+    anchorColumnId: string;
+  } | null>(null);
+  const [draggingRange, setDraggingRange] = useState(false);
   const [autofillDrag, setAutofillDrag] =
     useState<AutofillDrag | null>(null);
   const [clipboardMessage, setClipboardMessage] = useState('');
@@ -748,26 +753,68 @@ export function DatasetSheet({
     }
   }, [hasColumnFilters, query, sort]);
 
+  useEffect(() => {
+    const finishRangeDrag = () => {
+      rangeDragRef.current = null;
+      setDraggingRange(false);
+    };
+
+    window.addEventListener('mouseup', finishRangeDrag);
+    window.addEventListener('blur', finishRangeDrag);
+    return () => {
+      window.removeEventListener('mouseup', finishRangeDrag);
+      window.removeEventListener('blur', finishRangeDrag);
+    };
+  }, []);
+
   const selectCell = (
     event: React.MouseEvent,
     rowId: string,
     columnId: string,
   ) => {
-    setSelectedCell({ rowId, columnId });
+    if (event.button !== 0) return;
 
-    if (event.shiftKey && selectionRange) {
-      setSelectionRange({
-        ...selectionRange,
-        endRowId: rowId,
-        endColumnId: columnId,
-      });
+    // Double click should focus the actual cell editor, not start dragging.
+    if (event.detail >= 2) {
+      rangeDragRef.current = null;
+      setDraggingRange(false);
       return;
     }
 
+    const anchor =
+      event.shiftKey && selectionRange
+        ? {
+            anchorRowId: selectionRange.startRowId,
+            anchorColumnId: selectionRange.startColumnId,
+          }
+        : { anchorRowId: rowId, anchorColumnId: columnId };
+
+    rangeDragRef.current = anchor;
+    setDraggingRange(true);
+    setSelectedCell({
+      rowId: anchor.anchorRowId,
+      columnId: anchor.anchorColumnId,
+    });
     setSelectionRange({
-      startRowId: rowId,
+      startRowId: anchor.anchorRowId,
+      startColumnId: anchor.anchorColumnId,
       endRowId: rowId,
-      startColumnId: columnId,
+      endColumnId: columnId,
+    });
+  };
+
+  const extendRangeDrag = (
+    event: React.MouseEvent,
+    rowId: string,
+    columnId: string,
+  ) => {
+    const anchor = rangeDragRef.current;
+    if (!anchor || (event.buttons & 1) === 0) return;
+
+    setSelectionRange({
+      startRowId: anchor.anchorRowId,
+      startColumnId: anchor.anchorColumnId,
+      endRowId: rowId,
       endColumnId: columnId,
     });
   };
@@ -1714,7 +1761,7 @@ export function DatasetSheet({
 
   return (
     <div
-      className="dataset-sheet"
+      className={`dataset-sheet ${draggingRange ? 'is-drag-selecting' : ''}`}
       ref={sheetRef}
       onMouseDown={() => {
         if (cellMenu) setCellMenu(null);
@@ -2673,6 +2720,13 @@ export function DatasetSheet({
                             column.id,
                           )
                         }
+                        onMouseEnter={(event) =>
+                          extendRangeDrag(
+                            event,
+                            row.id,
+                            column.id,
+                          )
+                        }
                         onContextMenu={(event) => {
                           event.preventDefault();
 
@@ -2723,6 +2777,7 @@ export function DatasetSheet({
                           formulaActive={Boolean(formula)}
                           format={formatByCell.get(key)}
                           onFocus={() => {
+                            if (rangeDragRef.current) return;
                             setSelectedCell({
                               rowId: row.id,
                               columnId: column.id,

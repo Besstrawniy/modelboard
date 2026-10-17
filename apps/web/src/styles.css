@@ -3267,3 +3267,16 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   opacity: 0;
   pointer-events: none;
 }
+
+
+/* Spreadsheet mouse range selection */
+.dataset-sheet.is-drag-selecting .dataset-sheet__table {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.dataset-sheet.is-drag-selecting .dataset-sheet__table td:not(.is-selected-cell) .dataset-sheet__cell-editor {
+  pointer-events: none;
+}
+.dataset-sheet__table td.is-range-selected {
+  box-shadow: inset 0 0 0 1px rgba(74, 106, 216, .22);
+}
