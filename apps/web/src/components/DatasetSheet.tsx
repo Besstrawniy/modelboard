@@ -445,6 +445,13 @@ export function DatasetSheet({
   }, [cellMenu]);
 
 
+  const filterSignature = JSON.stringify(
+    columnFilters,
+  );
+  const hasColumnFilters = Object.values(
+    columnFilters,
+  ).some((value) => value.trim() !== '');
+
   useEffect(() => {
     setPage(0);
   }, [
