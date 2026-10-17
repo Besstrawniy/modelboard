@@ -33,14 +33,20 @@ export function useCollaborativeDataset(
     [ydoc],
   );
   const [status, setStatus] = useState('connecting');
+  const [synced, setSynced] = useState(false);
   const [dataset, setDataset] = useState<DatasetState | null>(null);
 
   useEffect(() => {
     if (!datasetId || !token) {
       setDataset(null);
       setStatus('idle');
+      setSynced(false);
       return;
     }
+
+    setDataset(null);
+    setStatus('connecting');
+    setSynced(false);
 
     const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
     const provider = new HocuspocusProvider({
@@ -50,6 +56,7 @@ export function useCollaborativeDataset(
       token,
       flushDelay: 40,
       onStatus: ({ status }) => setStatus(status),
+      onSynced: () => setSynced(true),
     });
 
     let recalculating = false;
@@ -400,6 +407,7 @@ export function useCollaborativeDataset(
   return {
     dataset,
     status,
+    synced,
     setCell,
     setFormula,
     clearFormula,

@@ -23,6 +23,19 @@ function parseDocumentName(documentName: string): DocumentRef | null {
   };
 }
 
+function datasetStateHasColumns(state: Uint8Array) {
+  const doc = new Y.Doc();
+
+  try {
+    Y.applyUpdate(doc, state);
+    return doc.getMap('columns').size > 0;
+  } catch {
+    return false;
+  } finally {
+    doc.destroy();
+  }
+}
+
 async function projectBoardStateToPostgres(
   boardId: string,
   state: Uint8Array,
@@ -449,6 +462,35 @@ async function startCollaborationServer() {
               ref.id,
               result.rows[0].state,
             );
+          }
+
+          if (
+            ref?.kind === 'dataset' &&
+            !datasetStateHasColumns(result.rows[0].state)
+          ) {
+            const relational = await query<{ count: string }>(
+              `SELECT COUNT(*)::text AS count
+               FROM dataset_columns
+               WHERE dataset_id = $1`,
+              [ref.id],
+            );
+
+            if (Number(relational.rows[0]?.count ?? 0) > 0) {
+              const repaired = await bootstrapDataset(ref.id);
+
+              if (repaired) {
+                await query(
+                  `UPDATE collab_documents
+                   SET state = $2, updated_at = now()
+                   WHERE document_name = $1`,
+                  [documentName, Buffer.from(repaired)],
+                );
+                console.warn(
+                  `Repaired empty dataset collaboration state: ${ref.id}`,
+                );
+                return repaired;
+              }
+            }
           }
 
           return result.rows[0].state;

@@ -1507,7 +1507,7 @@ function BoardInner({
 
 
   const handleFrameDragStart = useCallback(
-    (_event: React.MouseEvent, frame: Node) => {
+    (_event: any, frame: Node) => {
       if (readOnly || frame.type !== 'frame') {
         frameDragRef.current = null;
         return;
@@ -1556,7 +1556,7 @@ function BoardInner({
   );
 
   const handleFrameDrag = useCallback(
-    (_event: React.MouseEvent, frame: Node) => {
+    (_event: any, frame: Node) => {
       const state = frameDragRef.current;
       if (!state || state.frameId !== frame.id) return;
 
@@ -2038,7 +2038,9 @@ function BoardInner({
                 title="Перо / свободное рисование (P)"
                 onClick={() => {
                   clearSelection();
-                  setToolMode('pen');
+                  setToolMode((current) =>
+                    current === 'pen' ? 'select' : 'pen',
+                  );
                 }}
               >
                 <PenLine size={19} />
@@ -2049,7 +2051,9 @@ function BoardInner({
                 title="Ластик для рисунков (E)"
                 onClick={() => {
                   clearSelection();
-                  setToolMode('eraser');
+                  setToolMode((current) =>
+                    current === 'eraser' ? 'select' : 'eraser',
+                  );
                 }}
               >
                 <Eraser size={19} />
@@ -2195,6 +2199,18 @@ function BoardInner({
               />
               <output>{penWidth.toFixed(1)} px</output>
             </label>
+
+            <button
+              className="freehand-options__done"
+              onClick={() => {
+                setDraftStroke(null);
+                erasingRef.current = false;
+                setToolMode('select');
+              }}
+            >
+              <MousePointer2 size={13} />
+              Готово
+            </button>
           </div>
         )}
 

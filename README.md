@@ -51,6 +51,8 @@
 - свободное рисование Pen tool: strokes синхронизируются через Yjs и участвуют в Undo/Redo;
 - настройка цвета и толщины Pen;
 - Eraser удаляет freehand-strokes с поддержкой Undo/Redo;
+- Pen/Eraser можно завершить повторным нажатием инструмента, кнопкой «Готово», V или Esc;
+- Dataset не считается пустым до фактического Yjs-sync; пустое повреждённое collab-состояние автоматически восстанавливается из PostgreSQL;
 - встроенная палитра инфраструктуры: сервер, VM, switch, router, firewall, database, cloud;
 - DeviceNode поддерживает те же ROW bindings, что и обычный Shape;
 - полноэкранный Dataset-режим по двойному клику на TableNode;

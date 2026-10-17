@@ -6,7 +6,7 @@ import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
 export function TableNode({ data, selected }: NodeProps<any>) {
   const { readOnly, sessionToken } = useBoardActions();
   const view = data as TableNodeData;
-  const { dataset, status, setCell } = useCollaborativeDataset(
+  const { dataset, status, synced, setCell } = useCollaborativeDataset(
     view.datasetId,
     sessionToken,
     readOnly,
@@ -21,12 +21,25 @@ export function TableNode({ data, selected }: NodeProps<any>) {
     );
   }
 
-  if (!dataset || dataset.columns.length === 0) {
+  if (!dataset || !synced) {
     return (
       <div className="table-node table-node--loading">
         <div className="table-node__title">
           <span className="table-node__kind">DATASET</span>
-          <strong>{status === 'connected' ? 'Empty dataset' : 'Loading dataset…'}</strong>
+          <strong>Загрузка данных…</strong>
+          <span className="dataset-status">{status}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (dataset.columns.length === 0) {
+    return (
+      <div className="table-node table-node--loading">
+        <div className="table-node__title">
+          <span className="table-node__kind">DATASET</span>
+          <strong>Dataset пуст</strong>
+          <span className="dataset-status">synced</span>
         </div>
       </div>
     );
