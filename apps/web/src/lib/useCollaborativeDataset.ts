@@ -7,7 +7,7 @@ import type {
   DatasetRow,
   DatasetSnapshot,
 } from '@modelboard/shared';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { api } from './api';
 import {
@@ -32,9 +32,23 @@ export function useCollaborativeDataset(
     () => ydoc.getMap<DatasetFormula>('formulas'),
     [ydoc],
   );
+  const undoManager = useMemo(
+    () =>
+      new Y.UndoManager(
+        [columnsMap, rowsMap, formulasMap],
+        { captureTimeout: 500 },
+      ),
+    [columnsMap, formulasMap, rowsMap],
+  );
+  const initialSyncDone = useRef(false);
+  const [historyTick, setHistoryTick] = useState(0);
   const [status, setStatus] = useState('connecting');
   const [synced, setSynced] = useState(false);
   const [dataset, setDataset] = useState<DatasetState | null>(null);
+
+  useEffect(() => {
+    initialSyncDone.current = false;
+  }, [ydoc]);
 
   useEffect(() => {
     if (!datasetId || !token) {
@@ -56,7 +70,15 @@ export function useCollaborativeDataset(
       token,
       flushDelay: 40,
       onStatus: ({ status }) => setStatus(status),
-      onSynced: () => setSynced(true),
+      onSynced: () => {
+        setSynced(true);
+
+        if (!initialSyncDone.current) {
+          undoManager.clear();
+          initialSyncDone.current = true;
+          setHistoryTick((value) => value + 1);
+        }
+      },
     });
 
     let recalculating = false;
@@ -162,8 +184,26 @@ export function useCollaborativeDataset(
     metaMap,
     rowsMap,
     token,
+    undoManager,
     ydoc,
   ]);
+
+  useEffect(() => {
+    const refreshHistory = () =>
+      setHistoryTick((value) => value + 1);
+
+    undoManager.on('stack-item-added', refreshHistory);
+    undoManager.on('stack-item-popped', refreshHistory);
+    undoManager.on('stack-cleared', refreshHistory);
+    undoManager.on('stack-item-updated', refreshHistory);
+
+    return () => {
+      undoManager.off('stack-item-added', refreshHistory);
+      undoManager.off('stack-item-popped', refreshHistory);
+      undoManager.off('stack-cleared', refreshHistory);
+      undoManager.off('stack-item-updated', refreshHistory);
+    };
+  }, [undoManager]);
 
   useEffect(() => {
     setDataset((current) => (current ? { ...current, status } : current));
@@ -404,10 +444,16 @@ export function useCollaborativeDataset(
     [datasetId, readOnly, rowsMap, token],
   );
 
+  void historyTick;
+
   return {
     dataset,
     status,
     synced,
+    canUndo: undoManager.undoStack.length > 0,
+    canRedo: undoManager.redoStack.length > 0,
+    undo: () => undoManager.undo(),
+    redo: () => undoManager.redo(),
     setCell,
     setFormula,
     clearFormula,

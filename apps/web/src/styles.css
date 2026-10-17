@@ -2987,3 +2987,23 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .dataset-sheet__table td.is-range-selected.is-selected-cell {
   background: #eef2ff;
 }
+
+
+.dataset-sheet__history-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #dce0e6;
+  border-radius: 7px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  color: #606975;
+}
+.dataset-sheet__history-button:hover:not(:disabled) {
+  background: #f5f6f8;
+}
+.dataset-sheet__history-button:disabled {
+  opacity: .38;
+  cursor: not-allowed;
+}

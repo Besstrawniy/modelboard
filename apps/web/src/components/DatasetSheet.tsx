@@ -13,6 +13,8 @@ import {
   Search,
   Sigma,
   Trash2,
+  Undo2,
+  Redo2,
   X,
 } from 'lucide-react';
 import type {
@@ -333,6 +335,10 @@ export function DatasetSheet({
     dataset,
     status,
     synced,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
     setCell,
     setFormula,
     clearFormula,
@@ -401,6 +407,37 @@ export function DatasetSheet({
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
+
+  useEffect(() => {
+    const onHistoryKey = (event: KeyboardEvent) => {
+      const mod = event.ctrlKey || event.metaKey;
+      if (!mod) return;
+
+      const target = event.target as HTMLElement | null;
+      const isFormulaInput =
+        target?.closest('.dataset-sheet__formula-input-wrap') !== null;
+
+      if (isFormulaInput) return;
+
+      const key = event.key.toLowerCase();
+
+      if (!readOnly && key === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+
+      if (!readOnly && key === 'y') {
+        event.preventDefault();
+        redo();
+      }
+    };
+
+    window.addEventListener('keydown', onHistoryKey);
+    return () =>
+      window.removeEventListener('keydown', onHistoryKey);
+  }, [readOnly, redo, undo]);
 
   useEffect(() => {
     setPage(0);
@@ -1677,6 +1714,24 @@ export function DatasetSheet({
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
+
+        <button
+          className="dataset-sheet__history-button"
+          disabled={readOnly || !canUndo}
+          onClick={undo}
+          title="Отменить изменение Dataset (Ctrl+Z)"
+        >
+          <Undo2 size={14} />
+        </button>
+
+        <button
+          className="dataset-sheet__history-button"
+          disabled={readOnly || !canRedo}
+          onClick={redo}
+          title="Повторить изменение Dataset (Ctrl+Y)"
+        >
+          <Redo2 size={14} />
+        </button>
 
         <button
           className="dataset-sheet__clipboard-button"
