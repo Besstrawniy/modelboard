@@ -1,3 +1,4 @@
+import { DatasetRename } from './DatasetRename';
 import { RelationManager } from './RelationManager';
 import { Database, Plus, Table2, Trash2, X } from 'lucide-react';
 import type { DatasetMeta } from '@modelboard/shared';
@@ -105,7 +106,7 @@ export function DatasetsPanel({
                   <Table2 size={17} />
                 </div>
                 <div className="dataset-card__meta">
-                  <strong>{dataset.name}</strong>
+                  <strong>{dataset.name}</strong><DatasetRename id={dataset.id} name={dataset.name} token={token} readOnly={readOnly} onSaved={()=>void load()}/>
                   <small>{dataset.kind}</small>
                 </div>
                 <button

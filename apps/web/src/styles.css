@@ -3675,3 +3675,22 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 .device-node__body { min-width:0; }.device-node { overflow:auto; }
 .binding-field-options { display:grid; grid-template-columns:1fr 1fr; gap:5px; max-height:160px; overflow:auto; padding:7px; border:1px solid #dce2ed; border-radius:7px; }
 .binding-field-options label { display:flex; align-items:center; gap:5px; font-size:11px; }.binding-field-options input { width:auto; }
+
+.inspector-panel .canvas-properties { position: static; transform: none; width: auto; max-width: none; flex-shrink: 0; flex-wrap: wrap; margin: 12px; box-shadow: none; }
+
+.dataset-connections-backdrop { position:fixed; inset:0; z-index:160; background:#16223866; display:flex; align-items:center; justify-content:center; }
+.dataset-connections { background:white; color:#243044; border-radius:16px; padding:24px; width:min(800px,92vw); max-height:85vh; overflow:auto; box-shadow:0 12px 60px #0004; }
+.dataset-connections header { display:flex; justify-content:space-between; align-items:center; }
+.dataset-connection { padding:16px 0; border-top:1px solid #dce1e8; }
+.dataset-connection label { display:block; margin:12px 0; }
+.dataset-connections select { max-width:100%; padding:7px; margin-left:8px; }
+.dataset-connections button, .sheet-deleted-columns button { padding:7px 12px; margin:4px; }
+.dataset-connections-backdrop > .modal-backdrop { z-index:161; }
+.sheet-deleted-columns { padding:10px 20px; background:#f1f6ff; }
+.dataset-rename form { display:inline-flex; flex-wrap:wrap; gap:4px; }
+
+.relation-dialog { display:flex; flex-direction:column; max-height:90vh; width:min(720px,94vw); }
+.relation-dialog__body { overflow:auto; }
+.relation-dialog__header,.relation-dialog__footer { flex-shrink:0; }
+.relation-form { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.relation-form select { width:100%; min-width:0; }

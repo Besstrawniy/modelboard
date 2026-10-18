@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as Y from 'yjs';
 import {
+  relatedRows,validateRecordLinks,
   validateRelationData,
   relationValueKey,
 } from '../packages/shared/src/relations.ts';
@@ -207,4 +208,25 @@ test('palette insertion finds a free slot and ignores container backgrounds', ()
     ),
     { x: 0, y: 0 },
   );
+});
+
+test('record links use stable row IDs and enforce 1:1, 1:N and N:1 in both directions',()=>{
+ const source=rows(['parent-a','parent-b'],'name'),target=rows(['child-a','child-b'],'title');
+ const relation={id:'relation',sourceDatasetId:'parents',targetDatasetId:'children',matchMode:'ROW_LINKS',cardinality:'1:N',links:[{sourceRowId:'row0',targetRowId:'row0'},{sourceRowId:'row0',targetRowId:'row1'}]};
+ assert.equal(validateRecordLinks(relation,source,target).valid,true);
+ assert.equal(validateRecordLinks({...relation,cardinality:'1:1'},source,target).valid,false);
+ assert.equal(validateRecordLinks({...relation,cardinality:'N:1'},source,target).valid,false);
+ assert.deepEqual(relatedRows(relation,'parents',source[0],target).map(r=>r.id),['row0','row1']);
+ assert.deepEqual(relatedRows(relation,'children',target[1],source).map(r=>r.id),['row0']);
+ assert.equal(validateRecordLinks(relation,source,target.slice(0,1)).valid,false);
+ source[0].ordinal=10;source[0].values.name='renamed';
+ assert.equal(relatedRows(relation,'parents',source[0],target).length,2);
+ assert.equal(validateRecordLinks({...relation,links:[...relation.links,{sourceRowId:'row1',targetRowId:'row0'}]},source,target).valid,false);
+});
+test('1:N foreign key validates children against unique parents and reports orphan child IDs',()=>{
+ const relation={sourceColumnId:'id',targetColumnId:'parent',relationType:'FOREIGN_KEY',cardinality:'1:N'};
+ assert.equal(validateRelationData(relation,rows(['a','b'],'id'),rows(['a','a',null],'parent')).valid,true);
+ const result=validateRelationData(relation,rows(['a'],'id'),rows(['a','missing'],'parent'));
+ assert.equal(result.valid,false);assert.equal(result.orphanCount,1);assert.deepEqual(result.orphanRowIds,['row1']);
+ assert.equal(validateRelationData(relation,rows(['a','a'],'id'),rows(['a'],'parent')).valid,false);
 });

@@ -1,3 +1,5 @@
+import { DatasetConnections } from './DatasetConnections';
+import { CanvasProperties } from './CanvasProperties';
 import {
   resolveBindingPresentation,
   type ObjectBindingType,
@@ -330,7 +332,9 @@ export function InspectorPanel({
         </button>
       </header>
 
+
       <div className="inspector-panel__body">
+      {!readOnly && <CanvasProperties node={node} onChange={patch=>onUpdateNodeData(node.id,patch)} />}
         <section className="inspector-section">
           <h3>Объект</h3>
           <label>
@@ -446,6 +450,53 @@ export function InspectorPanel({
             <code>{String((node.data as any)?.datasetId ?? '—')}</code>
           </section>
         )}
+
+        {(node.type === 'shape' ||
+          node.type === 'device' ||
+          node.type === 'template') &&
+          existingBinding &&
+          dataset &&
+          boundRow && (
+            <>
+              <section className="inspector-section">
+                <h3>
+                  <Database size={14} /> Текущие данные
+                </h3>
+                <div className="bound-row-fields">
+                  {dataset.columns.map((column) => (
+                    <div className="bound-row-field" key={column.id}>
+                      <small>{column.name}</small>
+                      <strong>
+                        {String(boundRow.values[column.id] ?? '—')}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  className="secondary-button inspector-open-dataset"
+                  onClick={() =>
+                    openDatasetSheet(
+                      existingBinding.datasetId,
+                      existingBinding.rowId,
+                    )
+                  }
+                >
+                  <Table2 size={14} />
+                  Открыть в таблице
+                </button>
+              </section>
+
+              <DatasetConnections dataset={dataset} initialRowId={boundRow.id}/>
+              <RelatedRecords
+                workspaceId={workspaceId}
+                token={token}
+                dataset={dataset}
+                row={boundRow}
+                parentNodeId={node.id}
+              />
+            </>
+          )}
 
         {(node.type === 'shape' ||
           node.type === 'device' ||
@@ -770,52 +821,6 @@ export function InspectorPanel({
             {error && <div className="inspector-error">{error}</div>}
           </section>
         )}
-
-        {(node.type === 'shape' ||
-          node.type === 'device' ||
-          node.type === 'template') &&
-          existingBinding &&
-          dataset &&
-          boundRow && (
-            <>
-              <section className="inspector-section">
-                <h3>
-                  <Database size={14} /> Текущие данные
-                </h3>
-                <div className="bound-row-fields">
-                  {dataset.columns.map((column) => (
-                    <div className="bound-row-field" key={column.id}>
-                      <small>{column.name}</small>
-                      <strong>
-                        {String(boundRow.values[column.id] ?? '—')}
-                      </strong>
-                    </div>
-                  ))}
-                </div>
-
-                <button
-                  className="secondary-button inspector-open-dataset"
-                  onClick={() =>
-                    openDatasetSheet(
-                      existingBinding.datasetId,
-                      existingBinding.rowId,
-                    )
-                  }
-                >
-                  <Table2 size={14} />
-                  Открыть в таблице
-                </button>
-              </section>
-
-              <RelatedRecords
-                workspaceId={workspaceId}
-                token={token}
-                dataset={dataset}
-                row={boundRow}
-                parentNodeId={node.id}
-              />
-            </>
-          )}
 
         {locationDatasetId && (
           <section className="inspector-section">

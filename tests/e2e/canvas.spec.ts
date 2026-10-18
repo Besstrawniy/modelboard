@@ -119,15 +119,15 @@ test('connector, rotation, group move/resize, detach and stroke history',async({
 });
 test('nested Frames, detach, text hotkeys and trackpad navigation',async({page})=>{
  await page.getByTitle('Фигура',{exact:true}).click();await page.locator('.react-flow__pane').click({position:{x:450,y:300}});
- await page.locator('.react-flow__pane').click({position:{x:100,y:100}});await page.keyboard.press('Control+a');await page.getByRole('button',{name:'Во Frame',exact:true}).click();
+ await page.locator('.react-flow__pane').click({position:{x:100,y:100}});await page.keyboard.press('Control+a');await page.locator('.react-flow__node-shape').click({button:'right'});await page.getByRole('menuitem',{name:'Во Frame',exact:true}).click();
  const frame=page.locator('.react-flow__node-frame');await expect(frame).toHaveCount(1);
- await page.getByRole('button',{name:'Во Frame',exact:true}).click();await expect(frame).toHaveCount(2);
+ await frame.locator('.frame-node__header').click({button:'right'});await page.getByRole('menuitem',{name:'Во Frame',exact:true}).click();await expect(frame).toHaveCount(2);
  const shape=page.locator('.react-flow__node-shape');const original=await shape.boundingBox();
  const headers=frame.locator('.frame-node__header');const header=await headers.nth(1).boundingBox();
  await page.mouse.move(header!.x+30,header!.y+12);await page.mouse.down();await page.mouse.move(header!.x+90,header!.y+72,{steps:10});await page.mouse.up();
  expect((await shape.boundingBox())!.x-original!.x).toBeGreaterThan(30);
  await page.keyboard.press('Control+z');await expect.poll(async()=>Math.round((await shape.boundingBox())!.x)).toBe(Math.round(original!.x));
- await shape.click();await page.getByRole('button',{name:'Отсоединить',exact:true}).click();
+ await shape.click({button:'right'});await page.getByRole('menuitem',{name:'Отсоединить от контейнера',exact:true}).click();
  const detached=await shape.boundingBox();const parent=await headers.nth(1).boundingBox();
  await page.mouse.move(parent!.x+30,parent!.y+12);await page.mouse.down();await page.mouse.move(parent!.x+90,parent!.y+72,{steps:10});await page.mouse.up();
  expect(Math.round((await shape.boundingBox())!.x)).toBe(Math.round(detached!.x));

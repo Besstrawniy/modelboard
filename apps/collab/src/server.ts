@@ -91,14 +91,14 @@ async function refreshBoardRelationLabels(document: Y.Doc) {
       const handles: any = {};
       if (source?.type === 'table' || target?.type === 'table') {
         if (
-          source?.data?.datasetId !== relation.source_dataset_id ||
-          target?.data?.datasetId !== relation.target_dataset_id
+          (source?.data?.datasetId ?? source?.data?.binding?.datasetId) !== relation.source_dataset_id ||
+          (target?.data?.datasetId ?? target?.data?.binding?.datasetId) !== relation.target_dataset_id
         ) {
           edges.delete(id);
           continue;
         }
-        handles.sourceHandle = `source:${relation.source_column_id}`;
-        handles.targetHandle = `target:${relation.target_column_id}`;
+        if(source?.type==='table') handles.sourceHandle = relation.source_column_id ? `source:${relation.source_column_id}` : 'table:source';
+        if(target?.type==='table') handles.targetHandle = relation.target_column_id ? `target:${relation.target_column_id}` : 'table:target';
       }
       const label = `${relation.properties?.name || relation.relation_type} ${relation.cardinality ?? ''}`;
       if (
@@ -688,7 +688,9 @@ async function startCollaborationServer() {
         normalizeCanvasNodes(document);
         cleanBoardResources(document, deletedDatasets, deletedRelations);
         await refreshBoardRelationLabels(document);
-      } else if (kind === 'dataset')
+      } else if (kind === 'dataset') {
+        const info=await query('SELECT name FROM datasets WHERE id=$1',[documentName.slice(8)]);
+        if(info.rows[0])document.getMap('meta').set('name',info.rows[0].name);
         normalizeCanvasNodes(document, [
           'rows',
           'columns',
@@ -696,6 +698,7 @@ async function startCollaborationServer() {
           'views',
           'rules',
         ]);
+      }
     },
 
     async onChange({ documentName, document }) {
@@ -904,6 +907,7 @@ async function startCollaborationServer() {
             if (event.kind === 'relation-changed')
               await refreshBoardRelationLabels(document);
           }
+          if(event.kind==='dataset-renamed' && name===`dataset:${event.datasetId}`) document.getMap('meta').set('name',event.name);
           document.broadcastStateless(message);
         }
       } catch (error) {

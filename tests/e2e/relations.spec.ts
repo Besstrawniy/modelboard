@@ -702,3 +702,442 @@ test('Relation View navigates to matching rows and recalculates membership after
   await expect(page.locator('.react-flow__node-relationView')).toHaveCount(0);
   await expect(page.locator('.react-flow__node-device')).toHaveCount(1);
 });
+
+test('table relationships link records without keys, append atomically, navigate and protect cardinality', async ({
+  page,
+  request,
+}) => {
+  const headers = { Authorization: `Bearer ${token}` };
+  await page.getByTitle('Данные', { exact: true }).click();
+  await page
+    .locator('.dataset-card')
+    .filter({ hasText: servers.name })
+    .getByRole('button', { name: 'Place', exact: true })
+    .click();
+  await page.locator('.datasets-panel header button').click();
+  const table = page.locator('.react-flow__node-table');
+  await table
+    .getByRole('button', { name: 'Связи таблицы', exact: true })
+    .click();
+  const panel = page.getByRole('dialog', {
+    name: 'Связи таблицы',
+    exact: true,
+  });
+  await panel.getByLabel('Связать с таблицей').selectOption(vms.id);
+  await panel.getByRole('button', { name: 'Настроить новую связь' }).click();
+  const dialog = page.getByRole('dialog', {
+    name: 'Создать связь данных',
+    exact: true,
+  });
+  await dialog
+    .getByLabel('Запись слева', { exact: true })
+    .selectOption(servers.rows[0].id);
+  await dialog
+    .getByLabel('Запись справа', { exact: true })
+    .selectOption(vms.rows[0].id);
+  await dialog
+    .getByRole('button', { name: 'Создать связь', exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await panel
+    .getByLabel(`Запись в ${servers.name}`, { exact: true })
+    .selectOption(servers.rows[0].id);
+  await expect(panel).toContainText('Связанных записей: 1');
+  await panel
+    .getByLabel('Добавить связанную запись', { exact: true })
+    .selectOption(vms.rows[1].id);
+  await panel
+    .getByRole('button', { name: 'Связать записи', exact: true })
+    .click();
+  await expect(panel).toContainText('Связанных записей: 2');
+  const relation = (
+    await (
+      await request.get(`${base}/workspaces/${workspace}/relations`, {
+        headers,
+      })
+    ).json()
+  ).find(
+    (r: any) => r.sourceDatasetId === servers.id && r.matchMode === 'ROW_LINKS',
+  );
+  expect(relation.links).toHaveLength(2);
+  const invalid = await request.put(
+    `${base}/workspaces/${workspace}/relations/${relation.id}`,
+    { headers, data: { ...relation, cardinality: '1:1' } },
+  );
+  expect(invalid.status()).toBe(409);
+  expect(
+    (
+      await request.post(
+        `${base}/workspaces/${workspace}/relations/${relation.id}/links`,
+        {
+          headers: { Authorization: `Bearer ${viewerToken}` },
+          data: {
+            sourceRowId: servers.rows[0].id,
+            targetRowId: vms.rows[0].id,
+          },
+        },
+      )
+    ).status(),
+  ).toBe(403);
+  // Business key columns can be deleted without destroying direct record links.
+  for (const [id, col] of [
+    [servers.id, servers.columns[0].id],
+    [vms.id, vms.columns[1].id],
+  ])
+    expect(
+      (
+        await request.delete(`${base}/datasets/${id}/columns/${col}`, {
+          headers,
+        })
+      ).ok(),
+    ).toBeTruthy();
+  const validation = await (
+    await request.get(
+      `${base}/workspaces/${workspace}/relations/${relation.id}/validation`,
+      { headers },
+    )
+  ).json();
+  expect(validation.valid).toBe(true);
+  expect(validation.matchedRows).toBe(2);
+  await panel.getByRole('button', { name: /vm-02.*↗/ }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(page.locator('.dataset-sheet')).toContainText(vms.name);
+});
+
+test('rename dataset synchronizes views and deleted columns restore original identity and values after reopen', async ({
+  page,
+  request,
+}) => {
+  await page.getByTitle('Данные', { exact: true }).click();
+  const card = page.locator('.dataset-card').filter({ hasText: servers.name });
+  await card.getByRole('button', { name: 'Place', exact: true }).click();
+  await page.locator('.datasets-panel header button').click();
+  const table = page.locator('.react-flow__node-table');
+  await table.getByRole('button', { name: 'Открыть', exact: true }).click();
+  const sheet = page.locator('.dataset-sheet');
+  await sheet.getByTitle('Редактировать имя Dataset').click();
+  await sheet
+    .getByLabel('Имя Dataset', { exact: true })
+    .fill('Переименованные серверы');
+  await sheet
+    .getByRole('button', { name: 'Сохранить имя', exact: true })
+    .click();
+  await expect(table).toContainText('Переименованные серверы');
+  expect(
+    (
+      await request.put(`${base}/datasets/${servers.id}`, {
+        headers: { Authorization: `Bearer ${viewerToken}` },
+        data: { name: 'forbidden' },
+      })
+    ).status(),
+  ).toBe(403);
+  await sheet.getByTitle('Удалить колонку', { exact: true }).last().click();
+  await sheet
+    .locator('.dataset-sheet__column-dialog')
+    .getByRole('button', { name: 'Удалить', exact: true })
+    .click();
+  await expect(sheet.getByRole('grid')).toHaveAttribute('aria-colcount', '5');
+  await expect
+    .poll(async () =>
+      Number(
+        (
+          await pool.query(
+            'SELECT count(*) FROM dataset_columns WHERE dataset_id=$1',
+            [servers.id],
+          )
+        ).rows[0].count,
+      ),
+    )
+    .toBe(5);
+  await sheet.getByTitle('Закрыть (Esc)').click();
+  await page.reload();
+  await page.getByRole('button').filter({ hasText: 'OWNER' }).click();
+  await expect(page.locator('.connection-status')).toHaveText('connected');
+  await expect(table).toContainText('Переименованные серверы');
+  await table.getByRole('button', { name: 'Открыть', exact: true }).click();
+  await sheet.locator('.sheet-deleted-columns summary').click();
+  await sheet
+    .getByRole('button', { name: 'Восстановить «unused»', exact: true })
+    .click();
+  await expect(sheet.getByRole('grid')).toHaveAttribute('aria-colcount', '6');
+  await expect(
+    sheet.locator(
+      `td[data-row-id="${servers.rows[0].id}"][data-column-id="${servers.columns[5].id}"] textarea`,
+    ),
+  ).toHaveValue('unused');
+  await expect
+    .poll(async () =>
+      Number(
+        (
+          await pool.query('SELECT count(*) FROM dataset_columns WHERE id=$1', [
+            servers.columns[5].id,
+          ])
+        ).rows[0].count,
+      ),
+    )
+    .toBe(1);
+  await sheet.getByTitle('Закрыть (Esc)').click();
+  await table.locator('.table-node__title strong').click();
+  await expect(page.locator('.selection-actions')).toHaveCount(0);
+  await expect(
+    page.locator('.inspector-panel .canvas-properties'),
+  ).toBeVisible();
+});
+
+test('connector between bound objects prefills records and can extend the same relation', async ({
+  page,
+  request,
+}) => {
+  await addServer(page);
+  await bindServer(page);
+  await addServer(page);
+  await inspector(page)
+    .getByLabel('Dataset привязки', { exact: true })
+    .selectOption(vms.id);
+  await inspector(page)
+    .getByLabel('Строка привязки')
+    .selectOption(vms.rows[0].id);
+  await inspector(page)
+    .getByLabel(/Поле заголовка/)
+    .selectOption(vms.columns[2].id);
+  await inspector(page)
+    .getByRole('button', { name: 'Привязать строку к объекту', exact: true })
+    .click();
+  const devices = page.locator('.react-flow__node-device');
+  await page.getByTitle('Коннектор (C)', { exact: true }).click();
+  await devices.nth(0).locator('.device-node__glyph').click();
+  await devices.nth(1).locator('.device-node__glyph').click();
+  const dialog = page.getByRole('dialog', {
+    name: 'Создать связь данных',
+    exact: true,
+  });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Запись слева', { exact: true })).toHaveValue(
+    servers.rows[0].id,
+  );
+  await expect(dialog.getByLabel('Запись справа', { exact: true })).toHaveValue(
+    vms.rows[0].id,
+  );
+  await dialog
+    .getByRole('button', { name: 'Создать связь', exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByTitle('Выбор (V)', { exact: true }).click();
+  await devices.nth(1).locator('.device-node__glyph').click();
+  await inspector(page)
+    .getByLabel('Строка привязки')
+    .selectOption(vms.rows[1].id);
+  await inspector(page)
+    .getByRole('button', { name: 'Обновить привязку', exact: true })
+    .click();
+  await page.getByTitle('Коннектор (C)', { exact: true }).click();
+  await devices.nth(0).locator('.device-node__glyph').click();
+  await devices.nth(1).locator('.device-node__glyph').click();
+  const relations = (
+    await (
+      await request.get(`${base}/workspaces/${workspace}/relations`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()
+  ).filter(
+    (r: any) =>
+      r.sourceDatasetId === servers.id && r.targetDatasetId === vms.id,
+  );
+  expect(relations).toHaveLength(1);
+  await dialog
+    .getByLabel('Использовать связь', { exact: true })
+    .selectOption(relations[0].id);
+  await dialog
+    .getByRole('button', { name: 'Создать связь', exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  const updated = (
+    await (
+      await request.get(`${base}/workspaces/${workspace}/relations`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json()
+  ).filter(
+    (r: any) =>
+      r.sourceDatasetId === servers.id && r.targetDatasetId === vms.id,
+  );
+  expect(updated).toHaveLength(1);
+  expect(updated[0].links).toHaveLength(2);
+  await page.getByTitle('Выбор (V)', { exact: true }).click();
+  await devices.nth(0).locator('.device-node__glyph').click();
+  await expect(inspector(page).locator('.related-records')).toContainText(
+    'vm-02',
+  );
+});
+
+test('general table connector opens field mapping by names and supports parent to children FK', async ({
+  page,
+  request,
+}) => {
+  const headers = { Authorization: `Bearer ${token}` };
+  const data = {
+    sourceDatasetId: servers.id,
+    sourceColumnId: servers.columns[0].id,
+    targetDatasetId: vms.id,
+    targetColumnId: vms.columns[1].id,
+    relationType: 'FOREIGN_KEY',
+    cardinality: '1:N',
+    name: 'Сервер и VM',
+  };
+  expect(
+    (
+      await request.post(`${base}/workspaces/${workspace}/relations`, {
+        headers,
+        data,
+      })
+    ).ok(),
+  ).toBeTruthy();
+  await page.getByTitle('Данные', { exact: true }).click();
+  await page
+    .locator('.datasets-panel')
+    .getByRole('button', { name: 'Связи', exact: true })
+    .click();
+  await page
+    .locator('.relation-card')
+    .filter({ hasText: 'Сервер и VM' })
+    .getByRole('button', { name: 'Показать ER', exact: true })
+    .click();
+  const tables = page.locator('.react-flow__node-table');
+  await expect(tables).toHaveCount(2);
+  await page.getByTitle('Коннектор (C)', { exact: true }).click();
+  await tables
+    .filter({ hasText: servers.name })
+    .locator('.table-node__title strong')
+    .click();
+  await tables
+    .filter({ hasText: vms.name })
+    .locator('.table-node__title strong')
+    .click();
+  const dialog = page.getByRole('dialog', {
+    name: 'Создать связь данных',
+    exact: true,
+  });
+  await expect(dialog).toBeVisible();
+  await dialog
+    .getByLabel('Способ связи', { exact: true })
+    .selectOption('FIELDS');
+  await dialog
+    .getByLabel('Поле слева', { exact: true })
+    .selectOption(servers.columns[0].id);
+  await dialog
+    .getByLabel('Поле справа', { exact: true })
+    .selectOption(vms.columns[1].id);
+  await expect(
+    dialog.getByLabel('Поле слева', { exact: true }).locator('option:checked'),
+  ).toHaveText('id (UUID)');
+  await dialog
+    .getByRole('button', { name: 'Создать связь', exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  const relations = (
+    await (
+      await request.get(`${base}/workspaces/${workspace}/relations`, {
+        headers,
+      })
+    ).json()
+  ).filter(
+    (r: any) =>
+      r.sourceDatasetId === servers.id && r.targetDatasetId === vms.id,
+  );
+  expect(relations).toHaveLength(2);
+  expect(relations.every((r: any) => r.cardinality === '1:N')).toBeTruthy();
+  await page.getByTitle('Коннектор (C)', { exact: true }).click();
+  await tables
+    .filter({ hasText: servers.name })
+    .locator('.table-node__title strong')
+    .click();
+  await tables
+    .filter({ hasText: vms.name })
+    .locator('.table-node__title strong')
+    .click();
+  await dialog
+    .getByLabel('Способ связи', { exact: true })
+    .selectOption('FIELDS');
+  await dialog
+    .getByLabel('Поле слева', { exact: true })
+    .selectOption(servers.columns[0].id);
+  await dialog
+    .getByLabel('Поле справа', { exact: true })
+    .selectOption(vms.columns[1].id);
+  await dialog
+    .getByLabel('Кардинальность', { exact: true })
+    .selectOption('N:M');
+  await dialog
+    .getByRole('button', { name: 'Создать связь', exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  const many = (
+    await (
+      await request.get(`${base}/workspaces/${workspace}/relations`, {
+        headers,
+      })
+    ).json()
+  ).find(
+    (r: any) => r.sourceDatasetId === servers.id && r.cardinality === 'N:M',
+  );
+  expect(many.relationType).toBe('REFERENCE');
+});
+
+test('concurrent record links survive metadata edits and reject foreign rows and invalid dataset names', async ({
+  request,
+}) => {
+  const headers = { Authorization: `Bearer ${token}` };
+  const initial = {
+    sourceDatasetId: servers.id,
+    targetDatasetId: vms.id,
+    sourceColumnId: '__row__',
+    targetColumnId: '__row__',
+    matchMode: 'ROW_LINKS',
+    links: [],
+    relationType: 'REFERENCE',
+    cardinality: '1:N',
+  };
+  const response = await request.post(
+    `${base}/workspaces/${workspace}/relations`,
+    { headers, data: initial },
+  );
+  expect(response.ok()).toBeTruthy();
+  const relation = await response.json();
+  const responses = await Promise.all(
+    vms.rows.map((row: any) =>
+      request.post(
+        `${base}/workspaces/${workspace}/relations/${relation.id}/links`,
+        {
+          headers,
+          data: { sourceRowId: servers.rows[0].id, targetRowId: row.id },
+        },
+      ),
+    ),
+  );
+  expect(responses.every((r) => r.ok())).toBeTruthy();
+  const renamed = await request.put(
+    `${base}/workspaces/${workspace}/relations/${relation.id}`,
+    {
+      headers,
+      data: { ...relation, links: undefined, name: 'Параллельные связи' },
+    },
+  );
+  expect(renamed.ok()).toBeTruthy();
+  expect((await renamed.json()).links).toHaveLength(2);
+  const foreign = await request.post(
+    `${base}/workspaces/${workspace}/relations/${relation.id}/links`,
+    {
+      headers,
+      data: {
+        sourceRowId: servers.rows[0].id,
+        targetRowId: servers.rows[0].id,
+      },
+    },
+  );
+  expect(foreign.status()).toBe(409);
+  const invalidName = await request.put(`${base}/datasets/${servers.id}`, {
+    headers,
+    data: { name: '   ' },
+  });
+  expect(invalidName.status()).toBe(400);
+});

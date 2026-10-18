@@ -35,8 +35,6 @@ import {
   type BoardMeta,
   type CreateDatasetInput,
   type DatasetRelation,
-  type DatasetRelationCardinality,
-  type DatasetRelationType,
   type DatasetRow,
   type DatasetSnapshot,
   type DeviceKind,
@@ -67,7 +65,6 @@ import { RelationViewNode } from './RelationViewNode';
 import { WorkspaceSearch } from './WorkspaceSearch';
 import { FrameNode } from './FrameNode';
 import { FreehandNode } from './FreehandNode';
-import { CanvasProperties } from './CanvasProperties';
 import { createCanvasDemo } from '../lib/canvasDemo';
 import { snapCanvasGuides } from '../lib/canvasGuides';
 import { strokeCanvasNode, canvasNodeStroke } from '../lib/canvasStrokes';
@@ -426,7 +423,10 @@ function BoardInner({
       },
       onStateless: ({payload})=>{const message=receiveResourceMessage(payload);if(message?.kind==='dataset-deleted')setSheetTarget(current=>current?.datasetId===message.datasetId?null:current);},
       onAwarenessChange: ({ states }) => {
-        setPresence(Array.from(states.entries()) as Array<[number, PresenceState]>);
+        const remote = (Array.from(states.entries()) as Array<[number, PresenceState]>).filter(([clientId])=>clientId!==ydoc.clientID);
+        // Local cursor movement changes awareness on every pointer event. It does
+        // not change anything drawn here, so keep the canvas render unchanged.
+        setPresence(current=>current.length===remote.length&&current.every(([id,state],index)=>id===remote[index][0]&&state===remote[index][1])?current:remote);
       },
     });
 
@@ -1387,18 +1387,13 @@ function BoardInner({
 
     const sourceNode = nodesMap.get(connection.source) as Node | undefined;
     const targetNode = nodesMap.get(connection.target) as Node | undefined;
-    const sourceDatasetId = (sourceNode?.data as any)?.datasetId as string | undefined;
-    const targetDatasetId = (targetNode?.data as any)?.datasetId as string | undefined;
-    const sourceColumnId = connection.sourceHandle?.replace(/^source:/, '');
-    const targetColumnId = connection.targetHandle?.replace(/^target:/, '');
+    const sourceDatasetId = ((sourceNode?.data as any)?.datasetId ?? (sourceNode?.data as any)?.binding?.datasetId) as string | undefined;
+    const targetDatasetId = ((targetNode?.data as any)?.datasetId ?? (targetNode?.data as any)?.binding?.datasetId) as string | undefined;
+    const sourceColumnId = connection.sourceHandle?.startsWith('source:') ? connection.sourceHandle.slice(7) : '';
+    const targetColumnId = connection.targetHandle?.startsWith('target:') ? connection.targetHandle.slice(7) : '';
 
     if (
-      sourceNode?.type === 'table' &&
-      targetNode?.type === 'table' &&
-      sourceDatasetId &&
-      targetDatasetId &&
-      sourceColumnId &&
-      targetColumnId
+      sourceDatasetId && targetDatasetId
     ) {
       setPendingRelation({
         connection,
@@ -1406,6 +1401,8 @@ function BoardInner({
         sourceColumnId,
         targetDatasetId,
         targetColumnId,
+        sourceRowId: (sourceNode?.data as any)?.binding?.rowId,
+        targetRowId: (targetNode?.data as any)?.binding?.rowId,
       });
       return;
     }
@@ -1423,22 +1420,17 @@ function BoardInner({
   }, [edgesMap, nodesMap, readOnly, undoManager]);
 
   const confirmRelation = useCallback(async (
-    relationType: DatasetRelationType,
-    cardinality: DatasetRelationCardinality | null,
+    input: import('@modelboard/shared').CreateDatasetRelationInput,
+    existingId?:string,
   ) => {
     if (!pendingRelation) return;
-
-    const relation = await api.createRelation(meta.workspaceId, session.token, {
-      sourceDatasetId: pendingRelation.sourceDatasetId,
-      sourceColumnId: pendingRelation.sourceColumnId,
-      targetDatasetId: pendingRelation.targetDatasetId,
-      targetColumnId: pendingRelation.targetColumnId,
-      relationType,
-      cardinality,
-    });
+    const {relationType, cardinality} = input;
+    const relation = existingId ? await api.appendRecordLinks(meta.workspaceId,existingId,session.token,input.links??[]) : await api.createRelation(meta.workspaceId, session.token, input);
 
     const edge: Edge = {
       ...pendingRelation.connection,
+      sourceHandle: (nodesMap.get(pendingRelation.connection.source) as Node|undefined)?.type==='table' ? input.matchMode==='ROW_LINKS'?'table:source':`source:${input.sourceColumnId}` : pendingRelation.connection.sourceHandle,
+      targetHandle: (nodesMap.get(pendingRelation.connection.target) as Node|undefined)?.type==='table' ? input.matchMode==='ROW_LINKS'?'table:target':`target:${input.targetColumnId}` : pendingRelation.connection.targetHandle,
       id: crypto.randomUUID(),
       type: 'smoothstep',
       label: cardinality
@@ -1457,7 +1449,7 @@ function BoardInner({
     setEdges((current) => addEdge(edge, current));
     edgesMap.set(edge.id, edge);
     setPendingRelation(null);
-  }, [edgesMap, meta.workspaceId, pendingRelation, session.token]);
+  }, [edgesMap, nodesMap, meta.workspaceId, pendingRelation, session.token]);
 
   const updateNodeData = useCallback((nodeId: string, patch: Record<string, unknown>) => {
     if (readOnly) return;
@@ -2420,10 +2412,10 @@ function BoardInner({
     const center=viewportCenter(),items:Node[]=[];
     undoManager.stopCapturing();ydoc.transact(()=>{
       for(const [index,datasetId] of [relation.sourceDatasetId,relation.targetDatasetId].entries()){
-        const id=`er-dataset:${datasetId}`;let node=nodesMap.get(id) as Node|undefined;
+        const id=`er-dataset:${datasetId}`;let node=Array.from(nodesMap.values()).find((n:any)=>n.type==='table'&&n.data?.datasetId===datasetId) as Node|undefined;
         if(!node){node={id,type:'table',position:{x:center.x-590+index*620,y:center.y-150},style:{width:540,height:300},data:{datasetId}};nodesMap.set(id,node);}items.push(node);
       }
-      const id=`er-relation:${relation.id}`;edgesMap.set(id,{id,type:'smoothstep',source:items[0].id,target:items[1].id,sourceHandle:`source:${relation.sourceColumnId}`,targetHandle:`target:${relation.targetColumnId}`,markerEnd:{type:MarkerType.ArrowClosed},label:`${relation.name||relation.relationType} ${relation.cardinality??''}`,data:{relationId:relation.id,relationType:relation.relationType,cardinality:relation.cardinality}});
+      const id=`er-relation:${relation.id}`;edgesMap.set(id,{id,type:'smoothstep',source:items[0].id,target:items[1].id,sourceHandle:relation.matchMode==='ROW_LINKS'?'table:source':`source:${relation.sourceColumnId}`,targetHandle:relation.matchMode==='ROW_LINKS'?'table:target':`target:${relation.targetColumnId}`,markerEnd:{type:MarkerType.ArrowClosed},label:`${relation.name||relation.relationType} ${relation.cardinality??''}`,data:{relationId:relation.id,relationType:relation.relationType,cardinality:relation.cardinality}});
     });undoManager.stopCapturing();
     setDatasetsOpen(false);setSelectedNodeId(null);setToolMode('select');requestAnimationFrame(()=>void rf?.fitView({nodes:items,padding:.25,duration:300}));
   };
@@ -2960,7 +2952,7 @@ function BoardInner({
           />
         )}
 
-        {effectiveToolMode === 'select' && selectedNodeIds.length > 0 && !readOnly && (
+        {effectiveToolMode === 'select' && selectedNodeIds.length > 1 && !readOnly && (
           <CanvasSelectionActions
             key={selectedNodeIds.join(':')}
             count={selectedNodeIds.length}
@@ -3216,8 +3208,7 @@ function BoardInner({
             </div>;
           })}
         </div>}
-        {selectedNode && !readOnly && <CanvasProperties node={selectedNode} onChange={(patch) => updateNodeData(selectedNode.id, patch)} />}
-        {selectedNode && !['frame','group','freehand','text','sticky'].includes(selectedNode.type ?? '') && (
+        {selectedNode && (
           <InspectorPanel
             node={selectedNode}
             boardId={meta.id}

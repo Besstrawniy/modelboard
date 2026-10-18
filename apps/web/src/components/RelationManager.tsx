@@ -92,12 +92,11 @@ export function RelationManager({ datasets }: { datasets: DatasetMeta[] }) {
     <section className="relation-manager" aria-label="Управление связями">
       <h3>Связи данных</h3>
       <p>
-        Связывайте поля по значениям. FK проверяет соответствия и уникальность
-        целевого ключа.
+        Создавайте связи коннектором между таблицами или через «Связи таблицы». Здесь доступны настройки и проверка связей по значениям полей.
       </p>
       {relations.map((relation) => (
         <article className="relation-card" key={relation.id}>
-          <strong>{relation.name || relation.relationType}</strong>
+          <strong>{relation.name || (relation.matchMode==='ROW_LINKS'?'Связь записей':relation.relationType)}</strong>
           <small>
             {datasets.find((d) => d.id === relation.sourceDatasetId)?.name} →{' '}
             {datasets.find((d) => d.id === relation.targetDatasetId)?.name} ·{' '}
@@ -125,12 +124,12 @@ export function RelationManager({ datasets }: { datasets: DatasetMeta[] }) {
               <>
                 <button
                   onClick={() => {
-                    setDraft({ ...relation });
+                    setDraft({ ...relation, ...(relation.matchMode==='ROW_LINKS'?{links:undefined}:{}) });
                     setEditing(relation.id);
                     setError('');
                   }}
                 >
-                  Настроить
+                  {relation.matchMode==='ROW_LINKS'?'Настроить кардинальность':'Настроить'}
                 </button>
                 <button
                   onClick={() => {
@@ -180,7 +179,7 @@ export function RelationManager({ datasets }: { datasets: DatasetMeta[] }) {
       ))}
       {!readOnly && (
         <div className="relation-editor">
-          <h4>{editing ? 'Настроить связь' : 'Новая связь'}</h4>
+          <h4>{editing ? 'Настроить связь' : 'Новая связь'}</h4>{draft.matchMode==='ROW_LINKS'&&<p>Пары записей можно добавлять и удалять через кнопку «Связи таблицы» на таблице.</p>}
           <label>
             Название связи
             <input
@@ -214,7 +213,7 @@ export function RelationManager({ datasets }: { datasets: DatasetMeta[] }) {
           <label>
             Исходное поле
             <select
-              aria-label="Исходное поле"
+              disabled={draft.matchMode==='ROW_LINKS'} aria-label="Исходное поле"
               value={draft.sourceColumnId}
               onChange={(e) =>
                 setDraft({ ...draft, sourceColumnId: e.target.value })
@@ -252,7 +251,7 @@ export function RelationManager({ datasets }: { datasets: DatasetMeta[] }) {
           <label>
             Целевое поле
             <select
-              aria-label="Целевое поле"
+              disabled={draft.matchMode==='ROW_LINKS'} aria-label="Целевое поле"
               value={draft.targetColumnId}
               onChange={(e) =>
                 setDraft({ ...draft, targetColumnId: e.target.value })

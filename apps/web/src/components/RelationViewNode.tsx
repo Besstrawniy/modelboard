@@ -1,31 +1,12 @@
-import { relationValueKey } from '@modelboard/shared';
+import { relatedRows } from '@modelboard/shared';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
 import { ExternalLink, Link2 } from 'lucide-react';
-import type {
-  DatasetRow,
-  RelationViewNodeData,
-} from '@modelboard/shared';
-import {
-  Handle,
-  Position,
-  type NodeProps,
-} from '@xyflow/react';
+import type { DatasetRow, RelationViewNodeData } from '@modelboard/shared';
+import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
 import { useBoardActions } from './BoardContext';
-
-function sameValue(left: unknown, right: unknown) {
-  if (
-    left === null ||
-    left === undefined ||
-    right === null ||
-    right === undefined
-  ) {
-    return false;
-  }
-  return relationValueKey(left)!==null&&relationValueKey(left)===relationValueKey(right);
-}
 
 function rowFields(
   row: DatasetRow,
@@ -47,16 +28,9 @@ function rowFields(
     .slice(0, 3);
 }
 
-export function RelationViewNode({
-  data,
-  selected,
-}: NodeProps<any>) {
-  const {
-    readOnly,
-    sessionToken,
-    workspaceId,
-    openDatasetSheet,
-  } = useBoardActions();
+export function RelationViewNode({ data, selected }: NodeProps<any>) {
+  const { readOnly, sessionToken, workspaceId, openDatasetSheet } =
+    useBoardActions();
 
   const node = data as RelationViewNodeData;
   const binding = node.binding;
@@ -69,14 +43,19 @@ export function RelationViewNode({
   );
 
   useEffect(() => {
-    const load=()=>api.relations(workspaceId, sessionToken)
-      .then((relations) =>
-        setRelation(
-          relations.find((item) => item.id === node.relationId) ?? null,
-        ),
-      )
-      .catch(() => setRelation(null));
-    void load();const refresh=()=>void load();window.addEventListener('modelboard:resources',refresh);return()=>window.removeEventListener('modelboard:resources',refresh);
+    const load = () =>
+      api
+        .relations(workspaceId, sessionToken)
+        .then((relations) =>
+          setRelation(
+            relations.find((item) => item.id === node.relationId) ?? null,
+          ),
+        )
+        .catch(() => setRelation(null));
+    void load();
+    const refresh = () => void load();
+    window.addEventListener('modelboard:resources', refresh);
+    return () => window.removeEventListener('modelboard:resources', refresh);
   }, [node.relationId, sessionToken, workspaceId]);
 
   const otherDatasetId = relation
@@ -95,8 +74,7 @@ export function RelationViewNode({
     ? anchorDataset?.rows.find((row) => row.id === binding.rowId)
     : undefined;
 
-  const currentIsSource =
-    relation?.sourceDatasetId === binding.datasetId;
+  const currentIsSource = relation?.sourceDatasetId === binding.datasetId;
   const localColumnId = relation
     ? currentIsSource
       ? relation.sourceColumnId
@@ -115,24 +93,15 @@ export function RelationViewNode({
     (column) => column.id === remoteColumnId,
   );
   const localValue =
-    anchorRow && localColumnId
-      ? anchorRow.values[localColumnId]
-      : null;
+    anchorRow && localColumnId ? anchorRow.values[localColumnId] : null;
 
-  const matches = useMemo(() => {
-    if (
-      !otherDataset ||
-      !remoteColumnId ||
-      localValue === null ||
-      localValue === undefined
-    ) {
-      return [];
-    }
-
-    return otherDataset.rows.filter((row) =>
-      sameValue(row.values[remoteColumnId], localValue),
-    );
-  }, [localValue, otherDataset, remoteColumnId]);
+  const matches = useMemo(
+    () =>
+      otherDataset && relation && anchorDataset && anchorRow
+        ? relatedRows(relation, anchorDataset.id, anchorRow, otherDataset.rows)
+        : [],
+    [relation, anchorDataset, anchorRow, otherDataset],
+  );
 
   const maxRows =
     typeof binding.presentation?.maxRows === 'number'
@@ -158,9 +127,7 @@ export function RelationViewNode({
       <header className="relation-view-node__header">
         <div>
           <Link2 size={14} />
-          <strong>
-            {otherDataset?.name ?? 'Relation View'}
-          </strong>
+          <strong>{otherDataset?.name ?? 'Relation View'}</strong>
         </div>
         <span>
           {relation?.relationType ?? 'RELATION'}
@@ -171,12 +138,20 @@ export function RelationViewNode({
       <div className="relation-view-node__path">
         <span>
           {anchorDataset?.name ?? 'Dataset'}.
-          {localColumn?.name ?? '…'}
+          {relation?.matchMode === 'ROW_LINKS'
+            ? 'запись'
+            : (localColumn?.name ?? '…')}
         </span>
-        <code>{String(localValue ?? 'NULL')}</code>
+        <code>
+          {relation?.matchMode === 'ROW_LINKS'
+            ? '→'
+            : String(localValue ?? 'NULL')}
+        </code>
         <span>
           {otherDataset?.name ?? 'Dataset'}.
-          {remoteColumn?.name ?? '…'}
+          {relation?.matchMode === 'ROW_LINKS'
+            ? 'записи'
+            : (remoteColumn?.name ?? '…')}
         </span>
       </div>
 
@@ -200,8 +175,7 @@ export function RelationViewNode({
                 className="relation-view-node__row nodrag"
                 key={row.id}
                 onClick={() =>
-                  otherDataset &&
-                  openDatasetSheet(otherDataset.id, row.id)
+                  otherDataset && openDatasetSheet(otherDataset.id, row.id)
                 }
               >
                 <div>

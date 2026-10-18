@@ -18,6 +18,8 @@ import {
   formulaKey,
 } from './formulas';
 
+type DeletedColumnArchive = {column:DatasetColumn;values:Record<string,DatasetCellValue>;formulas:DatasetFormula[];formats:DatasetCellFormat[]};
+
 type DatasetState = DatasetSnapshot & {
   status: string;
 };
@@ -29,6 +31,8 @@ export function useCollaborativeDataset(
 ) {
   const ydoc = useMemo(() => new Y.Doc(), [datasetId, token]);
   const metaMap = useMemo(() => ydoc.getMap<any>('meta'), [ydoc]);
+  const deletedColumnsMap = useMemo(()=>ydoc.getMap<DeletedColumnArchive>('deletedColumns'),[ydoc]);
+  const [deletedColumns,setDeletedColumns]=useState<Array<{id:string;name:string}>>([]);
   const columnsMap = useMemo(() => new SharedRecordStore(ydoc, 'columns'), [ydoc]);
   const rowsMap = useMemo(() => new SharedRecordStore(ydoc, 'rows'), [ydoc]);
   const formulasMap = useMemo(
@@ -44,10 +48,10 @@ export function useCollaborativeDataset(
   const undoManager = useMemo(
     () =>
       new Y.UndoManager(
-        [columnsMap.type, rowsMap.type, formulasMap, formatsMap.type, viewsMap.type, rulesMap.type],
+        [columnsMap.type, rowsMap.type, formulasMap, formatsMap.type, viewsMap.type, rulesMap.type, deletedColumnsMap],
         { captureTimeout: 500 },
       ),
-    [columnsMap, formatsMap, formulasMap, rowsMap, viewsMap, rulesMap],
+    [columnsMap, formatsMap, formulasMap, rowsMap, viewsMap, rulesMap, deletedColumnsMap],
   );
   const initialSyncDone = useRef(false);
   const [historyTick, setHistoryTick] = useState(0);
@@ -98,6 +102,7 @@ export function useCollaborativeDataset(
     });
 
     const sync = () => {
+      setDeletedColumns(Array.from(deletedColumnsMap.values()).map(item=>({id:item.column.id,name:item.column.name})));
       const columns = Array.from(columnsMap.values()).sort((a,b) => a.ordinal-b.ordinal || a.id.localeCompare(b.id));
       const rows = Array.from(rowsMap.values()).sort((a,b) => a.ordinal-b.ordinal || a.id.localeCompare(b.id));
       const formulas = Array.from(formulasMap.values());
@@ -133,6 +138,7 @@ export function useCollaborativeDataset(
 
     let queued=false, disposed=false;
     const scheduleSync=()=>{if(queued)return;queued=true;queueMicrotask(()=>{queued=false;if(!disposed)sync();});};
+    deletedColumnsMap.observe(scheduleSync);
     metaMap.observe(scheduleSync);
     columnsMap.observe(scheduleSync);
     rowsMap.observe(scheduleSync);
@@ -144,6 +150,7 @@ export function useCollaborativeDataset(
 
     return () => {
       disposed=true;
+      deletedColumnsMap.unobserve(scheduleSync);
       metaMap.unobserve(scheduleSync);
       columnsMap.unobserve(scheduleSync);
       rowsMap.unobserve(scheduleSync);
@@ -156,6 +163,7 @@ export function useCollaborativeDataset(
     };
   }, [
     columnsMap,
+    deletedColumnsMap,
     datasetId,
     viewsMap,
     rulesMap,
@@ -475,6 +483,8 @@ export function useCollaborativeDataset(
 
       undoManager.stopCapturing();
       ydoc.transact(() => {
+        const column=columnsMap.get(columnId);
+        if(column)deletedColumnsMap.set(columnId,{column,values:Object.fromEntries(Array.from(rowsMap.values()).map(row=>[row.id,row.values[columnId]??null])),formulas:Array.from(formulasMap.values()).filter(f=>f.columnId===columnId),formats:Array.from(formatsMap.values()).filter(f=>f.columnId===columnId)});
         columnsMap.delete(columnId);
         for(const [key,formula] of formulasMap.entries())if(formula.columnId===columnId)formulasMap.delete(key);
 
@@ -507,6 +517,19 @@ export function useCollaborativeDataset(
       ydoc,
     ],
   );
+
+  const restoreColumn = useCallback((id:string)=>{
+    if(readOnly)return;const archive=deletedColumnsMap.get(id);if(!archive||columnsMap.has(id))return;
+    undoManager.stopCapturing();ydoc.transact(()=>{
+      const ordinal=Math.min(archive.column.ordinal,columnsMap.size);
+      for(const [key,column] of columnsMap.entries())if(column.ordinal>=ordinal)columnsMap.set(key,{...column,ordinal:column.ordinal+1});
+      columnsMap.set(id,{...archive.column,ordinal});
+      for(const [key,row] of rowsMap.entries())rowsMap.set(key,{...row,values:{...row.values,[id]:archive.values[key]??null}});
+      for(const formula of archive.formulas)if(rowsMap.has(formula.rowId))formulasMap.set(formulaKey(formula.rowId,formula.columnId),formula);
+      for(const format of archive.formats)if(rowsMap.has(format.rowId))formatsMap.set(formulaKey(format.rowId,format.columnId),format);
+      deletedColumnsMap.delete(id);
+    });undoManager.stopCapturing();
+  },[readOnly,deletedColumnsMap,columnsMap,rowsMap,formulasMap,formatsMap,undoManager,ydoc]);
 
   const addRow = useCallback(
     async (
@@ -619,6 +642,7 @@ export function useCollaborativeDataset(
     renameColumn,
     convertColumn,
     deleteColumn,
+    deletedColumns,restoreColumn,
     addRow,
     deleteRow,
   };

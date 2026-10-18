@@ -39,7 +39,8 @@ export function validateRelationData(
   const sourceUnique =
     relation.cardinality === '1:1' || relation.cardinality === '1:N';
   const targetUnique =
-    relation.relationType === 'FOREIGN_KEY' ||
+    (relation.relationType === 'FOREIGN_KEY' &&
+      relation.cardinality !== '1:N') ||
     relation.cardinality === '1:1' ||
     relation.cardinality === 'N:1';
   const issues: string[] = [];
@@ -51,10 +52,33 @@ export function validateRelationData(
     issues.push(
       `Целевой ключ содержит повторяющиеся значения: ${targetDuplicates}`,
     );
-  if (relation.relationType === 'FOREIGN_KEY' && orphanRows.length)
+  if (
+    relation.relationType === 'FOREIGN_KEY' &&
+    relation.cardinality !== '1:N' &&
+    orphanRows.length
+  )
     issues.push(
       `Нет соответствия в целевой таблице для строк: ${orphanRows.length}`,
     );
+  if (
+    relation.relationType === 'FOREIGN_KEY' &&
+    relation.cardinality === '1:N'
+  ) {
+    orphanRows.splice(
+      0,
+      orphanRows.length,
+      ...target
+        .filter((row) => {
+          const key = relationValueKey(row.values[relation.targetColumnId]);
+          return key !== null && !a.has(key);
+        })
+        .map((row) => row.id),
+    );
+    if (orphanRows.length)
+      issues.push(
+        `Нет соответствия в исходной таблице для строк: ${orphanRows.length}`,
+      );
+  }
   return {
     valid: issues.length === 0,
     issues,
@@ -66,5 +90,75 @@ export function validateRelationData(
       const key = relationValueKey(row.values[relation.sourceColumnId]);
       return key !== null && b.has(key);
     }).length,
+  };
+}
+
+export function relatedRows(
+  relation: DatasetRelation,
+  datasetId: string,
+  row: DatasetRow,
+  otherRows: DatasetRow[],
+) {
+  const source = relation.sourceDatasetId === datasetId;
+  if (relation.matchMode === 'ROW_LINKS') {
+    const ids = new Set(
+      (relation.links ?? [])
+        .filter(
+          (link) => (source ? link.sourceRowId : link.targetRowId) === row.id,
+        )
+        .map((link) => (source ? link.targetRowId : link.sourceRowId)),
+    );
+    return otherRows.filter((row) => ids.has(row.id));
+  }
+  const value = relationValueKey(
+    row.values[source ? relation.sourceColumnId : relation.targetColumnId],
+  );
+  return value === null
+    ? []
+    : otherRows.filter(
+        (row) =>
+          relationValueKey(
+            row.values[
+              source ? relation.targetColumnId : relation.sourceColumnId
+            ],
+          ) === value,
+      );
+}
+export function validateRecordLinks(
+  relation: DatasetRelation,
+  source: DatasetRow[],
+  target: DatasetRow[],
+) {
+  const a = new Set(source.map((row) => row.id)),
+    b = new Set(target.map((row) => row.id)),
+    left = new Map<string, number>(),
+    right = new Map<string, number>();
+  const links = relation.links ?? [];
+  let missing = 0;
+  for (const link of links) {
+    if (!a.has(link.sourceRowId) || !b.has(link.targetRowId)) missing++;
+    left.set(link.sourceRowId, (left.get(link.sourceRowId) ?? 0) + 1);
+    right.set(link.targetRowId, (right.get(link.targetRowId) ?? 0) + 1);
+  }
+  const sourceDuplicates = [...left.values()].filter((n) => n > 1).length,
+    targetDuplicates = [...right.values()].filter((n) => n > 1).length,
+    issues: string[] = [];
+  if (missing) issues.push('Связанные записи не найдены в выбранных таблицах');
+  if (['1:1', 'N:1'].includes(relation.cardinality ?? '') && sourceDuplicates)
+    issues.push(
+      'Одной исходной записи назначено несколько целевых: измените кардинальность на 1:N или N:M',
+    );
+  if (['1:1', '1:N'].includes(relation.cardinality ?? '') && targetDuplicates)
+    issues.push(
+      'Одна целевая запись связана с несколькими исходными: измените кардинальность на N:1 или N:M',
+    );
+  return {
+    valid: !issues.length,
+    issues,
+    sourceDuplicates,
+    targetDuplicates,
+    orphanCount: missing,
+    orphanRowIds: [],
+    matchedRows: links.length,
   };
 }

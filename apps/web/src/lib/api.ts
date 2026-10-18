@@ -45,6 +45,9 @@ const authHeaders = (token: string) => ({
 });
 
 export const api = {
+  appendRecordLinks:(workspaceId:string,id:string,token:string,links:Array<{sourceRowId:string;targetRowId:string}>)=>json<DatasetRelation>(`/workspaces/${workspaceId}/relations/${id}/links`,{method:'POST',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify({links})}),
+  changeRecordLink:(workspaceId:string,id:string,token:string,body:{sourceRowId:string;targetRowId:string;remove?:boolean})=>json<DatasetRelation>(`/workspaces/${workspaceId}/relations/${id}/links`,{method:'POST',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify(body)}),
+  renameDataset:(id:string,token:string,name:string)=>json<{id:string;name:string}>(`/datasets/${id}`,{method:'PUT',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify({name})}),
   datasetColumns:(id:string,token:string)=>json<DatasetColumn[]>(`/datasets/${id}/columns`,{headers:authHeaders(token)}),
   datasetDeletionPreview:(id:string,token:string)=>json<{name:string;rows:number;bindings:number;relations:number;views:number}>(`/datasets/${id}/deletion-preview`,{headers:authHeaders(token)}),
   deleteDataset:(id:string,token:string)=>json<{ok:true}>(`/datasets/${id}`,{method:'DELETE',headers:authHeaders(token)}),

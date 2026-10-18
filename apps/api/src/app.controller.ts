@@ -147,7 +147,7 @@ export class AppController {
       throw new ForbiddenException('Edit permission required');
     }
 
-    const name = body.name?.trim();
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name) {
       throw new BadRequestException('Board name is required');
     }
@@ -448,6 +448,33 @@ export class AppController {
       kind: access.dataset_kind,
       role: access.role,
     };
+  }
+
+  @UseGuards(AuthGuard)
+  @Put('datasets/:id')
+  async renameDataset(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body() body: { name?: string },
+  ) {
+    const access = await getDatasetAccess(id, req.user.sub);
+    if (!access || !canEditBoard(access.role)) throw new ForbiddenException();
+    const name = body.name?.trim();
+    if (!name || name.length > 120)
+      throw new BadRequestException('Введите название от 1 до 120 символов');
+    await query(
+      'UPDATE datasets SET name=$2 WHERE id=$1 AND deleted_at IS NULL',
+      [id, name],
+    );
+    await query("SELECT pg_notify('modelboard_resources',$1)", [
+      JSON.stringify({
+        kind: 'dataset-renamed',
+        workspaceId: access.workspace_id,
+        datasetId: id,
+        name,
+      }),
+    ]);
+    return { id, name };
   }
 
   @UseGuards(AuthGuard)
@@ -1289,9 +1316,8 @@ export class AppController {
     const suppliedColumns = body.columns?.length
       ? body.columns
       : [
-          { name: 'id', dataType: 'INTEGER' as const, key: 'PK' as const },
           { name: 'name', dataType: 'TEXT' as const },
-          { name: 'ref_id', dataType: 'INTEGER' as const, key: 'FK' as const },
+          { name: 'description', dataType: 'TEXT' as const },
         ];
 
     const columns: DatasetColumn[] = suppliedColumns.map((column, index) => ({
@@ -1307,8 +1333,10 @@ export class AppController {
         id: randomUUID(),
         ordinal: 0,
         values: {
-          [columns[0].id]: 1,
-          [columns[1]?.id ?? columns[0].id]: 'First row',
+          [columns[0].id]: body.columns?.length ? 1 : 'Первая запись',
+          ...(columns[1]
+            ? { [columns[1].id]: body.columns?.length ? 'First row' : '' }
+            : {}),
           ...(columns[2] ? { [columns[2].id]: 1 } : {}),
         },
       },
@@ -1316,8 +1344,10 @@ export class AppController {
         id: randomUUID(),
         ordinal: 1,
         values: {
-          [columns[0].id]: 2,
-          [columns[1]?.id ?? columns[0].id]: 'Second row',
+          [columns[0].id]: body.columns?.length ? 2 : 'Вторая запись',
+          ...(columns[1]
+            ? { [columns[1].id]: body.columns?.length ? 'Second row' : '' }
+            : {}),
           ...(columns[2] ? { [columns[2].id]: 2 } : {}),
         },
       },
@@ -1737,7 +1767,7 @@ export class AppController {
       throw new ForbiddenException();
     return (
       await query(
-        'SELECT * FROM dataset_relations WHERE workspace_id=$1 AND deleted_at IS NULL ORDER BY created_at,id',
+        `SELECT r.*,COALESCE((SELECT jsonb_agg(jsonb_build_object('sourceRowId',source_row_id,'targetRowId',target_row_id)) FROM dataset_relation_links WHERE relation_id=r.id),'[]'::jsonb) AS links FROM dataset_relations r WHERE workspace_id=$1 AND deleted_at IS NULL ORDER BY created_at,id`,
         [workspaceId],
       )
     ).rows.map(relationFromSql);
@@ -1752,6 +1782,11 @@ export class AppController {
     const access = await getWorkspaceAccess(workspaceId, userId);
     if (!access || !canEditBoard(access.role)) throw new ForbiddenException();
     if (
+      body.matchMode !== undefined &&
+      !['FIELDS', 'ROW_LINKS'].includes(body.matchMode)
+    )
+      throw new BadRequestException('Выберите способ связи');
+    if (
       !['REFERENCE', 'FOREIGN_KEY', 'DEPENDENCY', 'MAP', 'FLOW'].includes(
         body.relationType,
       ) ||
@@ -1764,10 +1799,17 @@ export class AppController {
     if (
       [
         body.sourceDatasetId,
-        body.sourceColumnId,
+        ...(body.matchMode === 'ROW_LINKS'
+          ? []
+          : [body.sourceColumnId, body.targetColumnId]),
         body.targetDatasetId,
-        body.targetColumnId,
-      ].some((id) => !id || !/^[0-9a-f-]{36}$/i.test(id))
+      ].some(
+        (id) =>
+          !id ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            id,
+          ),
+      )
     )
       throw new BadRequestException('Выберите таблицы и поля связи');
     const client = await pool.connect();
@@ -1787,27 +1829,71 @@ export class AppController {
         ).rowCount
       )
         throw new NotFoundException('Связь не найдена');
-      const endpoints = await client.query(
-        `SELECT sc.data_type AS source_type,tc.data_type AS target_type FROM datasets sd JOIN dataset_columns sc ON sc.dataset_id=sd.id AND sc.id=$2 JOIN datasets td ON td.id=$3 JOIN dataset_columns tc ON tc.dataset_id=td.id AND tc.id=$4 WHERE sd.id=$5 AND sd.workspace_id=$1 AND td.workspace_id=$1 AND sd.deleted_at IS NULL AND td.deleted_at IS NULL`,
-        [
-          workspaceId,
-          body.sourceColumnId,
-          body.targetDatasetId,
-          body.targetColumnId,
-          body.sourceDatasetId,
-        ],
-      );
-      if (!endpoints.rows[0])
-        throw new BadRequestException(
-          'Таблицы и поля должны принадлежать этому Workspace',
+      if (body.matchMode === 'ROW_LINKS') {
+        if (
+          (
+            await client.query(
+              'SELECT id FROM datasets WHERE id=ANY($1::uuid[]) AND workspace_id=$2 AND deleted_at IS NULL',
+              [
+                [...new Set([body.sourceDatasetId, body.targetDatasetId])],
+                workspaceId,
+              ],
+            )
+          ).rowCount !==
+          new Set([body.sourceDatasetId, body.targetDatasetId]).size
+        )
+          throw new BadRequestException('Выберите доступные таблицы');
+        body.sourceColumnId = '__row__';
+        body.targetColumnId = '__row__';
+        if (
+          (!relationId && body.links === undefined) ||
+          (body.links !== undefined &&
+            (!Array.isArray(body.links) ||
+              body.links.length > 10000 ||
+              body.links.some(
+                (link) =>
+                  !link ||
+                  !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                    link.sourceRowId,
+                  ) ||
+                  !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                    link.targetRowId,
+                  ),
+              )))
+        )
+          throw new BadRequestException('Выберите записи для связи');
+        if (body.links)
+          body.links = Array.from(
+            new Map(
+              body.links.map((link) => [
+                link.sourceRowId + link.targetRowId,
+                link,
+              ]),
+            ).values(),
+          );
+      } else {
+        const endpoints = await client.query(
+          `SELECT sc.data_type AS source_type,tc.data_type AS target_type FROM datasets sd JOIN dataset_columns sc ON sc.dataset_id=sd.id AND sc.id=$2 JOIN datasets td ON td.id=$3 JOIN dataset_columns tc ON tc.dataset_id=td.id AND tc.id=$4 WHERE sd.id=$5 AND sd.workspace_id=$1 AND td.workspace_id=$1 AND sd.deleted_at IS NULL AND td.deleted_at IS NULL`,
+          [
+            workspaceId,
+            body.sourceColumnId,
+            body.targetDatasetId,
+            body.targetColumnId,
+            body.sourceDatasetId,
+          ],
         );
-      const types = endpoints.rows[0];
-      const numeric = (type: string) => ['NUMBER', 'INTEGER'].includes(type);
-      if (
-        types.source_type !== types.target_type &&
-        !(numeric(types.source_type) && numeric(types.target_type))
-      )
-        throw new ConflictException('Типы ключевых полей несовместимы');
+        if (!endpoints.rows[0])
+          throw new BadRequestException(
+            'Таблицы и поля должны принадлежать этому Workspace',
+          );
+        const types = endpoints.rows[0];
+        const numeric = (type: string) => ['NUMBER', 'INTEGER'].includes(type);
+        if (
+          types.source_type !== types.target_type &&
+          !(numeric(types.source_type) && numeric(types.target_type))
+        )
+          throw new ConflictException('Типы ключевых полей несовместимы');
+      }
       if (
         relationId &&
         (
@@ -1831,7 +1917,9 @@ export class AppController {
           .trim()
           .slice(0, 120),
         enforceIntegrity:
-          body.relationType === 'FOREIGN_KEY' || Boolean(body.enforceIntegrity),
+          body.matchMode === 'ROW_LINKS' ||
+          body.relationType === 'FOREIGN_KEY' ||
+          Boolean(body.enforceIntegrity),
       };
       const report = await validateSqlRelation(client, relation);
       if (relation.enforceIntegrity && !report.valid)
@@ -1842,17 +1930,35 @@ export class AppController {
           relation.id,
           workspaceId,
           relation.sourceDatasetId,
-          relation.sourceColumnId,
+          relation.matchMode === 'ROW_LINKS' ? null : relation.sourceColumnId,
           relation.targetDatasetId,
-          relation.targetColumnId,
+          relation.matchMode === 'ROW_LINKS' ? null : relation.targetColumnId,
           relation.relationType,
           relation.cardinality ?? null,
           JSON.stringify({
             name: relation.name,
+            matchMode: relation.matchMode ?? 'FIELDS',
             enforceIntegrity: relation.enforceIntegrity,
           }),
         ],
       );
+      await client.query(
+        'DELETE FROM dataset_relation_links WHERE relation_id=$1',
+        [relation.id],
+      );
+      if (relation.matchMode === 'ROW_LINKS' && relation.links?.length)
+        await client.query(
+          `INSERT INTO dataset_relation_links(relation_id,source_row_id,target_row_id) SELECT $1,source_row_id,target_row_id FROM jsonb_to_recordset($2::jsonb) AS links(source_row_id uuid,target_row_id uuid)`,
+          [
+            relation.id,
+            JSON.stringify(
+              relation.links.map((link) => ({
+                source_row_id: link.sourceRowId,
+                target_row_id: link.targetRowId,
+              })),
+            ),
+          ],
+        );
       await client.query("SELECT pg_notify('modelboard_resources',$1)", [
         JSON.stringify({
           kind: 'relation-changed',
@@ -1889,6 +1995,109 @@ export class AppController {
     @Body() body: CreateDatasetRelationInput,
   ) {
     return this.saveRelation(id, req.user.sub, body, relationId);
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('workspaces/:id/relations/:relationId/links')
+  async changeRecordLink(
+    @Param('id') workspaceId: string,
+    @Param('relationId') relationId: string,
+    @Req() req: any,
+    @Body()
+    body: {
+      sourceRowId?: string;
+      targetRowId?: string;
+      links?: Array<{ sourceRowId: string; targetRowId: string }>;
+      remove?: boolean;
+    },
+  ) {
+    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
+    if (!access || !canEditBoard(access.role)) throw new ForbiddenException();
+    const pairs = body.links ?? [
+      { sourceRowId: body.sourceRowId!, targetRowId: body.targetRowId! },
+    ];
+    if (
+      !Array.isArray(pairs) ||
+      !pairs.length ||
+      pairs.length > 10000 ||
+      pairs.some(
+        (pair) =>
+          !pair ||
+          [pair.sourceRowId, pair.targetRowId].some(
+            (id) =>
+              typeof id !== 'string' ||
+              !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                id,
+              ),
+          ),
+      )
+    )
+      throw new BadRequestException('Выберите две записи');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        [workspaceId],
+      );
+      const result = await client.query(
+        'SELECT * FROM dataset_relations WHERE id=$1 AND workspace_id=$2 AND deleted_at IS NULL',
+        [relationId, workspaceId],
+      );
+      if (!result.rows[0]) throw new NotFoundException();
+      const relation = relationFromSql(result.rows[0]);
+      if (relation.matchMode !== 'ROW_LINKS')
+        throw new BadRequestException(
+          'Эта связь сопоставляет поля автоматически',
+        );
+      relation.links = (
+        await client.query(
+          'SELECT source_row_id AS "sourceRowId",target_row_id AS "targetRowId" FROM dataset_relation_links WHERE relation_id=$1',
+          [relationId],
+        )
+      ).rows;
+      relation.links = relation.links!.filter(
+        (pair) =>
+          !pairs.some(
+            (change) =>
+              pair.sourceRowId === change.sourceRowId &&
+              pair.targetRowId === change.targetRowId,
+          ),
+      );
+      if (!body.remove)
+        relation.links = Array.from(
+          new Map(
+            [...relation.links, ...pairs].map((pair) => [
+              pair.sourceRowId + pair.targetRowId,
+              pair,
+            ]),
+          ).values(),
+        );
+      const report = await validateSqlRelation(client, relation);
+      if (!report.valid) throw new ConflictException(report.issues.join('; '));
+      for (const pair of pairs) {
+        if (body.remove)
+          await client.query(
+            'DELETE FROM dataset_relation_links WHERE relation_id=$1 AND source_row_id=$2 AND target_row_id=$3',
+            [relationId, pair.sourceRowId, pair.targetRowId],
+          );
+        else
+          await client.query(
+            'INSERT INTO dataset_relation_links(relation_id,source_row_id,target_row_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+            [relationId, pair.sourceRowId, pair.targetRowId],
+          );
+      }
+      await client.query("SELECT pg_notify('modelboard_resources',$1)", [
+        JSON.stringify({ kind: 'relation-changed', workspaceId, relationId }),
+      ]);
+      await client.query('COMMIT');
+      return relation;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   @UseGuards(AuthGuard)

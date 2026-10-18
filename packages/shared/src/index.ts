@@ -179,6 +179,8 @@ export type DatasetRelation = {
   relationType: DatasetRelationType;
   name?: string;
   enforceIntegrity?: boolean;
+  matchMode?: 'FIELDS' | 'ROW_LINKS';
+  links?: Array<{sourceRowId:string;targetRowId:string}>;
   cardinality?: DatasetRelationCardinality | null;
 };
 
@@ -323,6 +325,6 @@ export type DatasetConditionalRule = {
 export { CanvasNodeStore as SharedRecordStore } from './canvasDocument.js';
 
 export { evaluateDatasetFormulas } from './formulas.js';
-export { relationValueKey, validateRelationData } from './relations.js';
+export { relationValueKey, validateRelationData, relatedRows, validateRecordLinks } from './relations.js';
 export { cleanBoardResources } from './resourceLifecycle.js';
 export { resolveBindingPresentation } from './bindingPresentation.js';

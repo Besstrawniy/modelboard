@@ -1,3 +1,5 @@
+import { DatasetConnections } from './DatasetConnections';
+import { DatasetRename } from './DatasetRename';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { TableNodeData } from '@modelboard/shared';
@@ -20,8 +22,10 @@ export function TableNode({ id,data,selected }:NodeProps<any>) {
  const formats=new Map(dataset.formats.map(format=>[formulaKey(format.rowId,format.columnId),format]));
  const formulas=new Map(dataset.formulas.map(formula=>[formulaKey(formula.rowId,formula.columnId),formula]));
  return <div className={`table-node ${selected?'is-selected':''}`}>
+  <Handle id="table:target" type="target" position={Position.Left} isConnectable={!readOnly} title="Связать записи таблиц" />
+  <Handle id="table:source" type="source" position={Position.Right} isConnectable={!readOnly} title="Связать записи таблиц" />
   <CanvasNodeResizer minWidth={360} minHeight={180} isVisible={selected}/>
-  <div className="table-node__title"><span className="table-node__kind">DATASET</span><strong>{view.view?.labelOverride||dataset.name}</strong><span className="dataset-status">{pendingChanges?'saving':status}</span>
+  <div className="table-node__title"><span className="table-node__kind">DATASET</span><strong>{view.view?.labelOverride||dataset.name}</strong><DatasetConnections dataset={dataset}/><DatasetRename id={dataset.id} name={dataset.name} token={sessionToken} readOnly={readOnly}/><span className="dataset-status">{pendingChanges?'saving':status}</span>
     <button className="nodrag" title="Открыть таблицу" onClick={()=>openDatasetSheet(dataset.id)}>Открыть</button>
   </div>
   {storageError&&<div className="sheet-storage-error" role="alert">{storageError}</div>}

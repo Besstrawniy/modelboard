@@ -1,3 +1,5 @@
+import { DatasetConnections } from './DatasetConnections';
+import { DatasetRename } from './DatasetRename';
 import { SpreadsheetTools } from './SpreadsheetTools';
 import { parseSheetInput, parseSheetTsv, sheetTsv, matchesSheetFilter, sheetConditionalFormat, sheetSelectionSummary } from '../lib/spreadsheetModel';
 import {
@@ -437,6 +439,7 @@ export function DatasetSheet({
     renameColumn,
     convertColumn,
     deleteColumn,
+    deletedColumns,restoreColumn,
     addRow,
     deleteRow,
     reorder,saveView,deleteView,saveRule,deleteRule,pendingChanges,storageError,prepareRows,
@@ -2044,7 +2047,7 @@ export function DatasetSheet({
             <Database size={18} />
           </span>
           <div>
-            <strong>{dataset?.name ?? 'Dataset'}</strong>
+            <strong>{dataset?.name ?? 'Dataset'}</strong><>{dataset&&<DatasetConnections dataset={dataset}/>}</><DatasetRename id={datasetId} name={dataset?.name??''} token={token} readOnly={readOnly}/>
             <small>
               {dataset?.kind ?? '—'} · {pendingChanges?'saving':status}
             </small>
@@ -2066,6 +2069,7 @@ export function DatasetSheet({
         </button>
       </header>
 
+      {!readOnly && deletedColumns.length>0 && <details className="sheet-deleted-columns"><summary>Удалённые колонки ({deletedColumns.length}) — восстановить</summary><p>Восстанавливаются исходный ID поля, значения существующих строк, формулы и оформление. Последнее действие также можно отменить через Ctrl+Z.</p>{deletedColumns.map(column=><button key={column.id} onClick={()=>restoreColumn(column.id)}>Восстановить «{column.name}»</button>)}</details>}
       <div className="dataset-sheet__formula-bar">
         <div className="dataset-sheet__formula-cell">
           {selectedCell && selectedColumn && selectedRow
