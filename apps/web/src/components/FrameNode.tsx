@@ -1,53 +1,10 @@
 import { CanvasNodeResizer } from './CanvasNodeResizer';
-import {
-  type NodeProps,
-} from '@xyflow/react';
-import { useBoardActions } from './BoardContext';
-
-export function FrameNode({
-  id,
-  data,
-  selected,
-}: NodeProps<any>) {
-  const { readOnly, updateNodeData } = useBoardActions();
-
-  return (
-    <div
-      className={`frame-node ${selected ? 'is-selected' : ''}`}
-    >
-      {!readOnly && (
-        <CanvasNodeResizer
-          minWidth={280}
-          minHeight={180}
-          isVisible={selected}
-        />
-      )}
-
-      <div className="frame-node__header">
-        <input
-          className="nodrag"
-          disabled={readOnly}
-          value={String(data?.title ?? '')}
-          placeholder="Название секции"
-          onChange={(event) =>
-            updateNodeData(id, {
-              title: event.target.value,
-            })
-          }
-        />
-      </div>
-
-      <textarea
-        className="frame-node__description nodrag"
-        disabled={readOnly}
-        value={String(data?.description ?? '')}
-        placeholder="Описание…"
-        onChange={(event) =>
-          updateNodeData(id, {
-            description: event.target.value,
-          })
-        }
-      />
-    </div>
-  );
+import { CanvasInlineText } from './CanvasInlineText';
+import { type NodeProps } from '@xyflow/react';
+export function FrameNode({ id, data, selected, type }: NodeProps<any>) {
+  return <div className={`frame-node ${type === 'group' ? 'group-node' : ''} ${selected ? 'is-selected' : ''}`}>
+    <CanvasNodeResizer minWidth={100} minHeight={80} isVisible={selected} />
+    <div className="frame-node__header"><CanvasInlineText id={id} field="title" value={String(data.title ?? '')} placeholder={type === 'group' ? 'Группа' : 'Секция'} multiline={false} /></div>
+    {type !== 'group' && <CanvasInlineText id={id} field="description" value={String(data.description ?? '')} placeholder="Описание…" className="frame-node__description" />}
+  </div>;
 }

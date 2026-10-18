@@ -7,7 +7,7 @@ export type CanvasObjectNode = {
 };
 
 const typeLabels: Record<string, string> = {
-  frame: 'Frame', table: 'Таблица', shape: 'Фигура', sticky: 'Стикер', text: 'Текст',
+  group: 'Группа', freehand: 'Штрих', frame: 'Frame', table: 'Таблица', shape: 'Фигура', sticky: 'Стикер', text: 'Текст',
   device: 'Устройство', template: 'Объект из шаблона', relationView: 'Представление связи',
 };
 const deviceLabels: Record<string, string> = {

@@ -1,6 +1,6 @@
 import type { CanvasAlignment, CanvasLayerAction } from './canvasGeometry';
 
-export type CanvasContextCommand = 'copy' | 'paste' | 'duplicate' | 'frame' | 'delete' |
+export type CanvasContextCommand = 'copy' | 'paste' | 'duplicate' | 'group' | 'ungroup' | 'attach' | 'detach' | 'frame' | 'delete' |
   'undo' | 'redo' | 'fit-selection' | 'fit-board' | 'align-menu' | 'layers-menu' | 'back' |
   `align:${CanvasAlignment}` | 'distribute:horizontal' | 'distribute:vertical' | `layer:${CanvasLayerAction}`;
 export type CanvasContextItem = { command: CanvasContextCommand; label: string; shortcut?: string; disabled?: boolean; danger?: boolean };
@@ -39,6 +39,10 @@ export function canvasContextItems(options: CanvasContextOptions, page: 'main' |
   if (!readOnly && count > 0) groups.push([
     { command: 'align-menu', label: 'Выровнять ›', disabled: busy || count < 2 },
     { command: 'layers-menu', label: 'Слои ›', disabled: busy },
+    { command: 'group', label: 'Группа', shortcut: 'Ctrl+G', disabled: busy || count < 2 },
+    { command: 'ungroup', label: 'Разгруппировать', shortcut: 'Ctrl+Shift+G', disabled: busy },
+    { command: 'attach', label: 'Прикрепить к Frame', disabled: busy },
+    { command: 'detach', label: 'Отсоединить от контейнера', disabled: busy },
     { command: 'frame', label: 'Во Frame', disabled: busy },
   ]);
   const navigation: CanvasContextItem[] = [{ command: 'fit-board', label: 'Показать всю доску', shortcut: 'Ctrl+0' }];

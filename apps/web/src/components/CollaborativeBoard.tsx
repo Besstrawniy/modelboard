@@ -23,6 +23,7 @@ import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { ChevronDown, Layers3, ClipboardPaste, Copy, Database, Eraser, Frame as FrameIcon, Grid3X3, Hand, LayoutDashboard, HelpCircle, Maximize2, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X, ZoomIn, ZoomOut } from 'lucide-react';
 import {
+  CanvasNodeStore,
   DEMO_BOARD_ID,
   DEMO_ROLES_DATASET_ID,
   DEMO_USERS_DATASET_ID,
@@ -63,6 +64,12 @@ import { TemplateNode } from './TemplateNode';
 import { RelationViewNode } from './RelationViewNode';
 import { WorkspaceSearch } from './WorkspaceSearch';
 import { FrameNode } from './FrameNode';
+import { FreehandNode } from './FreehandNode';
+import { CanvasProperties } from './CanvasProperties';
+import { createCanvasDemo } from '../lib/canvasDemo';
+import { snapCanvasGuides } from '../lib/canvasGuides';
+import { strokeCanvasNode, canvasNodeStroke } from '../lib/canvasStrokes';
+import { canvasDescendants, canvasSelectionRoots, containerId, enclosingCanvasFrame, moveCanvasDescendants } from '../lib/canvasHierarchy';
 import { useCanvasModifiers } from '../lib/useCanvasModifiers';
 import { appendFreehandPoint, eraserHitsStroke, freehandPath, prepareFreehandStroke } from '../lib/freehandGeometry';
 import { CanvasSelectionActions } from './CanvasSelectionActions';
@@ -70,7 +77,7 @@ import { CanvasContextMenu } from './CanvasContextMenu';
 import { CanvasObjectsPanel } from './CanvasObjectsPanel';
 import { canvasPasteOffset, selectCanvasContextTarget, type CanvasContextCommand } from '../lib/canvasContextMenu';
 import {
-  alignCanvasNodes, distributeCanvasNodes, includeCanvasFrameContents, reorderCanvasLayers,
+  alignCanvasNodes, distributeCanvasNodes, reorderCanvasLayers,
   canvasNodeSize, type CanvasAlignment, type CanvasDistribution, type CanvasLayerAction,
 } from '../lib/canvasGeometry';
 
@@ -89,7 +96,7 @@ type BoardClipboard = {
   edges: Edge[];
 };
 
-type ToolMode = 'select' | 'hand' | 'pen' | 'eraser';
+type ToolMode = 'select' | 'hand' | 'pen' | 'eraser' | 'shape' | 'text' | 'connector';
 
 type DrawingGesture = {
   pointerId: number;
@@ -97,8 +104,8 @@ type DrawingGesture = {
   zoom: number;
 } & ({ mode: 'pen'; stroke: FreehandStroke } | {
   mode: 'eraser'; lastPoint: FreehandPoint;
-  erased: Map<string, FreehandStroke>;
-  cache: Map<string, { stroke: FreehandStroke; geometry: ReturnType<typeof prepareFreehandStroke> }>;
+  erased: Map<string, Node>;
+  cache: Map<string, { stroke: Node; geometry: ReturnType<typeof prepareFreehandStroke> }>;
 });
 
 
@@ -115,11 +122,13 @@ const nodeTypes: any = {
   template: TemplateNode,
   relationView: RelationViewNode,
   frame: FrameNode,
+  group: FrameNode,
+  freehand: FreehandNode,
 };
 
 const nodeSize = canvasNodeSize;
 
-function seedDocument(nodesMap: Y.Map<any>, edgesMap: Y.Map<any>) {
+function seedDocument(nodesMap: CanvasNodeStore, edgesMap: Y.Map<any>) {
   const usersId = 'seed-users';
   const rolesId = 'seed-roles';
   const stickyId = 'seed-sticky';
@@ -168,7 +177,7 @@ function seedDocument(nodesMap: Y.Map<any>, edgesMap: Y.Map<any>) {
   } satisfies Edge);
 }
 
-function migrateKnownDemoNodes(nodesMap: Y.Map<any>) {
+function migrateKnownDemoNodes(nodesMap: CanvasNodeStore) {
   const users = nodesMap.get('seed-users') as Node | undefined;
   const roles = nodesMap.get('seed-roles') as Node | undefined;
 
@@ -207,7 +216,7 @@ function BoardInner({
   const readOnly = !canEditBoard(meta.role);
   const modifiers = useCanvasModifiers();
   const ydoc = useMemo(() => new Y.Doc(), [meta.id, session.user.id]);
-  const nodesMap = useMemo(() => ydoc.getMap<any>('nodes'), [ydoc]);
+  const nodesMap = useMemo(() => new CanvasNodeStore(ydoc), [ydoc]);
   const edgesMap = useMemo(() => ydoc.getMap<any>('edges'), [ydoc]);
   const strokesMap = useMemo(
     () => ydoc.getMap<FreehandStroke>('strokes'),
@@ -216,7 +225,7 @@ function BoardInner({
   const undoManager = useMemo(
     () =>
       new Y.UndoManager(
-        [nodesMap, edgesMap, strokesMap],
+        [nodesMap.type, edgesMap, strokesMap],
         { captureTimeout: 350 },
       ),
     [edgesMap, nodesMap, strokesMap],
@@ -225,6 +234,8 @@ function BoardInner({
   const pasteOffsetRef = useRef(0);
   const [nodes, setNodesState] = useState<Node[]>([]);
   const nodesRef = useRef<Node[]>([]);
+  const [guides, setGuides] = useState<{axis: 'x' | 'y'; value: number}[]>([]);
+  const groupResizeRef = useRef<{ id: string; root: Node; children: Node[] } | null>(null);
   const previewsRef = useRef(new Map<string, CanvasPreview>());
   // Event handlers and synchronous Yjs observers share the latest local state.
   // Document writes must stay outside React state updater functions.
@@ -234,7 +245,7 @@ function BoardInner({
     setNodesState(next);
   }, []);
   const [edges, setEdges] = useState<Edge[]>([]);
-  const [strokes, setStrokes] = useState<FreehandStroke[]>([]);
+
   const [draftStroke, setDraftStroke] =
     useState<FreehandStroke | null>(null);
   const [penColor, setPenColor] = useState('#344054');
@@ -262,11 +273,14 @@ function BoardInner({
   }, []);
   const frameDragRef = useRef<{
     frameId: string;
+    roots: Set<string>;
     startX: number;
     startY: number;
     positions: Map<string, { x: number; y: number }>;
   } | null>(null);
+  const [pendingChanges, setPendingChanges] = useState(0);
   const [status, setStatus] = useState('connecting');
+  const [synced, setSynced] = useState(false);
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
   const [presence, setPresence] = useState<Array<[number, PresenceState]>>([]);
   const [rf, setRf] = useState<ReactFlowInstance | null>(null);
@@ -279,10 +293,13 @@ function BoardInner({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [clipboard, setClipboard] = useState<BoardClipboard | null>(null);
+  const [trackpadMode, setTrackpadMode] = useState(() => localStorage.getItem('modelboard:trackpad') === 'true');
   const [snapToGrid, setSnapToGrid] = useState(() =>
     localStorage.getItem('modelboard:snap-to-grid') !== 'false',
   );
   const gridActive = snapToGrid && !modifiers.alt;
+  const insertionPointRef = useRef<{ x: number; y: number } | null>(null);
+  const connectorStartRef = useRef<string | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>('select');
   const [spacePressed, setSpacePressed] = useState(false);
   const [canvasHelpOpen, setCanvasHelpOpen] = useState(false);
@@ -375,7 +392,17 @@ function BoardInner({
       token: session.token,
       flushDelay: 40,
       onStatus: ({ status }) => setStatus(status),
-      onSynced: () => {
+      onAuthenticationFailed: () => { setStatus('error'); setSynced(false); },
+      onUnsyncedChanges: ({ number }) => setPendingChanges(number),
+      onSynced: ({ state }) => {
+        if (!state) return;
+        setSynced(true);
+        if (!readOnly && strokesMap.size) ydoc.transact(() => {
+          for (const stroke of strokesMap.values()) {
+            if (!nodesMap.has(stroke.id) && stroke.points.length) nodesMap.set(stroke.id, strokeCanvasNode(stroke));
+            strokesMap.delete(stroke.id);
+          }
+        });
         if (
           !readOnly &&
           meta.id === DEMO_BOARD_ID &&
@@ -407,13 +434,15 @@ function BoardInner({
     });
     setProvider(instance);
 
-    const syncNodes = () =>
+    const syncNodes = () => {
+      const stored = new Map(Array.from(nodesMap.values()).map((node: Node) => [node.id,node]));
+      for (const stroke of strokesMap.values()) if (!stored.has(stroke.id) && stroke.points.length) stored.set(stroke.id,strokeCanvasNode(stroke));
       setNodes((current) => reconcileCanvasNodes(
-        Array.from(nodesMap.values()) as Node[], current, previewsRef.current,
+        Array.from(stored.values()).map((node: Node) => ({ ...node, style: { ...node.style, '--canvas-rotation': `${Number(node.data.rotation ?? 0)}deg`, '--canvas-fill': node.data.fill, '--canvas-stroke': typeof node.data.stroke === 'string' ? node.data.stroke : undefined, '--canvas-color': node.data.color, '--canvas-font-size': node.data.fontSize ? `${node.data.fontSize}px` : undefined, opacity: Number(node.data.opacity ?? 100) / 100 } })) as Node[], current, previewsRef.current,
       ));
-    const syncEdges = () => setEdges(Array.from(edgesMap.values()));
-    const syncStrokes = () =>
-      setStrokes(Array.from(strokesMap.values()));
+    };
+    const syncEdges = () => setEdges((current) => { const selected = new Set(current.filter((edge) => edge.selected).map((edge) => edge.id)); return Array.from(edgesMap.values()).map((edge: Edge) => ({...edge,selected:selected.has(edge.id)})); });
+    const syncStrokes = syncNodes;
     nodesMap.observe(syncNodes);
     edgesMap.observe(syncEdges);
     strokesMap.observe(syncStrokes);
@@ -469,6 +498,7 @@ function BoardInner({
   }, [snapToGrid]);
 
   const clearSelection = useCallback(() => {
+    setEdges((current) => current.map((edge) => edge.selected ? {...edge,selected:false} : edge));
     setNodes((current) =>
       current.map((node) =>
         node.selected
@@ -483,7 +513,7 @@ function BoardInner({
   const copySelection = useCallback(() => {
     if (selectedNodeIds.length === 0) return;
 
-    const selected = new Set(selectedNodeIds);
+    const selected = canvasDescendants(nodes, new Set(selectedNodeIds));
     const sourceNodes = nodes
       .filter((node) => selected.has(node.id))
       .map((node) => {
@@ -567,6 +597,8 @@ function BoardInner({
             x: source.position.x + translation.x,
             y: source.position.y + translation.y,
           };
+          if (data.containerId) data.containerId = idMap.get(String(data.containerId));
+          if (source.type === 'freehand' && data.stroke && typeof data.stroke === 'object') data.stroke.id = id;
           clone.data = data;
           clone.selected = false;
 
@@ -604,7 +636,7 @@ function BoardInner({
 
       const ids = clonedNodes.map((node) => node.id);
 
-      requestAnimationFrame(() => {
+      {
         setNodes((current) =>
           current.map((node) => ({
             ...node,
@@ -615,7 +647,7 @@ function BoardInner({
         setSelectedNodeId(
           ids.length === 1 ? ids[0] : null,
         );
-      });
+      }
 
       return ids;
     },
@@ -648,7 +680,7 @@ function BoardInner({
       return;
     }
 
-    const selected = new Set(selectedNodeIds);
+    const selected = canvasDescendants(nodes, new Set(selectedNodeIds));
     const sourceNodes = nodes.filter((node) =>
       selected.has(node.id),
     );
@@ -672,9 +704,9 @@ function BoardInner({
   ]);
 
   const deleteSelection = useCallback(async () => {
-    if (readOnly || selectedNodeIds.length === 0) return;
+    if (readOnly || (selectedNodeIds.length === 0 && !edges.some((edge) => edge.selected))) return;
 
-    const selected = new Set(selectedNodeIds);
+    const selected = canvasDescendants(nodes, new Set(selectedNodeIds));
     const selectedNodes = nodes.filter((node) =>
       selected.has(node.id),
     );
@@ -695,14 +727,14 @@ function BoardInner({
 
     undoManager.stopCapturing();
     ydoc.transact(() => {
-      for (const nodeId of selectedNodeIds) {
+      for (const nodeId of selected) {
         nodesMap.delete(nodeId);
       }
 
       for (const edge of edgesMap.values()) {
         if (
           selected.has(edge.source) ||
-          selected.has(edge.target)
+          selected.has(edge.target) || edges.some((item) => item.id === edge.id && item.selected)
         ) {
           edgesMap.delete(edge.id);
         }
@@ -715,6 +747,7 @@ function BoardInner({
   }, [
     clearSelection,
     edgesMap,
+    edges,
     meta.id,
     nodes,
     nodesMap,
@@ -725,7 +758,7 @@ function BoardInner({
     ydoc,
   ]);
 
-  const wrapSelectionInFrame = useCallback(() => {
+  const wrapSelectionInFrame = useCallback((kind: 'frame' | 'group' = 'frame') => {
     if (
       readOnly ||
       selectedNodeIds.length === 0
@@ -736,7 +769,7 @@ function BoardInner({
     const selected = nodes.filter((node) =>
       selectedNodeIds.includes(node.id),
     );
-    if (selected.length === 0) return;
+    if (selected.length === 0 || (kind === 'group' && selected.length < 2)) return;
 
     const bounds = selected.reduce(
       (result, node) => {
@@ -785,7 +818,7 @@ function BoardInner({
 
     const frame: Node = {
       id: frameId,
-      type: 'frame',
+      type: kind,
       position: {
         x: bounds.left - paddingX,
         y: bounds.top - paddingTop,
@@ -801,44 +834,76 @@ function BoardInner({
           paddingTop +
           paddingBottom,
       },
-      zIndex: -10,
+      zIndex: Math.min(0, ...selected.map((node) => node.zIndex ?? 0)) - 1,
       data: {
-        title: 'Новая группа',
+        containerId: (() => { const roots=canvasSelectionRoots(nodes,new Set(selectedNodeIds)); const parent=roots[0] && containerId(roots[0]); return roots.every((node)=>containerId(node)===parent) ? parent : undefined; })(),
+        title: kind === 'group' ? 'Группа' : 'Секция',
         description: '',
       },
     };
 
     undoManager.stopCapturing();
-    nodesMap.set(frameId, frame);
+    ydoc.transact(() => {
+      nodesMap.set(frameId, frame);
+      for (const item of canvasSelectionRoots(nodes, new Set(selectedNodeIds))) {
+        const current = nodesMap.get(item.id);
+        if (current) nodesMap.set(item.id, { ...current, data: { ...current.data, containerId: frameId } });
+      }
+    });
     undoManager.stopCapturing();
     setSelectedNodeIds([frameId]);
     setSelectedNodeId(frameId);
 
-    requestAnimationFrame(() => {
+    {
       setNodes((current) =>
         current.map((node) => ({
           ...node,
           selected: node.id === frameId,
         })),
       );
-    });
+    }
   }, [
     nodes,
     nodesMap,
     readOnly,
     selectedNodeIds,
     undoManager,
+    ydoc,
   ]);
 
+
+  const changeContainer = useCallback((action: 'ungroup' | 'attach' | 'detach') => {
+    if (readOnly) return;
+    const current = nodesRef.current;
+    const selected = new Set(current.filter((node) => node.selected).map((node) => node.id));
+    const target = action === 'attach' ? enclosingCanvasFrame(current, selected) : undefined;
+    if (action === 'attach' && !target) { setDropError('Выделенные объекты должны целиком находиться внутри Frame.'); return; }
+    undoManager.stopCapturing();
+    ydoc.transact(() => {
+      for (const item of canvasSelectionRoots(current, selected)) {
+        const node = nodesMap.get(item.id) as Node | undefined;
+        if (!node) continue;
+        if (action === 'ungroup' && (node.type === 'group' || node.type === 'frame')) {
+          for (const child of Array.from(nodesMap.values()) as Node[]) {
+            if (containerId(child) === node.id) nodesMap.set(child.id, { ...child, data: { ...child.data, containerId: containerId(node) } });
+          }
+          nodesMap.delete(node.id);
+          for (const edge of Array.from(edgesMap.values())) if (edge.source === node.id || edge.target === node.id) edgesMap.delete(edge.id);
+        } else if (action !== 'ungroup') nodesMap.set(node.id, { ...node, data: { ...node.data, containerId: target?.id } });
+      }
+    });
+    undoManager.stopCapturing();
+  }, [edgesMap, nodesMap, readOnly, undoManager, ydoc]);
 
   const layoutSelection = useCallback((mode: CanvasAlignment | CanvasDistribution) => {
     if (readOnly || previewsRef.current.size > 0) return;
     const current = nodesRef.current;
-    const selected = new Set(current.filter((node) => node.selected).map((node) => node.id));
+    const requested = new Set(current.filter((node) => node.selected).map((node) => node.id));
+    const selected = new Set(canvasSelectionRoots(current,requested).map((node) => node.id));
     const positions = mode === 'horizontal' || mode === 'vertical'
       ? distributeCanvasNodes(current, selected, mode)
       : alignCanvasNodes(current, selected, mode);
-    const targets = includeCanvasFrameContents(current, positions, selected);
+    const targets = moveCanvasDescendants(current, positions);
     if (!targets.size) return;
     undoManager.stopCapturing();
     ydoc.transact(() => {
@@ -853,7 +918,7 @@ function BoardInner({
   const changeSelectionLayer = useCallback((action: CanvasLayerAction) => {
     if (readOnly || previewsRef.current.size > 0) return;
     const current = nodesRef.current;
-    const selected = new Set(current.filter((node) => node.selected).map((node) => node.id));
+    const selected = canvasDescendants(current, new Set(current.filter((node) => node.selected).map((node) => node.id)));
     const layers = reorderCanvasLayers(current, selected, action);
     if (!layers.size) return;
     undoManager.stopCapturing();
@@ -871,6 +936,7 @@ function BoardInner({
       setContextMenu(null);
       cancelDrawing();
       setSpacePressed(false);
+      connectorStartRef.current = null;
       if (next !== 'select') clearSelection();
       setToolMode(next);
     },
@@ -947,6 +1013,8 @@ function BoardInner({
       if (command === 'paste') await pasteClipboard(contextMenu?.flowPosition);
       else if (command === 'duplicate') await duplicateSelection();
       else if (command === 'frame') wrapSelectionInFrame();
+      else if (command === 'group') wrapSelectionInFrame('group');
+      else if (command === 'ungroup' || command === 'attach' || command === 'detach') changeContainer(command);
       else if (command === 'delete') await deleteSelection();
       else if (command === 'undo') undoManager.undo();
       else if (command === 'redo') undoManager.redo();
@@ -956,7 +1024,7 @@ function BoardInner({
     };
     void run().catch((error) => setDropError(error instanceof Error ? error.message : String(error)));
   }, [changeSelectionLayer, contextMenu, copySelection, deleteSelection, duplicateSelection, fitCanvas,
-    layoutSelection, pasteClipboard, readOnly, undoManager, wrapSelectionInFrame]);
+    layoutSelection, pasteClipboard, readOnly, undoManager, wrapSelectionInFrame, changeContainer]);
 
   const changeZoom = useCallback(
     (direction: 'in' | 'out' | 'reset') => {
@@ -1039,6 +1107,14 @@ function BoardInner({
           : (event.shiftKey ? 'back' : 'backward'));
         return;
       }
+      if (!readOnly && mod && key === 'g') {
+        event.preventDefault();
+        if (event.shiftKey) changeContainer('ungroup'); else wrapSelectionInFrame('group');
+        return;
+      }
+      if (!readOnly && (event.key === 'Delete' || event.key === 'Backspace')) {
+        event.preventDefault(); void deleteSelection(); return;
+      }
       if (!readOnly && mod && key === 'z') {
         event.preventDefault();
         if (drawingGestureRef.current) { cancelDrawing(); return; }
@@ -1101,6 +1177,12 @@ function BoardInner({
         activateTool('select');
       } else if (key === 'h') {
         activateTool('hand');
+      } else if (!readOnly && key === 's') {
+        activateTool('shape');
+      } else if (!readOnly && key === 't') {
+        activateTool('text');
+      } else if (!readOnly && key === 'c') {
+        activateTool('connector');
       } else if (!readOnly && key === 'p') {
         activateTool('pen');
       } else if (!readOnly && key === 'e') {
@@ -1134,6 +1216,9 @@ function BoardInner({
     };
   }, [
     activateTool,
+    changeContainer,
+    wrapSelectionInFrame,
+    deleteSelection,
     boardMenuOpen,
     canvasHelpOpen,
     cancelDrawing,
@@ -1174,7 +1259,37 @@ function BoardInner({
         (previewsRef.current.get(change.id)?.resizing && resizeState.get(change.id) !== false))
         ? { ...change, dragging: true } : change);
     const current = nodesRef.current;
-    const next = applyNodeChanges<Node>(gestureChanges, current);
+    let next = applyNodeChanges<Node>(gestureChanges, current);
+    const resized = gestureChanges.find((change) => change.type === 'dimensions' && change.resizing !== undefined);
+    const resizeTargets: Node[] = [];
+    if (resized && resized.type === 'dimensions') {
+      const root = current.find((node) => node.id === resized.id);
+      if (root?.type === 'group') {
+        if (!groupResizeRef.current) {
+          const ids = canvasDescendants(current, new Set([root.id]));
+          groupResizeRef.current = { id: root.id, root, children: current.filter((node) => node.id !== root.id && ids.has(node.id)) };
+        }
+        const snapshot = groupResizeRef.current;
+        const target = next.find((node) => node.id === root.id)!;
+        const sx = nodeSize(target, 'width', 1) / nodeSize(snapshot.root, 'width', 1);
+        const sy = nodeSize(target, 'height', 1) / nodeSize(snapshot.root, 'height', 1);
+        for (const child of snapshot.children) {
+          const existing = next.find((node) => node.id === child.id);
+          if (!existing) continue;
+          const width = nodeSize(child, 'width', 180) * sx, height = nodeSize(child, 'height', 90) * sy;
+          const updated = { ...existing, position: { x: target.position.x+(child.position.x-snapshot.root.position.x)*sx,
+            y: target.position.y+(child.position.y-snapshot.root.position.y)*sy }, width, height, measured: { width,height }, style: { ...existing.style,width,height } };
+          resizeTargets.push(updated);
+          previewsRef.current.set(child.id, { position: updated.position, width, height, measured: updated.measured, resizing: true });
+        }
+        const byId = new Map(resizeTargets.map((node) => [node.id,node]));
+        next = next.map((node) => byId.get(node.id) ?? node);
+        if (resized.resizing === false) {
+          for (const child of snapshot.children) previewsRef.current.delete(child.id);
+          groupResizeRef.current = null;
+        }
+      }
+    }
     for (const change of gestureChanges) {
       if (change.type === 'position' || change.type === 'dimensions') {
         const active = change.type === 'position' ? change.dragging : change.resizing;
@@ -1202,6 +1317,10 @@ function BoardInner({
     if (!persistent.length) return;
 
     ydoc.transact(() => {
+      if (resized?.type === 'dimensions' && resized.resizing === false) for (const local of resizeTargets) {
+        const shared = nodesMap.get(local.id);
+        if (shared) nodesMap.set(local.id, { ...shared, position: local.position, width: local.width, height: local.height, style: local.style });
+      }
       for (const change of persistent) {
         if (change.type === 'remove') nodesMap.delete(change.id);
         else if (change.type === 'add' || change.type === 'replace') {
@@ -1219,7 +1338,7 @@ function BoardInner({
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     if (readOnly) {
-      setNodes((current) => applyNodeChanges(changes.filter((c: any) => c.type === 'select'), current));
+      setNodes((current) => applyNodeChanges(changes.filter((c) => c.type === 'select' || (c.type === 'dimensions' && c.resizing === undefined && !c.setAttributes)), current));
       return;
     }
 
@@ -1245,18 +1364,19 @@ function BoardInner({
   ]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    if (readOnly) return;
-    setEdges((current) => {
-      const next = applyEdgeChanges(changes, current);
-      ydoc.transact(() => {
-        for (const change of changes as any[]) {
-          if (change.type === 'remove') edgesMap.delete(change.id);
-          if (change.type === 'add') edgesMap.set(change.item.id, change.item);
-        }
-      });
-      return next;
+    const allowed = readOnly ? changes.filter((change) => change.type === 'select') : changes;
+    setEdges((current) => applyEdgeChanges(allowed, current));
+    const persistent = allowed.filter((change) => change.type !== 'select');
+    if (!persistent.length || readOnly) return;
+    undoManager.stopCapturing();
+    ydoc.transact(() => {
+      for (const change of persistent) {
+        if (change.type === 'remove') edgesMap.delete(change.id);
+        if (change.type === 'add' || change.type === 'replace') edgesMap.set(change.item.id,change.item);
+      }
     });
-  }, [edgesMap, readOnly, ydoc]);
+    undoManager.stopCapturing();
+  }, [edgesMap, readOnly, ydoc, undoManager]);
 
   const onConnect = useCallback((connection: Connection) => {
     if (readOnly) return;
@@ -1294,9 +1414,10 @@ function BoardInner({
       markerEnd: { type: MarkerType.ArrowClosed },
       data: { relationType: 'VISUAL' },
     };
-    setEdges((current) => addEdge(edge, current));
+    undoManager.stopCapturing();
     edgesMap.set(edge.id, edge);
-  }, [edgesMap, nodesMap, readOnly]);
+    undoManager.stopCapturing();
+  }, [edgesMap, nodesMap, readOnly, undoManager]);
 
   const confirmRelation = useCallback(async (
     relationType: DatasetRelationType,
@@ -1339,8 +1460,37 @@ function BoardInner({
     if (readOnly) return;
     const current = nodesMap.get(nodeId) as Node | undefined;
     if (!current) return;
-    nodesMap.set(nodeId, { ...current, data: { ...(current.data as any), ...patch } });
-  }, [nodesMap, readOnly]);
+    undoManager.stopCapturing();
+    ydoc.transact(() => {
+      const data = { ...current.data, ...patch };
+      let updated: Node = { ...current,data };
+      if (['text','sticky'].includes(current.type ?? '') && (data.autoSize ?? current.type === 'text')) {
+        const fontSize=Number(data.fontSize??(current.type==='text'?22:16));
+        const width=nodeSize(current,'width',240);
+        const context=document.createElement('canvas').getContext('2d');
+        if(context) {
+          context.font=`${fontSize}px Inter, sans-serif`;
+          const lines=String(data.text??'').split('\n').reduce((count,line)=>count+Math.max(1,Math.ceil(context.measureText(line).width/Math.max(40,width-28))),0);
+          const height=Math.max(current.type==='sticky'?120:40,Math.ceil(lines*fontSize*1.45+28));
+          updated={...updated,height,measured:undefined,style:{...updated.style,height}};
+        }
+      }
+      nodesMap.set(nodeId, updated);
+      if (typeof patch.rotation === 'number' && (current.type === 'group' || current.type === 'frame')) {
+        const angle = (patch.rotation - Number(current.data.rotation ?? 0)) * Math.PI / 180;
+        const cx = current.position.x+nodeSize(current,'width',180)/2, cy=current.position.y+nodeSize(current,'height',90)/2;
+        const ids = canvasDescendants(nodesRef.current,new Set([nodeId]));
+        for (const id of ids) {
+          if (id === nodeId) continue;
+          const child=nodesMap.get(id) as Node | undefined; if (!child) continue;
+          const w=nodeSize(child,'width',180), h=nodeSize(child,'height',90);
+          const x=child.position.x+w/2-cx, y=child.position.y+h/2-cy;
+          nodesMap.set(id,{...child,position:{x:cx+x*Math.cos(angle)-y*Math.sin(angle)-w/2,y:cy+x*Math.sin(angle)+y*Math.cos(angle)-h/2},data:{...child.data,rotation:Number(child.data.rotation??0)+patch.rotation-Number(current.data.rotation??0)}});
+        }
+      }
+    });
+    undoManager.stopCapturing();
+  }, [nodesMap, readOnly, undoManager, ydoc]);
 
   const createBoundRowObject = useCallback(
     async (
@@ -1856,6 +2006,7 @@ function BoardInner({
     if (readOnly) return;
     const id = crypto.randomUUID();
     const center = position ?? viewportCenter();
+    undoManager.stopCapturing();
     nodesMap.set(id, {
       id,
       type: 'table',
@@ -1863,12 +2014,14 @@ function BoardInner({
       style: { width: 620, height: 300 },
       data: { datasetId },
     } satisfies Node);
-  }, [nodesMap, readOnly, viewportCenter]);
+    undoManager.stopCapturing();
+  }, [nodesMap, readOnly, viewportCenter, undoManager, setNodes]);
 
   const addNode = useCallback((type: string) => {
     if (readOnly) return;
     const id = crypto.randomUUID();
-    const center = viewportCenter();
+    const center = insertionPointRef.current ?? viewportCenter();
+    insertionPointRef.current = null;
 
     let node: Node;
 
@@ -1911,14 +2064,19 @@ function BoardInner({
         id,
         type,
         position: { x: center.x - 80, y: center.y - 20 },
-        data: { text: 'Текст' },
+        style: { width: 240, height: 60 },
+        data: { text: 'Текст', autoSize: true },
       };
     }
 
+    undoManager.stopCapturing();
     nodesMap.set(id, node);
+    undoManager.stopCapturing();
+    setNodes((current) => current.map((item) => ({ ...item, selected: item.id === id })));
+    setSelectedNodeIds([id]);
     setSelectedNodeId(id);
     setToolMode('select');
-  }, [nodesMap, readOnly, viewportCenter]);
+  }, [nodesMap, readOnly, viewportCenter, undoManager, setNodes]);
 
   const addDevice = useCallback((kind: DeviceKind) => {
     if (readOnly) return;
@@ -1926,6 +2084,7 @@ function BoardInner({
     const id = crypto.randomUUID();
     const center = viewportCenter();
 
+    undoManager.stopCapturing();
     nodesMap.set(id, {
       id,
       type: 'device',
@@ -1939,11 +2098,14 @@ function BoardInner({
         label: '',
       },
     } satisfies Node);
+    undoManager.stopCapturing();
 
+    setNodes((current)=>current.map((node)=>({...node,selected:node.id===id})));
+    setSelectedNodeIds([id]);
     setSelectedNodeId(id);
     setDevicesOpen(false);
     setToolMode('select');
-  }, [nodesMap, readOnly, viewportCenter]);
+  }, [nodesMap, readOnly, viewportCenter, undoManager, setNodes]);
 
   const addTemplateNode = useCallback((templateId: string) => {
     if (readOnly) return;
@@ -1956,6 +2118,7 @@ function BoardInner({
     const id = crypto.randomUUID();
     const center = viewportCenter();
 
+    undoManager.stopCapturing();
     nodesMap.set(id, {
       id,
       type: 'template',
@@ -1972,7 +2135,10 @@ function BoardInner({
         label: template.name,
       },
     } satisfies Node);
+    undoManager.stopCapturing();
 
+    setNodes((current)=>current.map((node)=>({...node,selected:node.id===id})));
+    setSelectedNodeIds([id]);
     setSelectedNodeId(id);
     setDevicesOpen(false);
     setToolMode('select');
@@ -1981,22 +2147,26 @@ function BoardInner({
     readOnly,
     viewportCenter,
     workspaceTemplates,
+    undoManager,
+    setNodes,
   ]);
 
   const eraseGestureSegment = useCallback((gesture: Extract<DrawingGesture, { mode: 'eraser' }>, point: FreehandPoint) => {
-    for (const stroke of strokesMap.values()) {
+    for (const node of nodesMap.values() as Iterable<Node>) {
+      const stroke = canvasNodeStroke(node);
+      if (!stroke) continue;
       if (gesture.erased.has(stroke.id)) continue;
       let cached = gesture.cache.get(stroke.id);
-      if (!cached || cached.stroke !== stroke) {
-        cached = { stroke, geometry: prepareFreehandStroke(stroke, gesture.zoom) };
+      if (!cached || cached.stroke !== node) {
+        cached = { stroke: node, geometry: prepareFreehandStroke(stroke, gesture.zoom) };
         gesture.cache.set(stroke.id, cached);
       }
       if (eraserHitsStroke(stroke, gesture.lastPoint, point, gesture.zoom, cached.geometry)) {
-        gesture.erased.set(stroke.id, stroke);
+        gesture.erased.set(stroke.id, node);
       }
     }
     gesture.lastPoint = point;
-  }, [strokesMap]);
+  }, [nodesMap]);
 
   const beginDrawing = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (readOnly || !rf || event.button !== 0 || !event.isPrimary || drawingGestureRef.current ||
@@ -2038,66 +2208,33 @@ function BoardInner({
     else eraseGestureSegment(gesture, point);
     undoManager.stopCapturing();
     ydoc.transact(() => {
-      if (gesture.mode === 'pen') strokesMap.set(gesture.stroke.id, gesture.stroke);
+      if (gesture.mode === 'pen') nodesMap.set(gesture.stroke.id, strokeCanvasNode(gesture.stroke));
       else for (const [id, original] of gesture.erased) {
         // Keep a stroke that another participant changed during the gesture.
-        if (strokesMap.get(id) === original) strokesMap.delete(id);
+        if (nodesMap.get(id) === original) nodesMap.delete(id);
       }
     });
     undoManager.stopCapturing();
     cancelDrawing();
-  }, [cancelDrawing, eraseGestureSegment, readOnly, rf, strokesMap, undoManager, ydoc]);
+  }, [cancelDrawing, eraseGestureSegment, readOnly, rf, nodesMap, undoManager, ydoc]);
 
   const cancelPointerDrawing = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (drawingGestureRef.current?.pointerId === event.pointerId) cancelDrawing();
   }, [cancelDrawing]);
 
   const handleFrameDragStart = useCallback(
-    (_event: any, frame: Node) => {
+    (_event: any, frame: Node, draggedNodes: Node[]) => {
       if (readOnly) return;
       undoManager.stopCapturing();
-      if (frame.type !== 'frame') {
-        frameDragRef.current = null;
-        return;
-      }
-
-      const left = frame.position.x;
-      const top = frame.position.y;
-      const right = left + nodeSize(frame, 'width', 720);
-      const bottom = top + nodeSize(frame, 'height', 460);
-      const selected = new Set(selectedNodeIds);
-
-      const nodeIds = nodes
-        .filter((candidate) => {
-          if (
-            candidate.id === frame.id ||
-            candidate.type === 'frame' ||
-            selected.has(candidate.id)
-          ) {
-            return false;
-          }
-
-          const centerX =
-            candidate.position.x +
-            nodeSize(candidate, 'width', 180) / 2;
-          const centerY =
-            candidate.position.y +
-            nodeSize(candidate, 'height', 90) / 2;
-
-          return (
-            centerX >= left &&
-            centerX <= right &&
-            centerY >= top &&
-            centerY <= bottom
-          );
-        })
-        .map((candidate) => candidate.id);
-
+      const roots = new Set([frame.id, ...(draggedNodes ?? []).map((node) => node.id)]);
+      const descendants = canvasDescendants(nodes, roots);
+      const nodeIds = nodes.filter((node) => descendants.has(node.id) && !roots.has(node.id)).map((node) => node.id);
       frameDragRef.current = {
         frameId: frame.id,
+        roots,
         startX: frame.position.x,
         startY: frame.position.y,
-        positions: new Map(nodes.filter((node) => nodeIds.includes(node.id))
+        positions: new Map(nodes.filter((node) => nodeIds.includes(node.id) || roots.has(node.id))
           .map((node) => [node.id, { ...node.position }])),
       };
     },
@@ -2108,7 +2245,21 @@ function BoardInner({
     (_event: any, frame: Node) => {
       const state = frameDragRef.current;
       if (!state || state.frameId !== frame.id) return;
-
+      if (!modifiers.alt) {
+        const moving = canvasDescendants(nodesRef.current, state.roots);
+        const snapped = snapCanvasGuides(frame, nodesRef.current.filter((node) => !moving.has(node.id)), rf?.getZoom() ?? 1);
+        const delta = { x: snapped.position.x-frame.position.x, y: snapped.position.y-frame.position.y };
+        frame = { ...frame, position: snapped.position };
+        setGuides(snapped.guides);
+        setNodes((current) => current.map((node) => {
+          if (state.roots.has(node.id)) {
+            const position = { x: node.position.x+delta.x,y:node.position.y+delta.y };
+            previewsRef.current.set(node.id,{position,dragging:true});
+            return { ...node,position };
+          }
+          return node;
+        }));
+      } else setGuides([]);
       const dx = frame.position.x - state.startX;
       const dy = frame.position.y - state.startY;
       setNodes((current) => current.map((node) => {
@@ -2119,7 +2270,7 @@ function BoardInner({
         return { ...node, position, dragging: true };
       }));
     },
-    [setNodes],
+    [setNodes, modifiers.alt, rf, selectedNodeIds],
   );
 
   const handleFrameDragStop = useCallback((_event: any, frame: Node) => {
@@ -2138,6 +2289,7 @@ function BoardInner({
       });
     }
     frameDragRef.current = null;
+    setGuides([]);
     undoManager.stopCapturing();
   }, [handleFrameDrag, nodesMap, undoManager, ydoc]);
 
@@ -2263,6 +2415,13 @@ function BoardInner({
     ? nodes.find((node) => node.id === selectedNodeId) ?? null
     : null;
 
+  const handleSelectionChange = useCallback(() => {
+    // React Flow can report the previous render after a programmatic selection.
+    const ids = nodesRef.current.filter((node) => node.selected).map((node) => node.id);
+    setSelectedNodeIds((current) => current.length === ids.length && current.every((id, i) => id === ids[i]) ? current : ids);
+    setSelectedNodeId(ids.length === 1 ? ids[0] : null);
+  }, []);
+
   const remotePresence = presence.filter(([clientId, state]) =>
     clientId !== ydoc.clientID && state.user,
   );
@@ -2290,6 +2449,13 @@ function BoardInner({
     >
       <div
         className={`board-shell${objectsOpen ? ' has-objects-panel' : ''}`}
+        onPointerDownCapture={(event) => {
+          const target = event.target;
+          if (!(target instanceof Element) || !target.closest('.react-flow__pane, .react-flow__node') ||
+            target.closest('input, textarea, select, [contenteditable="true"]')) return;
+          const active = document.activeElement;
+          if (active instanceof HTMLElement && active.matches('input, textarea, select, [contenteditable="true"]')) active.blur();
+        }}
         onPointerMove={onPointerMove}
         onPointerLeave={() => provider?.awareness?.setLocalStateField('cursor', null)}
         onDragEnter={handleDragOver}
@@ -2520,14 +2686,14 @@ function BoardInner({
                 {state.user?.name.slice(0, 1).toUpperCase()}
               </span>
             ))}
-            <span className={`connection-status connection-status--${status}`}>{status}</span>
+            <span className={`connection-status connection-status--${status}`}>{status === 'connected' && pendingChanges > 0 ? 'saving' : status}</span>
             <span className="role-pill">{meta.role}</span>
           </div>
         </header>
 
         <ReactFlow
           className={`canvas-flow canvas-flow--${effectiveToolMode}`}
-          nodes={nodes}
+          nodes={nodes.filter((node) => !erasedStrokeIds.has(node.id))}
           edges={edges}
           nodeTypes={nodeTypes}
           onInit={(instance) => {
@@ -2552,25 +2718,34 @@ function BoardInner({
             const datasetId = (node.data as any)?.datasetId as string | undefined;
             if (datasetId) setSheetTarget({ datasetId });
           }}
-          onSelectionChange={({ nodes: selectedNodes }) => {
-            const ids = selectedNodes.map((node) => node.id);
-            setSelectedNodeIds(ids);
-            setSelectedNodeId(
-              ids.length === 1 ? ids[0] : null,
-            );
+          onSelectionChange={handleSelectionChange}
+          onPaneClick={(event) => {
+            if ((effectiveToolMode === 'shape' || effectiveToolMode === 'text') && !readOnly && rf) {
+              insertionPointRef.current = rf.screenToFlowPosition({ x:event.clientX, y:event.clientY });
+              addNode(effectiveToolMode);
+            } else if (effectiveToolMode === 'select') clearSelection();
           }}
-          onPaneClick={effectiveToolMode === 'select' ? clearSelection : undefined}
+          onNodeClick={(_, node) => {
+            if (effectiveToolMode !== 'connector' || readOnly) return;
+            const start = connectorStartRef.current;
+            if (!start) { connectorStartRef.current = node.id; setDropError('Выберите второй объект для соединения. Esc — отмена.'); }
+            else if (start !== node.id) {
+              onConnect({ source: start, target: node.id, sourceHandle: null, targetHandle: null });
+              setDropError(''); activateTool('select');
+            }
+          }}
           nodesDraggable={!readOnly && effectiveToolMode === 'select'}
           nodesConnectable={!readOnly && effectiveToolMode === 'select'}
-          elementsSelectable={effectiveToolMode === 'select'}
+          elementsSelectable={effectiveToolMode === 'select' || effectiveToolMode === 'connector'}
           multiSelectionKeyCode="Shift"
           elevateNodesOnSelect={false}
-          deleteKeyCode={readOnly || effectiveToolMode !== 'select' || sheetTarget || workspaceSearchOpen ? null : ['Backspace', 'Delete']}
+          deleteKeyCode={null}
           fitView
+          fitViewOptions={{ maxZoom: 1 }}
           snapToGrid={gridActive}
           snapGrid={[22, 22]}
-          panOnScroll={false}
-          zoomOnScroll
+          panOnScroll={trackpadMode}
+          zoomOnScroll={!trackpadMode}
           zoomOnPinch
           zoomOnDoubleClick={false}
           selectionOnDrag={effectiveToolMode === 'select'}
@@ -2605,6 +2780,8 @@ function BoardInner({
               >
                 <ZoomIn size={16} />
               </button>
+              <button title="Тачпад: прокрутка перемещает доску, pinch меняет масштаб" aria-pressed={trackpadMode}
+                onClick={() => { setTrackpadMode((value) => { localStorage.setItem('modelboard:trackpad', String(!value)); return !value; }); }}>Тачпад</button>
               <span className="canvas-navigation__separator" />
               <button
                 title="Вписать все объекты (Ctrl+0)"
@@ -2706,8 +2883,9 @@ function BoardInner({
               <button onClick={() => setDatasetsOpen(true)} title="Данные"><Database size={19} /></button>
               <button onClick={() => setDevicesOpen(true)} title="Инфраструктура"><Network size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('sticky')} title="Стикер"><StickyNote size={19} /></button>
-              <button disabled={readOnly} onClick={() => addNode('text')} title="Текст"><Type size={19} /></button>
-              <button disabled={readOnly} onClick={() => addNode('shape')} title="Фигура"><Shapes size={19} /></button>
+<button className={toolMode === 'text' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('text')} title="Текст"><Type size={19} /></button>
+<button className={toolMode === 'shape' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('shape')} title="Фигура"><Shapes size={19} /></button>
+              <button className={toolMode === 'connector' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('connector')} title="Коннектор (C)"><Network size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('frame')} title="Frame / секция"><FrameIcon size={19} /></button>
               <div className="toolbar-separator" />
               <button onClick={() => setCommentsOpen(true)} title="Комментарии"><MessageSquare size={19} /></button>
@@ -2715,11 +2893,14 @@ function BoardInner({
           </Panel>
 
           <ViewportPortal>
+            <svg className="canvas-guides" aria-hidden="true">{guides.map((guide) => <line key={guide.axis} stroke="#e75bae" strokeWidth={1 / canvasZoom}
+              x1={guide.axis === 'x' ? guide.value : -100000} x2={guide.axis === 'x' ? guide.value : 100000}
+              y1={guide.axis === 'y' ? guide.value : -100000} y2={guide.axis === 'y' ? guide.value : 100000} />)}</svg>
             <svg
               className="freehand-layer"
               aria-hidden="true"
             >
-              {[...strokes.filter((stroke) => !erasedStrokeIds.has(stroke.id)), ...(draftStroke ? [draftStroke] : [])].map(
+              {(draftStroke ? [draftStroke] : []).map(
                 (stroke) => (
                   <path
                     key={stroke.id}
@@ -2770,7 +2951,11 @@ function BoardInner({
             onDistribute={layoutSelection}
             onLayer={changeSelectionLayer}
             onDuplicate={() => void duplicateSelection()}
-            onFrame={wrapSelectionInFrame}
+            onFrame={() => wrapSelectionInFrame()}
+            onGroup={() => wrapSelectionInFrame('group')}
+            onUngroup={() => changeContainer('ungroup')}
+            onAttach={() => changeContainer('attach')}
+            onDetach={() => changeContainer('detach')}
             onDelete={() => void deleteSelection()}
           />
         )}
@@ -2874,6 +3059,9 @@ function BoardInner({
                     <div><dt>Постоянный режим руки</dt><dd>H</dd></div>
                     <div><dt>Рука на время удержания</dt><dd>Пробел</dd></div>
                     <div><dt>Перо / ластик</dt><dd>P / E</dd></div>
+                    <div><dt>Фигура / текст / коннектор</dt><dd>S / T / C</dd></div>
+                    <div><dt>Группа / разгруппировать</dt><dd>Ctrl+G / Ctrl+Shift+G</dd></div>
+                    <div><dt>Редактировать текст / отменить</dt><dd>Двойной клик / Esc</dd></div>
                     <div><dt>Выход из инструмента</dt><dd>Esc</dd></div>
                     <div><dt>Дополнительное выделение</dt><dd>Shift + клик</dd></div>
                     <div><dt>Resize с сохранением пропорций</dt><dd>Shift + маркер размера</dd></div>
@@ -2973,6 +3161,15 @@ function BoardInner({
           />
         )}
 
+        {(!synced || status === 'disconnected') && <div className="canvas-sync-banner" role="status">{status === 'disconnected' ? 'Связь потеряна. Изменения остаются локально до восстановления соединения; не закрывайте вкладку.' : status === 'error' ? 'Не удалось подключиться к совместной доске. Проверьте доступ и перезагрузите страницу.' : 'Загрузка доски и подключение…'}</div>}
+        {synced && nodes.length === 0 && <div className="canvas-empty">Добавьте фигуру, текст или устройство слева. V — выбор, H — рука, P — перо, ? — справка.
+          {!readOnly && <button onClick={() => {
+            if (nodesMap.size) return;
+            const demo=createCanvasDemo(); undoManager.stopCapturing();
+            ydoc.transact(()=>{ for(const node of demo.nodes) nodesMap.set(node.id,node); for(const edge of demo.edges) edgesMap.set(edge.id,edge); });
+            undoManager.stopCapturing(); requestAnimationFrame(()=>requestAnimationFrame(()=>void rf?.fitView({padding:0.2,maxZoom:1})));
+          }}>Пример инфраструктуры</button>}
+        </div>}
         {readOnly && (
           <div className="readonly-banner">
             Board editing is read-only for {meta.role}. Comments follow the role policy.
@@ -2981,7 +3178,7 @@ function BoardInner({
 
         {objectsOpen && (
           <CanvasObjectsPanel
-            nodes={nodes}
+            nodes={nodes.filter((node) => !erasedStrokeIds.has(node.id))}
             readOnly={readOnly}
             busy={nodes.some((node) => node.dragging || node.resizing)}
             onSelect={selectPanelObjects}
@@ -2991,7 +3188,18 @@ function BoardInner({
           />
         )}
 
-        {selectedNode && (
+        {!readOnly && edges.some((edge) => edge.selected) && <div className="canvas-properties" aria-label="Оформление коннектора">
+          {edges.filter((edge) => edge.selected).slice(0,1).map((edge) => {
+            const change = (patch: Partial<Edge>) => { const current=edgesMap.get(edge.id); if (!current) return; undoManager.stopCapturing(); edgesMap.set(edge.id,{...current,...patch}); undoManager.stopCapturing(); };
+            return <div key={edge.id}>
+              <label>Подпись <input aria-label="Подпись коннектора" defaultValue={typeof edge.label === 'string' ? edge.label : ''} onBlur={(event) => change({label:event.target.value})} /></label>
+              <label>Линия <select aria-label="Маршрут коннектора" value={edge.type ?? 'smoothstep'} onChange={(event) => change({type:event.target.value})}><option value="smoothstep">С изгибом</option><option value="straight">Прямая</option><option value="default">Кривая</option></select></label>
+              <label>Стрелка <input aria-label="Стрелка коннектора" type="checkbox" checked={Boolean(edge.markerEnd)} onChange={(event) => change({markerEnd:event.target.checked ? {type:MarkerType.ArrowClosed} : undefined})} /></label>
+            </div>;
+          })}
+        </div>}
+        {selectedNode && !readOnly && <CanvasProperties node={selectedNode} onChange={(patch) => updateNodeData(selectedNode.id, patch)} />}
+        {selectedNode && !['frame','group','freehand','text','sticky'].includes(selectedNode.type ?? '') && (
           <InspectorPanel
             node={selectedNode}
             boardId={meta.id}

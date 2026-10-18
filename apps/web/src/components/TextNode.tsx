@@ -1,14 +1,8 @@
 import { type NodeProps } from '@xyflow/react';
-import { useBoardActions } from './BoardContext';
-
-export function TextNode({ id, data }: NodeProps<any>) {
-  const { readOnly, updateNodeData } = useBoardActions();
-  return (
-    <input
-      className="text-node nodrag"
-      disabled={readOnly}
-      value={String(data.text ?? '')}
-      onChange={(event) => updateNodeData(id, { text: event.target.value })}
-    />
-  );
+import { CanvasInlineText } from './CanvasInlineText';
+import { CanvasNodeResizer } from './CanvasNodeResizer';
+export function TextNode({ id, data, selected }: NodeProps<any>) {
+  return <div className="text-node"><CanvasNodeResizer minWidth={100} minHeight={40} isVisible={selected} />
+    <CanvasInlineText id={id} value={String(data.text ?? '')} placeholder="Текст" />
+  </div>;
 }

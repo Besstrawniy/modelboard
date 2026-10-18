@@ -3586,3 +3586,44 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 @media (max-width: 1000px) {
   .board-shell.has-objects-panel > .inspector-panel { display: none; }
 }
+
+/* Shared canvas editing, ownership and object presentation. */
+.react-flow__node > :first-child { transform: rotate(var(--canvas-rotation, 0deg)); transform-origin: center; }
+.canvas-inline-text { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.4em; width: 100%; color: var(--canvas-color, inherit); font-size: var(--canvas-font-size, inherit); }
+.canvas-inline-text:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
+.canvas-inline-editor { width: 100%; min-height: 3em; resize: none; border: 1px solid #818cf8; background: rgba(255,255,255,.9); color: var(--canvas-color, inherit); font: inherit; font-size: var(--canvas-font-size, inherit); line-height: 1.4; outline: none; }
+.shape-node { background: var(--canvas-fill, white); border-color: var(--canvas-stroke, #7d8794); }
+.shape-node .canvas-inline-text { text-align: center; padding: 12px; }
+.shape-node--ellipse { border-radius: 50%; }
+.shape-node--diamond { clip-path: polygon(50% 0,100% 50%,50% 100%,0 50%); border-radius: 0; }
+.sticky-node { background: var(--canvas-fill, #fff1a8); }
+.text-node { width: 100%; height: 100%; }
+.frame-node { background: var(--canvas-fill, rgba(246,248,251,.42)); border-color: var(--canvas-stroke, #aeb6c2); }
+.group-node { background: transparent; border: 1px dashed #9aa5b5; border-radius: 4px; }
+.group-node .frame-node__header { position: relative; top: 0; height: 26px; font-size: 11px; background: #f3f5fa; }
+.freehand-node { width: 100%; height: 100%; }
+.freehand-node svg { display: block; overflow: visible; }
+.canvas-properties { position: absolute; z-index: 16; left: 84px; bottom: 94px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; max-width: calc(100% - 440px); padding: 10px 14px; border: 1px solid #d9dfeb; border-radius: 10px; background: white; box-shadow: 0 4px 16px #18274418; font-size: 12px; }
+.canvas-properties label { display: flex; gap: 4px; align-items: center; }
+.canvas-properties input[type=number] { width: 55px; }
+.canvas-properties input[type=color] { width: 26px; height: 24px; padding: 1px; }
+.canvas-sync-banner, .canvas-empty { position: absolute; z-index: 8; top: 90px; left: 50%; transform: translateX(-50%); max-width: 65%; padding: 12px 20px; background: #fff; color: #475467; border: 1px solid #d9dfeb; border-radius: 10px; pointer-events: none; font-size: 13px; }
+.selection-actions { max-width: calc(100% - 130px); flex-wrap: wrap; }
+.canvas-rotation-handle { position: absolute; left: calc(50% - 11px); top: -32px; width: 22px; height: 22px; border: 1px solid #818cf8; border-radius: 50%; background: white; color: #4f46e5; cursor: grab; display: grid; place-items: center; padding: 0; touch-action: none; }
+@media (max-width: 1000px) { .canvas-properties { max-width: calc(100% - 110px); bottom: 140px; } }
+.canvas-guides { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+.frame-node { overflow: visible; }
+.canvas-flow--shape, .canvas-flow--text, .canvas-flow--connector { cursor: crosshair; }
+.selection-actions { left: 250px; transform: none; max-width: calc(100% - 610px); }
+@media (max-width:1000px) { .selection-actions { left: 82px; bottom: 65px; max-width: calc(100% - 100px); } }
+.canvas-empty button { display: block; pointer-events: auto; margin: 10px auto 0; padding: 8px 12px; border: 1px solid #d9dfeb; border-radius: 7px; background: #f4f5ff; cursor: pointer; }
+/* Container backgrounds must not intercept clicks intended for owned objects. */
+.react-flow__node-frame, .react-flow__node-group { pointer-events: none !important; }
+.frame-node__header, .frame-node__description,
+.frame-node .react-flow__resize-control, .frame-node .canvas-rotation-handle { pointer-events: auto; }
+.shape-node--diamond { clip-path: none; border-color: transparent; background: transparent; position: relative; }
+.shape-node__outline { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.shape-node--diamond > .canvas-inline-text, .shape-node--diamond > .canvas-inline-editor { position: relative; max-width: 70%; }
+.react-flow__node-freehand { pointer-events: none !important; }
+.freehand-node path { pointer-events: stroke; }
+.freehand-node .react-flow__resize-control, .freehand-node .canvas-rotation-handle { pointer-events: auto; }

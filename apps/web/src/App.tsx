@@ -152,6 +152,7 @@ export default function App() {
   return (
     <>
       <CollaborativeBoard
+        key={`${meta.id}:${session.user.id}`}
         meta={meta}
         session={session}
         boards={boards}

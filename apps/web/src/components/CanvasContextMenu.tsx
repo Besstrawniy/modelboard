@@ -65,6 +65,7 @@ export function CanvasContextMenu({ x, y, options, onCommand, onClose }: {
           if (key === 'c') shortcut = 'copy';
           else if (key === 'v') shortcut = 'paste';
           else if (key === 'd') shortcut = 'duplicate';
+          else if (key === 'g') shortcut = event.shiftKey ? 'ungroup' : 'group';
           else if (key === 'z') shortcut = event.shiftKey ? 'redo' : 'undo';
           else if (key === 'y') shortcut = 'redo';
           else if (key === '0') shortcut = 'fit-board';

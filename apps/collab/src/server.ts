@@ -4,7 +4,7 @@ import { Logger } from '@hocuspocus/extension-logger';
 import jwt from 'jsonwebtoken';
 import * as Y from 'yjs';
 import { pool, query, runMigrations } from '@modelboard/db';
-import { canEditBoard, type WorkspaceRole } from '@modelboard/shared';
+import { normalizeCanvasNodes, canEditBoard, type WorkspaceRole } from '@modelboard/shared';
 
 const jwtSecret = process.env.JWT_SECRET ?? 'change-me-in-production';
 const port = Number(process.env.COLLAB_PORT ?? 1234);
@@ -47,7 +47,8 @@ async function projectBoardStateToPostgres(
 
     const objects = Array.from(
       doc.getMap<any>('nodes').values(),
-    ).map((node: any) => {
+    ).map((stored: any) => {
+      const node = stored instanceof Y.Map ? stored.toJSON() : stored;
       const data =
         node?.data && typeof node.data === 'object'
           ? node.data
@@ -497,9 +498,13 @@ async function startCollaborationServer() {
   debounce: 1000,
   maxDebounce: 5000,
 
+  async afterLoadDocument({ documentName, document }) {
+    if (parseDocumentName(documentName)?.kind === 'board') normalizeCanvasNodes(document);
+  },
+
   async onAuthenticate(data) {
     const { token, documentName } = data;
-    const connection = (data as any).connection;
+    const connection = data.connectionConfig;
     if (!token) throw new Error('Missing auth token');
 
     const payload = jwt.verify(token, jwtSecret) as {

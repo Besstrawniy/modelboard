@@ -1,3 +1,4 @@
+import { CanvasInlineText } from './CanvasInlineText';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type {
@@ -104,7 +105,7 @@ export function DeviceGlyph({
 }
 
 export function DeviceNode({ id, data, selected }: NodeProps<any>) {
-  const { readOnly, sessionToken, updateNodeData } = useBoardActions();
+  const { readOnly, sessionToken } = useBoardActions();
   const device = data as DeviceNodeData;
   const kind = device.deviceKind ?? 'SERVER';
   const binding = device.binding as ObjectBindingRecord | null | undefined;
@@ -161,15 +162,7 @@ export function DeviceNode({ id, data, selected }: NodeProps<any>) {
             {subtitle && <small>{subtitle}</small>}
           </>
         ) : (
-          <input
-            className="nodrag"
-            disabled={readOnly}
-            value={device.label ?? ''}
-            placeholder={DEVICE_LABELS[kind]}
-            onChange={(event) =>
-              updateNodeData(id, { label: event.target.value })
-            }
-          />
+          <CanvasInlineText id={id} field="label" value={String(device.label ?? '')} placeholder={DEVICE_LABELS[kind]} />
         )}
       </div>
 

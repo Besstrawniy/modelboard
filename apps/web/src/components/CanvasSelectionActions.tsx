@@ -23,7 +23,7 @@ const layerActions = [
   ['back', 'На задний план', 'Ctrl+Shift+['],
 ] as const;
 
-export function CanvasSelectionActions({ count, busy, onAlign, onDistribute, onLayer, onDuplicate, onFrame, onDelete }: {
+export function CanvasSelectionActions({ count, busy, onAlign, onDistribute, onLayer, onDuplicate, onFrame, onGroup, onUngroup, onAttach, onDetach, onDelete }: {
   count: number;
   busy: boolean;
   onAlign: (mode: CanvasAlignment) => void;
@@ -31,6 +31,10 @@ export function CanvasSelectionActions({ count, busy, onAlign, onDistribute, onL
   onLayer: (mode: CanvasLayerAction) => void;
   onDuplicate: () => void;
   onFrame: () => void;
+  onGroup: () => void;
+  onUngroup: () => void;
+  onAttach: () => void;
+  onDetach: () => void;
   onDelete: () => void;
 }) {
   const [open, setOpen] = useState<'align' | 'layers' | null>(null);
@@ -109,6 +113,10 @@ export function CanvasSelectionActions({ count, busy, onAlign, onDistribute, onL
         )}
       </div>
       <button disabled={busy} onClick={onDuplicate} title="Дублировать (Ctrl+D)"><Copy size={14} /> Дублировать</button>
+      <button disabled={busy || count < 2} onClick={onGroup} title="Группа (Ctrl+G)">Группа</button>
+      <button disabled={busy} onClick={onUngroup} title="Разгруппировать (Ctrl+Shift+G)">Разгруппировать</button>
+      <button disabled={busy} onClick={onAttach} title="Прикрепить к окружающему Frame">Прикрепить</button>
+      <button disabled={busy} onClick={onDetach} title="Отсоединить от контейнера">Отсоединить</button>
       <button disabled={busy} onClick={onFrame} title="Создать Frame вокруг выделения"><FrameIcon size={14} /> Во Frame</button>
       <button disabled={busy} className="is-danger" onClick={onDelete} title="Удалить выделение"><Trash2 size={14} /> Удалить</button>
     </div>

@@ -291,3 +291,5 @@ export type FreehandStroke = {
 // Backward-compatible aliases while v0.1 code is being migrated.
 export type TableColumn = DatasetColumn;
 export type TableRow = DatasetRow;
+
+export { CanvasNodeStore, normalizeCanvasNodes } from './canvasDocument.js';
