@@ -848,6 +848,27 @@ export class AppController {
   }
 
   @UseGuards(AuthGuard)
+  @Post('datasets/:id/rows/batch')
+  async createDatasetRows(@Param('id') datasetId:string,@Req() req:any,@Body() body:{rows:Array<{id:string;values?:DatasetRow['values']}>}) {
+    const access=await getDatasetAccess(datasetId,req.user.sub);
+    if(!access||!canEditBoard(access.role))throw new ForbiddenException();
+    if(!Array.isArray(body.rows)||body.rows.length<1||body.rows.length>10000)throw new BadRequestException('Expected 1–10000 rows');
+    const ids=new Set<string>();
+    for(const row of body.rows){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.id)||ids.has(row.id))throw new BadRequestException('Row IDs must be unique UUIDs');ids.add(row.id);}
+    const columns=await query<{id:string}>('SELECT id FROM dataset_columns WHERE dataset_id=$1',[datasetId]);
+    const columnIds=new Set(columns.rows.map(column=>column.id));
+    for(const row of body.rows)if(Object.keys(row.values??{}).some(id=>!columnIds.has(id)))throw new BadRequestException('Unknown column');
+    const client=await pool.connect();
+    try {
+      await client.query('BEGIN');await client.query('SELECT id FROM datasets WHERE id=$1 FOR UPDATE',[datasetId]);
+      const first=Number((await client.query('SELECT COALESCE(MAX(ordinal),-1)+1 AS ordinal FROM dataset_rows WHERE dataset_id=$1',[datasetId])).rows[0].ordinal);
+      const rows=body.rows.map((row,index)=>({id:row.id,ordinal:first+index,values:row.values??{}}));
+      await client.query(`INSERT INTO dataset_rows(id,dataset_id,ordinal,values) SELECT id,$1,ordinal,values FROM jsonb_to_recordset($2::jsonb) AS data(id uuid,ordinal integer,values jsonb)`,[datasetId,JSON.stringify(rows)]);
+      await client.query('COMMIT');return rows;
+    }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+  }
+
+  @UseGuards(AuthGuard)
   @Post('datasets/:id/rows')
   async createDatasetRow(
     @Param('id') datasetId: string,

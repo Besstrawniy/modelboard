@@ -23,11 +23,13 @@ function patchMap(target: Y.Map<any>, before: RecordValue, next: RecordValue) {
 }
 
 /** Upgrade persisted v0.1 objects before clients start editing them. No IDs or content change. */
-export function normalizeCanvasNodes(document: Y.Doc) {
-  const nodes = document.getMap<any>('nodes');
+export function normalizeCanvasNodes(document: Y.Doc, mapNames = ['nodes']) {
+  for (const name of mapNames) {
+  const nodes = document.getMap<any>(name);
   document.transact(() => {
     for (const [id, node] of nodes) if (!(node instanceof Y.Map) && record(node)) nodes.set(id,sharedValue(node));
-  }, 'canvas-schema');
+  }, 'record-schema');
+  }
 }
 
 /** Plain snapshots for React, field-level CRDT writes for concurrent independent edits. */
@@ -35,8 +37,8 @@ export class CanvasNodeStore {
   readonly type: Y.Map<any>;
   private cache = new Map<string, any>();
   private listeners = new Set<() => void>();
-  constructor(document: Y.Doc) {
-    this.type = document.getMap('nodes');
+  constructor(document: Y.Doc, name = 'nodes') {
+    this.type = document.getMap(name);
     this.type.observeDeep((events) => {
       for (const event of events) {
         if (event.target === this.type) for (const key of (event as Y.YMapEvent<any>).keysChanged) this.cache.delete(key);
@@ -65,6 +67,7 @@ export class CanvasNodeStore {
     });
   }
   delete(id: string) { this.cache.delete(id); return this.type.delete(id); }
+  *entries(): IterableIterator<[string, any]> { for (const id of this.type.keys()) yield [id,this.get(id)]; }
   *values(): IterableIterator<any> { for (const id of this.type.keys()) yield this.get(id); }
   observe(listener: () => void) { this.listeners.add(listener); }
   unobserve(listener: () => void) { this.listeners.delete(listener); }

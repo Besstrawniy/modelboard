@@ -116,6 +116,9 @@ export type DatasetCellFormat = {
   background?: string | null;
   numberFormat?: 'GENERAL' | 'NUMBER' | 'PERCENT' | 'RUB' | 'USD' | 'EUR' | null;
   decimalPlaces?: number | null;
+  color?: string | null;
+  underline?: boolean;
+  wrap?: boolean;
 };
 
 export type DatasetSnapshot = DatasetMeta & {
@@ -123,6 +126,8 @@ export type DatasetSnapshot = DatasetMeta & {
   rows: DatasetRow[];
   formulas: DatasetFormula[];
   formats: DatasetCellFormat[];
+  views?: DatasetView[];
+  rules?: DatasetConditionalRule[];
 };
 
 export type ConvertDatasetColumnInput = {
@@ -146,6 +151,7 @@ export type TableNodeData = {
   datasetId: string;
   view?: {
     maxRows?: number;
+    savedViewId?: string;
     labelOverride?: string;
   };
 };
@@ -293,3 +299,19 @@ export type TableColumn = DatasetColumn;
 export type TableRow = DatasetRow;
 
 export { CanvasNodeStore, normalizeCanvasNodes } from './canvasDocument.js';
+
+export type DatasetView = {
+  id: string; name: string; query: string;
+  filters: Record<string, string>;
+  sort: Array<{columnId: string; direction: 'asc' | 'desc'}>;
+  hiddenColumns: string[]; columnWidths: Record<string, number>;
+  frozenRows: number; frozenColumns: number;
+};
+export type DatasetConditionalRule = {
+  id: string; columnId: string;
+  operator: 'gt' | 'lt' | 'eq' | 'contains' | 'empty' | 'between' | 'duplicate';
+  value: string; value2?: string; background: string; color?: string;
+};
+export { CanvasNodeStore as SharedRecordStore } from './canvasDocument.js';
+
+export { evaluateDatasetFormulas } from './formulas.js';

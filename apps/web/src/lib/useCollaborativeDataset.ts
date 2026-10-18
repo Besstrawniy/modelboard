@@ -1,3 +1,4 @@
+import { SharedRecordStore, type DatasetView, type DatasetConditionalRule } from '@modelboard/shared';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import type {
   DatasetColumn,
@@ -25,29 +26,33 @@ export function useCollaborativeDataset(
   token: string,
   readOnly: boolean,
 ) {
-  const ydoc = useMemo(() => new Y.Doc(), [datasetId]);
+  const ydoc = useMemo(() => new Y.Doc(), [datasetId, token]);
   const metaMap = useMemo(() => ydoc.getMap<any>('meta'), [ydoc]);
-  const columnsMap = useMemo(() => ydoc.getMap<DatasetColumn>('columns'), [ydoc]);
-  const rowsMap = useMemo(() => ydoc.getMap<DatasetRow>('rows'), [ydoc]);
+  const columnsMap = useMemo(() => new SharedRecordStore(ydoc, 'columns'), [ydoc]);
+  const rowsMap = useMemo(() => new SharedRecordStore(ydoc, 'rows'), [ydoc]);
   const formulasMap = useMemo(
     () => ydoc.getMap<DatasetFormula>('formulas'),
     [ydoc],
   );
   const formatsMap = useMemo(
-    () => ydoc.getMap<DatasetCellFormat>('formats'),
+    () => new SharedRecordStore(ydoc, 'formats'),
     [ydoc],
   );
+  const viewsMap = useMemo(() => new SharedRecordStore(ydoc,'views'),[ydoc]);
+  const rulesMap = useMemo(() => new SharedRecordStore(ydoc,'rules'),[ydoc]);
   const undoManager = useMemo(
     () =>
       new Y.UndoManager(
-        [columnsMap, rowsMap, formulasMap, formatsMap],
+        [columnsMap.type, rowsMap.type, formulasMap, formatsMap.type, viewsMap.type, rulesMap.type],
         { captureTimeout: 500 },
       ),
-    [columnsMap, formatsMap, formulasMap, rowsMap],
+    [columnsMap, formatsMap, formulasMap, rowsMap, viewsMap, rulesMap],
   );
   const initialSyncDone = useRef(false);
   const [historyTick, setHistoryTick] = useState(0);
   const [status, setStatus] = useState('connecting');
+  const [storageError,setStorageError]=useState('');
+  const [pendingChanges, setPendingChanges] = useState(0);
   const [synced, setSynced] = useState(false);
   const [dataset, setDataset] = useState<DatasetState | null>(null);
 
@@ -66,6 +71,7 @@ export function useCollaborativeDataset(
     setDataset(null);
     setStatus('connecting');
     setSynced(false);
+    setStorageError('');
 
     const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
     const provider = new HocuspocusProvider({
@@ -75,7 +81,11 @@ export function useCollaborativeDataset(
       token,
       flushDelay: 40,
       onStatus: ({ status }) => setStatus(status),
-      onSynced: () => {
+      onAuthenticationFailed: () => { setStatus('error'); setSynced(false); },
+      onStateless: ({payload}) => {try{const message=JSON.parse(payload);if(message.type==='dataset-storage')setStorageError(message.saved?'':message.message);}catch{/* Ignore unrelated stateless messages. */}},
+      onUnsyncedChanges: ({ number }) => setPendingChanges(number),
+      onSynced: ({ state }) => {
+        if (!state) return;
         setSynced(true);
 
         if (!initialSyncDone.current) {
@@ -86,73 +96,20 @@ export function useCollaborativeDataset(
       },
     });
 
-    let recalculating = false;
-
     const sync = () => {
-      const columns = Array.from(columnsMap.values()).sort(
-        (a, b) => a.ordinal - b.ordinal,
-      );
-      const rows = Array.from(rowsMap.values()).sort(
-        (a, b) => a.ordinal - b.ordinal,
-      );
+      const columns = Array.from(columnsMap.values()).sort((a,b) => a.ordinal-b.ordinal || a.id.localeCompare(b.id));
+      const rows = Array.from(rowsMap.values()).sort((a,b) => a.ordinal-b.ordinal || a.id.localeCompare(b.id));
       const formulas = Array.from(formulasMap.values());
       const formats = Array.from(formatsMap.values());
-
-      if (!recalculating && formulas.length > 0) {
-        recalculating = true;
-        const calculated = evaluateDatasetFormulas(
-          rows,
-          columns,
-          formulas,
-        );
-
-        const updates: Array<{
-          row: DatasetRow;
-          columnId: string;
-          value: DatasetCellValue;
-        }> = [];
-
-        for (const formula of formulas) {
-          const key = formulaKey(
-            formula.rowId,
-            formula.columnId,
-          );
-          const value = calculated.get(key) ?? null;
-          const row = rowsMap.get(formula.rowId);
-
-          if (
-            row &&
-            row.values[formula.columnId] !== value
-          ) {
-            updates.push({
-              row,
-              columnId: formula.columnId,
-              value,
-            });
-          }
+      const calculated = evaluateDatasetFormulas(rows,columns,formulas);
+      const freshRows = rows.map((row) => {
+        const values = {...row.values};
+        for(const column of columns) {
+          const key=formulaKey(row.id,column.id);
+          if(calculated.has(key)) values[column.id]=calculated.get(key) ?? null;
         }
-
-        if (updates.length > 0) {
-          ydoc.transact(() => {
-            for (const update of updates) {
-              rowsMap.set(update.row.id, {
-                ...update.row,
-                values: {
-                  ...update.row.values,
-                  [update.columnId]: update.value,
-                },
-              });
-            }
-          });
-        }
-
-        recalculating = false;
-      }
-
-      const freshRows = Array.from(rowsMap.values()).sort(
-        (a, b) => a.ordinal - b.ordinal,
-      );
-
+        return {...row,values};
+      });
       const id = String(metaMap.get('id') ?? datasetId);
       const workspaceId = String(metaMap.get('workspaceId') ?? '');
       const name = String(metaMap.get('name') ?? 'Loading dataset…');
@@ -167,29 +124,40 @@ export function useCollaborativeDataset(
         rows: freshRows,
         formulas,
         formats,
+        views: Array.from(viewsMap.values()),
+        rules: Array.from(rulesMap.values()),
         status,
       });
     };
 
-    metaMap.observe(sync);
-    columnsMap.observe(sync);
-    rowsMap.observe(sync);
-    formulasMap.observe(sync);
-    formatsMap.observe(sync);
+    let queued=false, disposed=false;
+    const scheduleSync=()=>{if(queued)return;queued=true;queueMicrotask(()=>{queued=false;if(!disposed)sync();});};
+    metaMap.observe(scheduleSync);
+    columnsMap.observe(scheduleSync);
+    rowsMap.observe(scheduleSync);
+    formulasMap.observe(scheduleSync);
+    formatsMap.observe(scheduleSync);
+    viewsMap.observe(scheduleSync);
+    rulesMap.observe(scheduleSync);
     sync();
 
     return () => {
-      metaMap.unobserve(sync);
-      columnsMap.unobserve(sync);
-      rowsMap.unobserve(sync);
-      formulasMap.unobserve(sync);
-      formatsMap.unobserve(sync);
+      disposed=true;
+      metaMap.unobserve(scheduleSync);
+      columnsMap.unobserve(scheduleSync);
+      rowsMap.unobserve(scheduleSync);
+      formulasMap.unobserve(scheduleSync);
+      formatsMap.unobserve(scheduleSync);
+      viewsMap.unobserve(scheduleSync);
+      rulesMap.unobserve(scheduleSync);
       provider.destroy();
       ydoc.destroy();
     };
   }, [
     columnsMap,
     datasetId,
+    viewsMap,
+    rulesMap,
     formatsMap,
     formulasMap,
     metaMap,
@@ -230,6 +198,7 @@ export function useCollaborativeDataset(
       const row = rowsMap.get(rowId);
       if (!row) return;
 
+      undoManager.stopCapturing();
       ydoc.transact(() => {
         formulasMap.delete(formulaKey(rowId, columnId));
         rowsMap.set(rowId, {
@@ -240,6 +209,7 @@ export function useCollaborativeDataset(
           },
         });
       });
+      undoManager.stopCapturing();
     },
     [formulasMap, readOnly, rowsMap, ydoc],
   );
@@ -248,6 +218,7 @@ export function useCollaborativeDataset(
     (rowId: string, columnId: string, expression: string) => {
       if (readOnly) return;
 
+      undoManager.stopCapturing();
       formulasMap.set(
         formulaKey(rowId, columnId),
         {
@@ -263,7 +234,9 @@ export function useCollaborativeDataset(
   const clearFormula = useCallback(
     (rowId: string, columnId: string) => {
       if (readOnly) return;
+      undoManager.stopCapturing();
       formulasMap.delete(formulaKey(rowId, columnId));
+      undoManager.stopCapturing();
     },
     [formulasMap, readOnly],
   );
@@ -275,11 +248,15 @@ export function useCollaborativeDataset(
         columnId: string;
         value?: DatasetCellValue;
         formulaExpression?: string | null;
+        format?: Partial<DatasetCellFormat> | null;
       }>,
+      addedRows: DatasetRow[] = [],
     ) => {
       if (readOnly || writes.length === 0) return;
 
+      undoManager.stopCapturing();
       ydoc.transact(() => {
+        for(const row of addedRows)rowsMap.set(row.id,row);
         for (const write of writes) {
           const row = rowsMap.get(write.rowId);
           if (!row) continue;
@@ -289,6 +266,7 @@ export function useCollaborativeDataset(
             write.columnId,
           );
 
+          if(write.format!==undefined){if(write.format===null)formatsMap.delete(key);else formatsMap.set(key,{...write.format,rowId:write.rowId,columnId:write.columnId});}
           if (write.formulaExpression !== undefined) {
             if (write.formulaExpression === null) {
               formulasMap.delete(key);
@@ -312,6 +290,7 @@ export function useCollaborativeDataset(
           }
         }
       });
+      undoManager.stopCapturing();
     },
     [formulasMap, readOnly, rowsMap, ydoc],
   );
@@ -328,6 +307,7 @@ export function useCollaborativeDataset(
     ) => {
       if (readOnly || cells.length === 0) return;
 
+      undoManager.stopCapturing();
       ydoc.transact(() => {
         for (const cell of cells) {
           const key = formulaKey(
@@ -361,7 +341,7 @@ export function useCollaborativeDataset(
             Boolean(next.italic) ||
             Boolean(next.align) ||
             Boolean(next.background) ||
-            Boolean(next.numberFormat) ||
+            Boolean(next.numberFormat) || Boolean(next.color) || Boolean(next.wrap) || Boolean(next.underline) ||
             next.decimalPlaces !== undefined;
 
           if (meaningful) {
@@ -371,6 +351,7 @@ export function useCollaborativeDataset(
           }
         }
       });
+      undoManager.stopCapturing();
     },
     [formatsMap, readOnly, ydoc],
   );
@@ -393,6 +374,7 @@ export function useCollaborativeDataset(
         },
       );
 
+      undoManager.stopCapturing();
       ydoc.transact(() => {
         for (const [id, current] of columnsMap.entries()) {
           if (current.ordinal >= column.ordinal) {
@@ -405,6 +387,7 @@ export function useCollaborativeDataset(
         columnsMap.set(column.id, column);
       });
 
+      undoManager.stopCapturing();
       return column;
     },
     [
@@ -428,6 +411,7 @@ export function useCollaborativeDataset(
         name,
       );
       columnsMap.set(column.id, column);
+      undoManager.stopCapturing();
       return column;
     },
     [columnsMap, datasetId, readOnly, token],
@@ -448,6 +432,7 @@ export function useCollaborativeDataset(
         { dataType, values },
       );
 
+      undoManager.stopCapturing();
       ydoc.transact(() => {
         columnsMap.set(result.column.id, result.column);
 
@@ -464,6 +449,7 @@ export function useCollaborativeDataset(
         }
       });
 
+      undoManager.stopCapturing();
       return result;
     },
     [
@@ -486,8 +472,10 @@ export function useCollaborativeDataset(
         token,
       );
 
+      undoManager.stopCapturing();
       ydoc.transact(() => {
         columnsMap.delete(columnId);
+        for(const [key,formula] of formulasMap.entries())if(formula.columnId===columnId)formulasMap.delete(key);
 
         for (const [key, format] of formatsMap.entries()) {
           if (format.columnId === columnId) {
@@ -506,6 +494,7 @@ export function useCollaborativeDataset(
         }
       });
 
+      undoManager.stopCapturing();
       return true;
     },
     [
@@ -532,6 +521,7 @@ export function useCollaborativeDataset(
         afterRowId,
       );
 
+      undoManager.stopCapturing();
       ydoc.transact(() => {
         for (const [id, current] of rowsMap.entries()) {
           if (current.ordinal >= row.ordinal) {
@@ -544,6 +534,7 @@ export function useCollaborativeDataset(
         rowsMap.set(row.id, row);
       });
 
+      undoManager.stopCapturing();
       return row;
     },
     [
@@ -561,6 +552,7 @@ export function useCollaborativeDataset(
 
       await api.deleteDatasetRow(datasetId, rowId, token);
 
+      undoManager.stopCapturing();
       ydoc.transact(() => {
         rowsMap.delete(rowId);
 
@@ -577,6 +569,7 @@ export function useCollaborativeDataset(
         }
       });
 
+      undoManager.stopCapturing();
       return true;
     },
     [
@@ -590,12 +583,28 @@ export function useCollaborativeDataset(
     ],
   );
 
+  const prepareRows=useCallback(async(rows:Array<{id:string;values?:DatasetRow['values']}>)=>{if(readOnly||!datasetId)return [];return api.createDatasetRows(datasetId,token,rows);},[readOnly,datasetId,token]);
+  const reorder = useCallback((kind:'rows'|'columns', id:string, toIndex:number) => {
+    if(readOnly)return;
+    const map=kind==='rows'?rowsMap:columnsMap;
+    const items=Array.from(map.values()).sort((a,b)=>a.ordinal-b.ordinal||a.id.localeCompare(b.id));
+    const from=items.findIndex(item=>item.id===id);if(from<0)return;
+    const [item]=items.splice(from,1);items.splice(Math.max(0,Math.min(items.length,toIndex)),0,item);
+    undoManager.stopCapturing();ydoc.transact(()=>items.forEach((entry,ordinal)=>{if(entry.ordinal!==ordinal)map.set(entry.id,{...entry,ordinal});}));undoManager.stopCapturing();
+  },[rowsMap,columnsMap,readOnly,undoManager,ydoc]);
+  const saveView=useCallback((view:DatasetView)=>{if(readOnly)return;undoManager.stopCapturing();viewsMap.set(view.id,view);undoManager.stopCapturing();},[viewsMap,readOnly,undoManager]);
+  const deleteView=useCallback((id:string)=>{if(readOnly)return;undoManager.stopCapturing();viewsMap.delete(id);undoManager.stopCapturing();},[viewsMap,readOnly,undoManager]);
+  const saveRule=useCallback((rule:DatasetConditionalRule)=>{if(readOnly)return;undoManager.stopCapturing();rulesMap.set(rule.id,rule);undoManager.stopCapturing();},[rulesMap,readOnly,undoManager]);
+  const deleteRule=useCallback((id:string)=>{if(readOnly)return;undoManager.stopCapturing();rulesMap.delete(id);undoManager.stopCapturing();},[rulesMap,readOnly,undoManager]);
   void historyTick;
 
   return {
     dataset,
     status,
+    pendingChanges,
+    storageError,
     synced,
+    reorder,saveView,deleteView,saveRule,deleteRule,prepareRows,
     canUndo: undoManager.undoStack.length > 0,
     canRedo: undoManager.redoStack.length > 0,
     undo: () => undoManager.undo(),

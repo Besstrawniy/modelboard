@@ -41,6 +41,7 @@ const authHeaders = (token: string) => ({
 });
 
 export const api = {
+  createDatasetRows:(datasetId:string,token:string,rows:Array<{id:string;values?:DatasetRow['values']}>)=>json<DatasetRow[]>(`/datasets/${datasetId}/rows/batch`,{method:'POST',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify({rows})}),
   devUsers: () => json<DevUser[]>('/auth/dev-users'),
 
   devLogin: (userId: string) =>

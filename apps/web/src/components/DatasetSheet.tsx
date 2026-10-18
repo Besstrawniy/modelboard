@@ -1,3 +1,5 @@
+import { SpreadsheetTools } from './SpreadsheetTools';
+import { parseSheetInput, parseSheetTsv, sheetTsv, matchesSheetFilter, sheetConditionalFormat, sheetSelectionSummary } from '../lib/spreadsheetModel';
 import {
   ArrowDown,
   ArrowUp,
@@ -35,7 +37,7 @@ import type {
   DatasetFormula,
   DatasetRow,
 } from '@modelboard/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
 import { useBoardActions } from './BoardContext';
 import { displayCellValue } from '../lib/cellFormatting';
@@ -45,9 +47,11 @@ import {
   formatFormula,
   formulaKey,
   translateFormulaForCopy,
+  retargetFormula,
 } from '../lib/formulas';
 
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 1000000;
+const ROW_HEIGHT = 36;
 
 type SortState = {
   columnId: string;
@@ -87,25 +91,8 @@ function compareValues(a: DatasetCellValue, b: DatasetCellValue) {
   });
 }
 
-function normalizeInput(value: string, column: DatasetColumn): DatasetCellValue {
-  if (value === '') return null;
-
-  if (column.dataType === 'BOOLEAN') {
-    if (value.toLowerCase() === 'true') return true;
-    if (value.toLowerCase() === 'false') return false;
-    return value;
-  }
-
-  if (column.dataType === 'INTEGER' && /^-?\d+$/.test(value)) {
-    return Number.parseInt(value, 10);
-  }
-
-  if (column.dataType === 'NUMBER') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : value;
-  }
-
-  return value;
+function normalizeInput(value:string,column:DatasetColumn):DatasetCellValue {
+  return value.trim().startsWith('=')?value:parseSheetInput(value,column);
 }
 
 type ConversionFailure = {
@@ -240,7 +227,7 @@ function convertCellValue(
   };
 }
 
-function SheetCell({
+export function SheetCell({
   row,
   column,
   readOnly,
@@ -248,6 +235,7 @@ function SheetCell({
   onFocus,
   onNavigate,
   formulaActive = false,
+  formulaText,
   format,
 }: {
   row: DatasetRow;
@@ -257,19 +245,25 @@ function SheetCell({
   onFocus?: () => void;
   onNavigate?: (
     direction: 'up' | 'down' | 'left' | 'right',
+    extend?: boolean,
   ) => void;
   formulaActive?: boolean;
+  formulaText?: string;
   format?: DatasetCellFormat;
 }) {
   const raw = row.values[column.id];
   const [editDraft, setEditDraft] = useState<string | null>(null);
+  const [editError,setEditError]=useState('');
+  const original=useRef('');
+  const cancelled=useRef(false);
 
   if (column.dataType === 'BOOLEAN' && !formulaActive) {
     return (
       <select
         className="dataset-sheet__cell-editor"
         style={{
-          fontWeight: format?.bold ? 700 : undefined,
+          color: format?.color || undefined, textDecoration: format?.underline ? 'underline' : undefined, whiteSpace: format?.wrap ? 'pre-wrap' : undefined,
+        fontWeight: format?.bold ? 700 : undefined,
           fontStyle: format?.italic ? 'italic' : undefined,
           textAlign:
             format?.align === 'CENTER'
@@ -318,9 +312,13 @@ function SheetCell({
   }
 
   return (
-    <input
+    <textarea
+      rows={1}
+      wrap={format?.wrap ? "soft" : "off"}
+      data-editing={editDraft !== null}
       className="dataset-sheet__cell-editor"
       style={{
+        color: format?.color || undefined, textDecoration: format?.underline ? 'underline' : undefined, whiteSpace: format?.wrap ? 'pre-wrap' : undefined,
         fontWeight: format?.bold ? 700 : undefined,
         fontStyle: format?.italic ? 'italic' : undefined,
         textAlign:
@@ -334,25 +332,33 @@ function SheetCell({
         backgroundColor:
           format?.background || undefined,
       }}
-      disabled={readOnly}
+      readOnly={readOnly}
+      aria-invalid={Boolean(editError)}
+      title={editError}
       value={
         editDraft !== null
           ? editDraft
           : displayCellValue(raw, format)
       }
       onFocus={() => {
-        setEditDraft(raw === null || raw === undefined ? '' : String(raw));
+        original.current=formulaText ?? (raw === null || raw === undefined ? '' : String(raw));
+        cancelled.current=false;
         onFocus?.();
       }}
+      onDoubleClick={() => {if(!readOnly)setEditDraft(original.current);}}
       onBlur={() => {
-        if (editDraft !== null) {
-          onChange(normalizeInput(editDraft, column));
-          setEditDraft(null);
-        }
+        if(cancelled.current){setEditDraft(null);return;}
+        try{if(editDraft!==null&&editDraft!==original.current)onChange(normalizeInput(editDraft,column));setEditDraft(null);setEditError('');}
+        catch(error){setEditError(error instanceof Error?error.message:String(error));}
       }}
       onKeyDown={(event) => {
+        if(event.shiftKey && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();onNavigate?.(({ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'} as const)[event.key as 'ArrowUp'],true);return;}
+        if(event.key==='F2'){event.preventDefault();if(!readOnly)setEditDraft(original.current);return;}
+        if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelled.current=true;setEditDraft(null);setEditError('');event.currentTarget.blur();return;}
+
         if (event.key === 'Enter' || event.key === 'Tab') {
           event.preventDefault();
+          if(!onNavigate)event.currentTarget.blur();
           onNavigate?.(
             event.key === 'Tab'
               ? event.shiftKey
@@ -394,15 +400,7 @@ function SheetCell({
           onNavigate?.('right');
         }
       }}
-      onChange={(event) => {
-        const next = event.target.value;
-        setEditDraft(next);
-        if (
-          column.dataType !== 'INTEGER' &&
-          column.dataType !== 'NUMBER'
-        ) {
-          onChange(normalizeInput(next, column));
-        }
+      onChange={(event) => {setEditDraft(event.target.value);setEditError('');
       }}
     />
   );
@@ -441,11 +439,18 @@ export function DatasetSheet({
     deleteColumn,
     addRow,
     deleteRow,
+    reorder,saveView,deleteView,saveRule,deleteRule,pendingChanges,storageError,prepareRows,
   } = useCollaborativeDataset(
     datasetId,
     token,
     readOnly,
   );
+  const [currentView,setCurrentView]=useState('');
+  const [hiddenColumns,setHiddenColumns]=useState<string[]>([]);
+  const [secondarySort,setSecondarySort]=useState<Array<{columnId:string;direction:'asc'|'desc'}>>([]);
+  const viewportRef=useRef<HTMLDivElement>(null);
+  const [scrollTop,setScrollTop]=useState(0);
+  const clipboardRef=useRef<{text:string;cut:boolean;cells:Array<Array<{rowId:string;columnId:string;value:DatasetCellValue;expression?:string;format?:DatasetCellFormat}>>}|null>(null);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortState>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -545,7 +550,7 @@ export function DatasetSheet({
   ).some((value) => value.trim() !== '');
 
   useEffect(() => {
-    setPage(0);
+    setPage(0);setScrollTop(0);if(viewportRef.current)viewportRef.current.scrollTop=0;
   }, [
     datasetId,
     query,
@@ -605,6 +610,7 @@ export function DatasetSheet({
     );
 
     if (rowIndex >= 0) {
+      if(viewportRef.current)viewportRef.current.scrollTop=Math.max(0,(rowIndex-3)*ROW_HEIGHT);
       setPage(Math.floor(rowIndex / PAGE_SIZE));
     }
   }, [
@@ -615,6 +621,39 @@ export function DatasetSheet({
     sort?.columnId,
     sort?.direction,
   ]);
+
+  const visibleRows = useMemo(() => {
+    if (!dataset) return [];
+
+    const normalizedQuery = query.trim().toLowerCase();
+
+    let result = normalizedQuery
+      ? dataset.rows.filter((row) =>
+          dataset.columns.some((column) =>
+            String(row.values[column.id] ?? '')
+              .toLowerCase()
+              .includes(normalizedQuery),
+          ),
+        )
+      : [...dataset.rows];
+
+    const activeFilters = Object.entries(
+      columnFilters,
+    ).filter(([, value]) => value.trim() !== '');
+
+    if (activeFilters.length > 0) {
+      result = result.filter((row) =>
+        activeFilters.every(([columnId, filter]) =>
+          matchesSheetFilter(row.values[columnId],filter),
+        ),
+      );
+    }
+
+    const sorts=[...(sort?[sort]:[]),...secondarySort];
+    if(sorts.length)result=result.sort((a,b)=>{for(const item of sorts){const order=compareValues(a.values[item.columnId],b.values[item.columnId]);if(order)return item.direction==='asc'?order:-order;}return a.ordinal-b.ordinal;});
+
+    return result;
+  }, [columnFilters, dataset, query, sort,secondarySort]);
 
   const formulaByCell = useMemo(
     () =>
@@ -641,12 +680,12 @@ export function DatasetSheet({
   const rowIndexById = useMemo(
     () =>
       new Map(
-        (dataset?.rows ?? []).map((row, index) => [
+        visibleRows.map((row, index) => [
           row.id,
           index,
         ]),
       ),
-    [dataset?.rows],
+    [visibleRows],
   );
 
   const selectionBounds = useMemo(() => {
@@ -722,6 +761,7 @@ export function DatasetSheet({
       : undefined;
 
   useEffect(() => {
+    if(document.activeElement?.closest('.dataset-sheet__formula-input-wrap'))return;
     if (!selectedCell || !selectedColumn || !selectedRow) {
       setFormulaInput('');
       setFormulaError('');
@@ -876,11 +916,11 @@ export function DatasetSheet({
       return;
     }
 
-    const sourceRows = dataset.rows.slice(
+    const sourceRows = visibleRows.slice(
       drag.sourceStart,
       drag.sourceEnd + 1,
     );
-    const targetRows = dataset.rows.slice(
+    const targetRows = visibleRows.slice(
       drag.sourceEnd + 1,
       drag.targetEnd + 1,
     );
@@ -1084,7 +1124,7 @@ export function DatasetSheet({
   ) => {
     if (!dataset || !selectedCell || readOnly) return;
 
-    const fallbackRow = dataset.rows.findIndex(
+    const fallbackRow = visibleRows.findIndex(
       (row) => row.id === selectedCell.rowId,
     );
     const fallbackColumn = dataset.columns.findIndex(
@@ -1114,7 +1154,7 @@ export function DatasetSheet({
         columnIndex <= bounds.endColumn;
         columnIndex += 1
       ) {
-        const row = dataset.rows[rowIndex];
+        const row = visibleRows[rowIndex];
         const column = dataset.columns[columnIndex];
         if (!row || !column) continue;
 
@@ -1141,31 +1181,33 @@ export function DatasetSheet({
   const focusCell = (
     rowId: string,
     columnId: string,
+    extend = false,
   ) => {
     if (!dataset) return;
 
-    const rowIndex = dataset.rows.findIndex(
+    const rowIndex = visibleRows.findIndex(
       (row) => row.id === rowId,
     );
     if (rowIndex >= 0) {
-      setPage(Math.floor(rowIndex / PAGE_SIZE));
+      setPage(0);
+      if(viewportRef.current)viewportRef.current.scrollTop=Math.max(0,(rowIndex-3)*ROW_HEIGHT);
     }
 
     setSelectedCell({ rowId, columnId });
-    setSelectionRange({
-      startRowId: rowId,
+    setSelectionRange(previous=>({
+      startRowId: extend ? previous?.startRowId ?? selectedCell?.rowId ?? rowId : rowId,
       endRowId: rowId,
-      startColumnId: columnId,
+      startColumnId: extend ? previous?.startColumnId ?? selectedCell?.columnId ?? columnId : columnId,
       endColumnId: columnId,
-    });
+    }));
 
     window.requestAnimationFrame(() => {
       const editor = sheetRef.current?.querySelector(
         `td[data-row-id="${rowId}"][data-column-id="${columnId}"] .dataset-sheet__cell-editor`,
-      ) as HTMLInputElement | HTMLSelectElement | null;
+      ) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
 
       editor?.focus();
-      if (editor instanceof HTMLInputElement) {
+      if (editor instanceof HTMLInputElement || editor instanceof HTMLTextAreaElement) {
         editor.select();
       }
     });
@@ -1173,13 +1215,15 @@ export function DatasetSheet({
 
   const moveSelectedCell = (
     direction: 'up' | 'down' | 'left' | 'right',
+    extend = false,
   ) => {
     if (!dataset || !selectedCell) return;
 
-    const rowIndex = dataset.rows.findIndex(
+    const columns=dataset.columns.filter(column=>!hiddenColumns.includes(column.id));
+    const rowIndex = visibleRows.findIndex(
       (row) => row.id === selectedCell.rowId,
     );
-    const columnIndex = dataset.columns.findIndex(
+    const columnIndex = columns.findIndex(
       (column) => column.id === selectedCell.columnId,
     );
     if (rowIndex < 0 || columnIndex < 0) return;
@@ -1192,28 +1236,28 @@ export function DatasetSheet({
     if (direction === 'left') nextColumn -= 1;
     if (direction === 'right') nextColumn += 1;
 
-    if (nextColumn >= dataset.columns.length) {
+    if (nextColumn >= columns.length) {
       nextColumn = 0;
       nextRow += 1;
     }
     if (nextColumn < 0) {
-      nextColumn = dataset.columns.length - 1;
+      nextColumn = columns.length - 1;
       nextRow -= 1;
     }
 
     nextRow = Math.max(
       0,
-      Math.min(dataset.rows.length - 1, nextRow),
+      Math.min(visibleRows.length - 1, nextRow),
     );
 
-    const row = dataset.rows[nextRow];
-    const column = dataset.columns[nextColumn];
+    const row = visibleRows[nextRow];
+    const column = columns[nextColumn];
     if (row && column) {
-      focusCell(row.id, column.id);
+      focusCell(row.id, column.id, extend);
     }
   };
 
-  const copyCells = async () => {
+  const copyCells = async (cut=false) => {
     if (!dataset || !selectedCell) return;
 
     setClipboardMessage('');
@@ -1223,7 +1267,7 @@ export function DatasetSheet({
         (item) => item.id === selectedCell.columnId,
       );
     const fallbackRowIndex =
-      dataset.rows.findIndex(
+      visibleRows.findIndex(
         (item) => item.id === selectedCell.rowId,
       );
     if (
@@ -1240,7 +1284,7 @@ export function DatasetSheet({
       endColumn: fallbackColumnIndex,
     };
 
-    const rows = dataset.rows.slice(
+    const rows = visibleRows.slice(
       bounds.startRow,
       bounds.endRow + 1,
     );
@@ -1249,28 +1293,9 @@ export function DatasetSheet({
       bounds.endColumn + 1,
     );
 
-    const text = rows
-      .map((row) =>
-        columns
-          .map((column) => {
-            const formula = formulaByCell.get(
-              formulaKey(row.id, column.id),
-            );
-
-            return formula
-              ? formatFormula(
-                  formula.expression,
-                  dataset.columns,
-                  dataset.rows,
-                )
-              : String(
-                  row.values[column.id] ?? '',
-                );
-          })
-          .join('\t'),
-      )
-      .join('\n');
-
+    const cells=rows.map(row=>columns.map(column=>({rowId:row.id,columnId:column.id,value:row.values[column.id]??null,expression:formulaByCell.get(formulaKey(row.id,column.id))?.expression,format:formatByCell.get(formulaKey(row.id,column.id))})));
+    const text=sheetTsv(cells.map(row=>row.map(cell=>cell.expression?formatFormula(cell.expression,dataset.columns,dataset.rows):cell.value)));
+    clipboardRef.current={text,cut:cut&&!readOnly,cells};
     try {
       await navigator.clipboard.writeText(text);
       setClipboardMessage(
@@ -1285,169 +1310,44 @@ export function DatasetSheet({
     }
   };
 
-  const pasteCells = async () => {
-    if (
-      readOnly ||
-      !dataset ||
-      !selectedCell
-    ) {
-      return;
-    }
-
-    if (query || sort || hasColumnFilters) {
-      setClipboardMessage(
-        'Перед вставкой уберите поиск, сортировку и фильтры, чтобы порядок строк был однозначным.',
-      );
-      return;
-    }
-
+  const pasteCells = async (valuesOnly=false) => {
+    if(readOnly||!dataset||!selectedCell)return;
     setClipboardMessage('');
-
-    let text = '';
     try {
-      text = await navigator.clipboard.readText();
-    } catch {
-      setClipboardMessage(
-        'Браузер не разрешил чтение clipboard.',
-      );
-      return;
-    }
-
-    const matrix = text
-      .replace(/\r\n/g, '\n')
-      .replace(/\r/g, '\n')
-      .split('\n')
-      .filter((line, index, all) =>
-        !(index === all.length - 1 && line === ''),
-      )
-      .map((line) => line.split('\t'));
-
-    if (matrix.length === 0) return;
-
-    const startRowIndex = dataset.rows.findIndex(
-      (row) => row.id === selectedCell.rowId,
-    );
-    const startColumnIndex = dataset.columns.findIndex(
-      (column) => column.id === selectedCell.columnId,
-    );
-
-    if (startRowIndex < 0 || startColumnIndex < 0) {
-      return;
-    }
-
-    const requiredColumns =
-      Math.max(...matrix.map((row) => row.length));
-
-    if (
-      startColumnIndex + requiredColumns >
-      dataset.columns.length
-    ) {
-      setClipboardMessage(
-        'В clipboard больше колонок, чем помещается справа. Сначала добавьте колонки.',
-      );
-      return;
-    }
-
-    const targetRows = [...dataset.rows];
-    const requiredRows = startRowIndex + matrix.length;
-
-    while (
-      targetRows.length < requiredRows &&
-      !readOnly
-    ) {
-      const row = await addRow();
-      if (!row) break;
-      targetRows.push(row);
-    }
-
-    if (targetRows.length < requiredRows) {
-      setClipboardMessage(
-        'Не удалось создать достаточно строк для вставки.',
-      );
-      return;
-    }
-
-    const writes: Array<{
-      rowId: string;
-      columnId: string;
-      value?: DatasetCellValue;
-      formulaExpression?: string | null;
-    }> = [];
-
-    try {
-      for (
-        let rowOffset = 0;
-        rowOffset < matrix.length;
-        rowOffset += 1
-      ) {
-        const targetRow =
-          targetRows[startRowIndex + rowOffset];
-
-        for (
-          let columnOffset = 0;
-          columnOffset < matrix[rowOffset].length;
-          columnOffset += 1
-        ) {
-          const column =
-            dataset.columns[
-              startColumnIndex + columnOffset
-            ];
-          const raw = matrix[rowOffset][columnOffset];
-
-          if (raw.trim().startsWith('=')) {
-            writes.push({
-              rowId: targetRow.id,
-              columnId: column.id,
-              formulaExpression: compileFormula(
-                raw.trim(),
-                dataset.columns,
-                dataset.rows,
-              ),
-            });
-          } else {
-            writes.push({
-              rowId: targetRow.id,
-              columnId: column.id,
-              value: normalizeInput(raw, column),
-              formulaExpression: null,
-            });
-          }
-        }
+      let text:string;
+      try{text=await navigator.clipboard.readText();}catch{if(!clipboardRef.current)throw new Error('Браузер не разрешил чтение clipboard');text=clipboardRef.current.text;}
+      const matrix=parseSheetTsv(text),internal=clipboardRef.current?.text.replace(/\r\n/g,'\n')===text.replace(/\r\n/g,'\n')?clipboardRef.current:null;
+      const startRow=visibleRows.findIndex(row=>row.id===selectedCell.rowId),startColumn=dataset.columns.findIndex(column=>column.id===selectedCell.columnId);
+      if(startRow<0||startColumn<0)return;
+      const width=Math.max(...matrix.map(row=>row.length));
+      if(startColumn+width>dataset.columns.length)throw new Error('Добавьте колонки справа перед вставкой');
+      if(hiddenColumns.some(id=>dataset.columns.slice(startColumn,startColumn+width).some(column=>column.id===id)))throw new Error('Перед вставкой покажите колонки выбранного диапазона');
+      const required=Math.max(0,startRow+matrix.length-visibleRows.length);
+      if(required&&(query||sort||hasColumnFilters||secondarySort.length))throw new Error('Для добавления строк при вставке сбросьте фильтры и сортировку');
+      const newRows:Array<DatasetRow>=Array.from({length:required},(_,index)=>({id:crypto.randomUUID(),ordinal:dataset.rows.length+index,values:{}}));
+      const targets=[...visibleRows,...newRows],canonicalRows=[...dataset.rows,...newRows];
+      const moves=new Map<string,{rowId:string;columnId:string}>();
+      if(internal?.cut&&!valuesOnly)internal.cells.forEach((row,r)=>row.forEach((cell,c)=>moves.set(formulaKey(cell.rowId,cell.columnId),{rowId:targets[startRow+r].id,columnId:dataset.columns[startColumn+c].id})));
+      const writes:any[]=[];
+      if(internal?.cut&&!valuesOnly)for(const row of internal.cells)for(const cell of row)writes.push({rowId:cell.rowId,columnId:cell.columnId,value:null,formulaExpression:null,format:null});
+      const targetKeys=new Set<string>();
+      for(let r=0;r<matrix.length;r++)for(let c=0;c<matrix[r].length;c++){
+        const row=targets[startRow+r],column=dataset.columns[startColumn+c],source=internal?.cells[r]?.[c],raw=matrix[r][c];
+        const write:any={rowId:row.id,columnId:column.id};targetKeys.add(formulaKey(row.id,column.id));
+        if(source?.expression&&!valuesOnly)write.formulaExpression=internal?.cut?retargetFormula(source.expression,moves):translateFormulaForCopy(source.expression,source.rowId,source.columnId,row.id,column.id,canonicalRows,dataset.columns);
+        else if(!valuesOnly&&raw.trim().startsWith('='))write.formulaExpression=compileFormula(raw,dataset.columns,canonicalRows);
+        else {write.value=source&&valuesOnly?source.value:parseSheetInput(raw,column);write.formulaExpression=null;}
+        if(source&&!valuesOnly)write.format=source.format??null;
+        writes.push(write);
       }
-    } catch (error) {
-      setClipboardMessage(
-        error instanceof Error
-          ? error.message
-          : String(error),
-      );
-      return;
-    }
-
-    applyCellBatch(writes);
-
-    const lastRow =
-      targetRows[startRowIndex + matrix.length - 1];
-    const lastColumn =
-      dataset.columns[
-        startColumnIndex + requiredColumns - 1
-      ];
-
-    if (lastRow && lastColumn) {
-      setSelectedCell({
-        rowId: lastRow.id,
-        columnId: lastColumn.id,
-      });
-      setPage(
-        Math.floor(
-          (startRowIndex + matrix.length - 1) /
-            PAGE_SIZE,
-        ),
-      );
-    }
-
-    setClipboardMessage(
-      `Вставлено ячеек: ${writes.length}`,
-    );
+      if(moves.size)for(const formula of dataset.formulas){const key=formulaKey(formula.rowId,formula.columnId);if(moves.has(key)||targetKeys.has(key))continue;const expression=retargetFormula(formula.expression,moves);if(expression!==formula.expression)writes.push({rowId:formula.rowId,columnId:formula.columnId,formulaExpression:expression});}
+      const created=newRows.length?await prepareRows(newRows):[];
+      applyCellBatch(writes,created);
+      if(internal?.cut&&!valuesOnly)clipboardRef.current=null;
+      const endRow=targets[startRow+matrix.length-1],endColumn=dataset.columns[startColumn+width-1];
+      setSelectionRange({startRowId:targets[startRow].id,endRowId:endRow.id,startColumnId:dataset.columns[startColumn].id,endColumnId:endColumn.id});
+      setClipboardMessage(`Вставлено ячеек: ${matrix.reduce((n,row)=>n+row.length,0)}`);
+    }catch(error){setClipboardMessage(error instanceof Error?error.message:String(error));}
   };
 
   const columnWidth = (columnId: string) =>
@@ -1460,13 +1360,13 @@ export function DatasetSheet({
     if (!dataset) return 54;
     let offset = 54;
     for (let i = 0; i < columnIndex; i += 1) {
-      offset += columnWidth(dataset.columns[i].id);
+      if(!hiddenColumns.includes(dataset.columns[i].id))offset += columnWidth(dataset.columns[i].id);
     }
     return offset;
   };
 
   const frozenTopOffset = (pageRowIndex: number) =>
-    48 + (filtersOpen ? 36 : 0) + pageRowIndex * 35;
+    48 + (filtersOpen ? 36 : 0) + pageRowIndex * ROW_HEIGHT;
 
   const frozenCellStyle = (
     columnIndex: number,
@@ -1559,16 +1459,16 @@ export function DatasetSheet({
   };
 
   const selectWholeColumn = (columnId: string) => {
-    if (!dataset || dataset.rows.length === 0) return;
+    if (!dataset || visibleRows.length === 0) return;
 
     setSelectedCell({
-      rowId: dataset.rows[0].id,
+      rowId: visibleRows[0].id,
       columnId,
     });
     setSelectionRange({
-      startRowId: dataset.rows[0].id,
+      startRowId: visibleRows[0].id,
       endRowId:
-        dataset.rows[dataset.rows.length - 1].id,
+        visibleRows[visibleRows.length - 1].id,
       startColumnId: columnId,
       endColumnId: columnId,
     });
@@ -1577,20 +1477,20 @@ export function DatasetSheet({
   const selectAllCells = () => {
     if (
       !dataset ||
-      dataset.rows.length === 0 ||
+      visibleRows.length === 0 ||
       dataset.columns.length === 0
     ) {
       return;
     }
 
     setSelectedCell({
-      rowId: dataset.rows[0].id,
+      rowId: visibleRows[0].id,
       columnId: dataset.columns[0].id,
     });
     setSelectionRange({
-      startRowId: dataset.rows[0].id,
+      startRowId: visibleRows[0].id,
       endRowId:
-        dataset.rows[dataset.rows.length - 1].id,
+        visibleRows[visibleRows.length - 1].id,
       startColumnId: dataset.columns[0].id,
       endColumnId:
         dataset.columns[dataset.columns.length - 1].id,
@@ -1600,7 +1500,7 @@ export function DatasetSheet({
   const clearSelectedCells = () => {
     if (!dataset || !selectedCell || readOnly) return;
 
-    const fallbackRow = dataset.rows.findIndex(
+    const fallbackRow = visibleRows.findIndex(
       (row) => row.id === selectedCell.rowId,
     );
     const fallbackColumn = dataset.columns.findIndex(
@@ -1622,7 +1522,7 @@ export function DatasetSheet({
       rowIndex <= bounds.endRow;
       rowIndex += 1
     ) {
-      const row = dataset.rows[rowIndex];
+      const row = visibleRows[rowIndex];
 
       for (
         let columnIndex = bounds.startColumn;
@@ -1652,11 +1552,12 @@ export function DatasetSheet({
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
       const target = event.target as HTMLElement | null;
-      const typing =
+      const cellNavigation = target?.classList.contains('dataset-sheet__cell-editor') && target.dataset.editing !== 'true';
+      const typing = !cellNavigation && (
         target?.tagName === 'INPUT' ||
         target?.tagName === 'TEXTAREA' ||
         target?.tagName === 'SELECT' ||
-        target?.isContentEditable;
+        target?.isContentEditable);
 
       const isFormulaInput =
         target?.closest(
@@ -1675,6 +1576,7 @@ export function DatasetSheet({
         return;
       }
 
+      if (!readOnly && mod && key === 'x' && !typing) {event.preventDefault();void copyCells(true);return;}
       if (!readOnly && mod && key === 'v' && !typing) {
         event.preventDefault();
         void pasteCells();
@@ -1692,7 +1594,7 @@ export function DatasetSheet({
         return;
       }
 
-      if (!mod || isFormulaInput) return;
+      if (!mod || isFormulaInput || typing) return;
 
       if (!readOnly && key === 'z') {
         event.preventDefault();
@@ -1725,48 +1627,6 @@ export function DatasetSheet({
     selectAllCells,
     undo,
   ]);
-
-  const visibleRows = useMemo(() => {
-    if (!dataset) return [];
-
-    const normalizedQuery = query.trim().toLowerCase();
-
-    let result = normalizedQuery
-      ? dataset.rows.filter((row) =>
-          dataset.columns.some((column) =>
-            String(row.values[column.id] ?? '')
-              .toLowerCase()
-              .includes(normalizedQuery),
-          ),
-        )
-      : [...dataset.rows];
-
-    const activeFilters = Object.entries(
-      columnFilters,
-    ).filter(([, value]) => value.trim() !== '');
-
-    if (activeFilters.length > 0) {
-      result = result.filter((row) =>
-        activeFilters.every(([columnId, filter]) =>
-          String(row.values[columnId] ?? '')
-            .toLowerCase()
-            .includes(filter.trim().toLowerCase()),
-        ),
-      );
-    }
-
-    if (sort) {
-      result = result.sort((left, right) => {
-        const compared = compareValues(
-          left.values[sort.columnId],
-          right.values[sort.columnId],
-        );
-        return sort.direction === 'asc' ? compared : -compared;
-      });
-    }
-
-    return result;
-  }, [columnFilters, dataset, query, sort]);
 
   const conversionPreview = useMemo<ConversionPreview | null>(() => {
     if (!dataset || !convertColumnTarget) return null;
@@ -1816,10 +1676,31 @@ export function DatasetSheet({
 
   const totalPages = Math.max(1, Math.ceil(visibleRows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
-  const pageRows = visibleRows.slice(
-    safePage * PAGE_SIZE,
-    safePage * PAGE_SIZE + PAGE_SIZE,
-  );
+  const firstVirtual=Math.min(Math.max(frozenRows,Math.floor(Math.max(0,scrollTop-80)/ROW_HEIGHT)-8),Math.max(frozenRows,visibleRows.length-1));
+  const lastVirtual=Math.min(visibleRows.length,firstVirtual+50);
+  const pageRows=[...visibleRows.slice(0,frozenRows),...visibleRows.slice(firstVirtual,lastVirtual)];
+  const virtualTop=Math.max(0,firstVirtual-frozenRows)*ROW_HEIGHT;
+  const virtualBottom=Math.max(0,visibleRows.length-lastVirtual)*ROW_HEIGHT;
+  const hiddenSet=new Set(hiddenColumns);
+  const applyView=(view:import('@modelboard/shared').DatasetView|null)=>{
+    setCurrentView(view?.id??'');setQuery(view?.query??'');setColumnFilters(view?.filters??{});setSort(view?.sort[0]??null);setSecondarySort(view?.sort.slice(1)??[]);
+    setHiddenColumns(view?.hiddenColumns??[]);setColumnWidths(view?.columnWidths??{});setFrozenRows(view?.frozenRows??0);setFrozenColumns(view?.frozenColumns??0);if(viewportRef.current)viewportRef.current.scrollTop=0;
+  };
+  const fillSelection=(direction:'down'|'right')=>{
+    if(!dataset||!selectionBounds||readOnly)return;
+    const writes:any[]=[];
+    for(let r=selectionBounds.startRow;r<=selectionBounds.endRow;r++)for(let c=selectionBounds.startColumn;c<=selectionBounds.endColumn;c++){
+      const sourceRow=visibleRows[direction==='down'?selectionBounds.startRow:r],sourceColumn=dataset.columns[direction==='right'?selectionBounds.startColumn:c];
+      const targetRow=visibleRows[r],targetColumn=dataset.columns[c];if(!sourceRow||!targetRow)continue;
+      const formula=formulaByCell.get(formulaKey(sourceRow.id,sourceColumn.id));
+      writes.push({rowId:targetRow.id,columnId:targetColumn.id,...(formula?{formulaExpression:translateFormulaForCopy(formula.expression,sourceRow.id,sourceColumn.id,targetRow.id,targetColumn.id,dataset.rows,dataset.columns)}:{value:sourceRow.values[sourceColumn.id]??null,formulaExpression:null})});
+    }
+    applyCellBatch(writes);
+  };
+  const selectionStats=useMemo(()=>{
+    if(!dataset||!selectionBounds)return null;
+    return sheetSelectionSummary(visibleRows.slice(selectionBounds.startRow,selectionBounds.endRow+1).flatMap(row=>dataset.columns.slice(selectionBounds.startColumn,selectionBounds.endColumn+1).map(column=>row.values[column.id]??null)));
+  },[dataset,visibleRows,selectionBounds]);
 
   const toggleSort = (columnId: string) => {
     setSort((current) => {
@@ -1838,6 +1719,7 @@ export function DatasetSheet({
   return (
     <div
       className={`dataset-sheet ${draggingRange ? 'is-drag-selecting' : ''}`}
+      role="dialog" aria-modal="true" aria-label="Редактор таблицы"
       ref={sheetRef}
       onMouseDown={() => {
         if (cellMenu) setCellMenu(null);
@@ -2155,6 +2037,7 @@ export function DatasetSheet({
         </div>
       )}
 
+      {storageError&&<div className="sheet-storage-error" role="alert">{storageError}</div>}
       <header className="dataset-sheet__topbar">
         <div className="dataset-sheet__identity">
           <span className="dataset-sheet__icon">
@@ -2163,7 +2046,7 @@ export function DatasetSheet({
           <div>
             <strong>{dataset?.name ?? 'Dataset'}</strong>
             <small>
-              {dataset?.kind ?? '—'} · {status}
+              {dataset?.kind ?? '—'} · {pendingChanges?'saving':status}
             </small>
           </div>
         </div>
@@ -2537,7 +2420,14 @@ export function DatasetSheet({
         </div>
       </div>
 
-      <div className="dataset-sheet__viewport">
+      {dataset&&<SpreadsheetTools dataset={dataset} readOnly={readOnly} rowId={selectedCell?.rowId} columnId={selectedCell?.columnId}
+        onReorder={reorder} currentView={currentView} onApplyView={applyView} onSaveView={(name)=>{const id=currentView||crypto.randomUUID();saveView({id,name,query,filters:columnFilters,sort:[...(sort?[sort]:[]),...secondarySort],hiddenColumns,columnWidths,frozenRows,frozenColumns});setCurrentView(id);}}
+        onDeleteView={(id)=>{deleteView(id);setCurrentView('');}} onSaveRule={saveRule} onDeleteRule={deleteRule}
+        onHide={(id)=>{if(dataset.columns.length-hiddenColumns.length>1)setHiddenColumns(list=>[...new Set([...list,id])]);}} onShowAll={()=>setHiddenColumns([])}
+        onFill={fillSelection} onCut={()=>void copyCells(true)} onPasteValues={()=>void pasteCells(true)} onFormat={formatCellsInSelection}
+        onMultiSort={(columnId,direction)=>setSecondarySort(list=>[...list.filter(item=>item.columnId!==columnId),{columnId,direction}])}/ >}
+      {selectionStats&&<div className="sheet-summary" role="status">Заполнено: {selectionStats.count} · Чисел: {selectionStats.numbers} · Сумма: {selectionStats.sum} · Среднее: {selectionStats.average??'—'}{pendingChanges>0?' · Сохранение…':''}</div>}
+      <div className="dataset-sheet__viewport" ref={viewportRef} onScroll={(event)=>setScrollTop(event.currentTarget.scrollTop)}>
         {!dataset || !synced ? (
           <div className="dataset-sheet__loading">
             Синхронизация Dataset…
@@ -2545,7 +2435,7 @@ export function DatasetSheet({
         ) : dataset.columns.length === 0 ? (
           <div className="dataset-sheet__loading">В Dataset нет колонок.</div>
         ) : (
-          <table className="dataset-sheet__table">
+          <table className="dataset-sheet__table" role="grid" aria-rowcount={visibleRows.length} aria-colcount={dataset.columns.length}>
             <thead>
               <tr>
                 <th
@@ -2556,6 +2446,7 @@ export function DatasetSheet({
                   #
                 </th>
                 {dataset.columns.map((column, columnIndex) => {
+                  if(hiddenColumns.includes(column.id))return null;
                   const activeSort = sort?.columnId === column.id;
 
                   return (
@@ -2716,7 +2607,7 @@ export function DatasetSheet({
                   <th className="dataset-sheet__row-number">
                     <Filter size={12} />
                   </th>
-                  {dataset.columns.map((column, columnIndex) => (
+                  {dataset.columns.map((column, columnIndex) => hiddenColumns.includes(column.id)?null:(
                     <th
                       key={column.id}
                       className={columnIndex < frozenColumns ? 'is-frozen-column' : ''}
@@ -2744,7 +2635,10 @@ export function DatasetSheet({
             </thead>
 
             <tbody>
-              {pageRows.map((row, rowIndex) => (
+              {pageRows.map((row, renderIndex) => {
+                const rowIndex=visibleRows.findIndex(item=>item.id===row.id);
+                return (<Fragment key={row.id}>
+                {renderIndex===frozenRows&&virtualTop>0&&<tr aria-hidden="true" className="sheet-spacer"><td colSpan={dataset.columns.length+1} style={{height:virtualTop,padding:0,border:0}}/></tr>}
                 <tr
                   key={row.id}
                   className={row.id === focusRowId ? 'is-focused' : ''}
@@ -2815,6 +2709,7 @@ export function DatasetSheet({
                   </th>
 
                   {dataset.columns.map((column) => {
+                    if(hiddenColumns.includes(column.id))return null;
                     const key = formulaKey(row.id, column.id);
                     const formula = formulaByCell.get(key);
                     const selected =
@@ -2862,6 +2757,7 @@ export function DatasetSheet({
                           ...frozenCellStyle(columnIndex, rowIndex),
                         }}
                         data-column-id={column.id}
+                        role="gridcell" aria-colindex={columnIndex+1} aria-rowindex={rowIndex+1}
                         className={[
                           columnIndex < frozenColumns ? 'is-frozen-column' : '',
                           rowIndex < frozenRows ? 'is-frozen-row' : '',
@@ -2932,7 +2828,8 @@ export function DatasetSheet({
                           column={column}
                           readOnly={readOnly}
                           formulaActive={Boolean(formula)}
-                          format={formatByCell.get(key)}
+                          formulaText={formula ? formatFormula(formula.expression,dataset.columns,dataset.rows):undefined}
+                          format={{rowId:row.id,columnId:column.id,...formatByCell.get(key),...sheetConditionalFormat(row,column.id,dataset.rules??[],dataset.rows)}}
                           onFocus={() => {
                             if (rangeDragRef.current) return;
                             setSelectedCell({
@@ -2957,9 +2854,7 @@ export function DatasetSheet({
                             }
                           }}
                           onNavigate={moveSelectedCell}
-                          onChange={(value) =>
-                            setCell(row.id, column.id, value)
-                          }
+                          onChange={(value) => {if(typeof value==='string'&&value.trim().startsWith('='))setFormula(row.id,column.id,compileFormula(value,dataset.columns,dataset.rows));else setCell(row.id,column.id,value);}}
                         />
                         {fillHandle && (
                           <span
@@ -2977,7 +2872,8 @@ export function DatasetSheet({
                     );
                   })}
                 </tr>
-              ))}
+              </Fragment>);})}
+              {virtualBottom>0&&<tr aria-hidden="true" className="sheet-spacer"><td colSpan={dataset.columns.length+1} style={{height:virtualBottom,padding:0,border:0}}/></tr>}
 
               {pageRows.length === 0 && (
                 <tr>

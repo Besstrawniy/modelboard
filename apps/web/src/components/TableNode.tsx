@@ -3,174 +3,48 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { TableNodeData } from '@modelboard/shared';
 import { useBoardActions } from './BoardContext';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
-import { displayCellValue } from '../lib/cellFormatting';
+import { SheetCell } from './DatasetSheet';
+import { compileFormula, formatFormula, formulaKey } from '../lib/formulas';
+import { matchesSheetFilter, sheetConditionalFormat } from '../lib/spreadsheetModel';
 
-export function TableNode({ data, selected }: NodeProps<any>) {
-  const { readOnly, sessionToken } = useBoardActions();
-  const view = data as TableNodeData;
-  const { dataset, status, synced, setCell } = useCollaborativeDataset(
-    view.datasetId,
-    sessionToken,
-    readOnly,
-  );
-
-  if (!view.datasetId) {
-    return (
-      <div className="table-node table-node--error">
-        <div className="table-node__title"><strong>Legacy table</strong></div>
-        <p>This v0.1 table has no datasetId. Recreate it from the Datasets panel.</p>
-      </div>
-    );
-  }
-
-  if (!dataset || !synced) {
-    return (
-      <div className="table-node table-node--loading">
-        <div className="table-node__title">
-          <span className="table-node__kind">DATASET</span>
-          <strong>Загрузка данных…</strong>
-          <span className="dataset-status">{status}</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (dataset.columns.length === 0) {
-    return (
-      <div className="table-node table-node--loading">
-        <div className="table-node__title">
-          <span className="table-node__kind">DATASET</span>
-          <strong>Dataset пуст</strong>
-          <span className="dataset-status">synced</span>
-        </div>
-      </div>
-    );
-  }
-
-  const rows = dataset.rows.slice(0, view.view?.maxRows ?? 20);
-
-  return (
-    <div className={`table-node ${selected ? 'is-selected' : ''}`}>
-      {!readOnly && <CanvasNodeResizer minWidth={360} minHeight={180} isVisible={selected} />}
-      <div className="table-node__title">
-        <span className="table-node__kind">DATASET</span>
-        <strong>{view.view?.labelOverride || dataset.name}</strong>
-        <span className="dataset-status">{status}</span>
-      </div>
-
-      <div className="table-grid">
-        <div className="table-grid__header table-grid__row">
-          {dataset.columns.map((column) => (
-            <div className="table-grid__cell table-grid__column" key={column.id}>
-              <Handle
-                id={`target:${column.id}`}
-                type="target"
-                position={Position.Left}
-                className="column-handle column-handle--left"
-                isConnectable={!readOnly}
-              />
-              <div className="column-name">
-                <span>{column.name}</span>
-                {column.key && <em>{column.key}</em>}
-              </div>
-              <small>{column.dataType}</small>
-              <Handle
-                id={`source:${column.id}`}
-                type="source"
-                position={Position.Right}
-                className="column-handle column-handle--right"
-                isConnectable={!readOnly}
-              />
-            </div>
-          ))}
-        </div>
-
-        {rows.map((row) => (
-          <div className="table-grid__row" key={row.id}>
-            {dataset.columns.map((column) => (
-              <div className="table-grid__cell" key={column.id}>
-                <input
-                  style={(() => {
-                    const format = dataset.formats.find(
-                      (item) =>
-                        item.rowId === row.id &&
-                        item.columnId === column.id,
-                    );
-
-                    return {
-                      fontWeight: format?.bold ? 700 : undefined,
-                      fontStyle: format?.italic ? 'italic' : undefined,
-                      textAlign:
-                        format?.align === 'CENTER'
-                          ? 'center'
-                          : format?.align === 'RIGHT'
-                            ? 'right'
-                            : format?.align === 'LEFT'
-                              ? 'left'
-                              : undefined,
-                      backgroundColor:
-                        format?.background || undefined,
-                    };
-                  })()}
-                  className="nodrag nowheel"
-                  disabled={readOnly || Boolean(dataset.formats.find(
-                    (item) =>
-                      item.rowId === row.id &&
-                      item.columnId === column.id &&
-                      item.numberFormat &&
-                      item.numberFormat !== 'GENERAL',
-                  ))}
-                  value={displayCellValue(
-                    row.values[column.id],
-                    dataset.formats.find(
-                      (item) =>
-                        item.rowId === row.id &&
-                        item.columnId === column.id,
-                    ),
-                  )}
-                  onChange={(event) => {
-                    const raw = event.target.value;
-
-                    if (raw === '') {
-                      setCell(row.id, column.id, null);
-                    } else if (
-                      column.dataType === 'INTEGER' &&
-                      /^-?\d+$/.test(raw)
-                    ) {
-                      setCell(
-                        row.id,
-                        column.id,
-                        Number.parseInt(raw, 10),
-                      );
-                    } else if (column.dataType === 'NUMBER') {
-                      const parsed = Number(raw);
-                      setCell(
-                        row.id,
-                        column.id,
-                        Number.isFinite(parsed)
-                          ? parsed
-                          : raw,
-                      );
-                    } else {
-                      setCell(
-                        row.id,
-                        column.id,
-                        raw,
-                      );
-                    }
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-
-      {dataset.rows.length > rows.length && (
-        <div className="table-node__more">
-          +{dataset.rows.length - rows.length} more rows
-        </div>
-      )}
+export function TableNode({ id,data,selected }:NodeProps<any>) {
+ const {readOnly,sessionToken,updateNodeData,openDatasetSheet}=useBoardActions();
+ const view=data as TableNodeData;
+ const {dataset,status,synced,setCell,setFormula,pendingChanges,storageError}=useCollaborativeDataset(view.datasetId,sessionToken,readOnly);
+ if(!view.datasetId||!dataset||!synced)return <div className="table-node table-node--loading"><strong>Загрузка Dataset…</strong><span>{status}</span></div>;
+ const saved=dataset.views?.find(item=>item.id===view.view?.savedViewId);
+ const columns=dataset.columns.filter(column=>!saved?.hiddenColumns.includes(column.id));
+ let filtered=dataset.rows.filter(row=>(!saved?.query||dataset.columns.some(column=>String(row.values[column.id]??'').toLowerCase().includes(saved.query.toLowerCase())))&&Object.entries(saved?.filters??{}).every(([id,value])=>matchesSheetFilter(row.values[id],value)));
+ if(saved?.sort.length)filtered=[...filtered].sort((a,b)=>{for(const sort of saved.sort){const av=a.values[sort.columnId],bv=b.values[sort.columnId];const difference=typeof av==='number'&&typeof bv==='number'?av-bv:String(av??'').localeCompare(String(bv??''),undefined,{numeric:true});if(difference)return sort.direction==='asc'?difference:-difference;}return 0;});
+ const rows=filtered.slice(0,view.view?.maxRows??20);
+ const formats=new Map(dataset.formats.map(format=>[formulaKey(format.rowId,format.columnId),format]));
+ const formulas=new Map(dataset.formulas.map(formula=>[formulaKey(formula.rowId,formula.columnId),formula]));
+ return <div className={`table-node ${selected?'is-selected':''}`}>
+  <CanvasNodeResizer minWidth={360} minHeight={180} isVisible={selected}/>
+  <div className="table-node__title"><span className="table-node__kind">DATASET</span><strong>{view.view?.labelOverride||dataset.name}</strong><span className="dataset-status">{pendingChanges?'saving':status}</span>
+    <button className="nodrag" title="Открыть таблицу" onClick={()=>openDatasetSheet(dataset.id)}>Открыть</button>
+  </div>
+  {storageError&&<div className="sheet-storage-error" role="alert">{storageError}</div>}
+  <div className="table-view-controls nodrag nowheel">
+    <select aria-label="Представление на Canvas" value={saved?.id??''} disabled={readOnly} onChange={event=>updateNodeData(id,{view:{...view.view,savedViewId:event.target.value}})}><option value="">Все данные</option>{dataset.views?.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>
+    <span>{filtered.length} строк · {columns.length} колонок</span>
+  </div>
+  <div className="table-grid nowheel" style={{overflow:'auto'}}>
+    <div className="table-grid__header table-grid__row" style={{gridTemplateColumns:`repeat(${columns.length},minmax(140px,1fr))`}}>
+      {columns.map(column=><div className="table-grid__cell table-grid__column" key={column.id}>
+        <Handle id={`target:${column.id}`} type="target" position={Position.Left} className="column-handle column-handle--left" isConnectable={!readOnly}/>
+        <div className="column-name"><span>{column.name}</span>{column.key&&<em>{column.key}</em>}</div><small>{column.dataType}</small>
+        <Handle id={`source:${column.id}`} type="source" position={Position.Right} className="column-handle column-handle--right" isConnectable={!readOnly}/>
+      </div>)}
     </div>
-  );
+    {rows.map(row=><div className="table-grid__row" key={row.id} style={{gridTemplateColumns:`repeat(${columns.length},minmax(140px,1fr))`}}>
+      {columns.map(column=>{const key=formulaKey(row.id,column.id),formula=formulas.get(key);return <div className="table-grid__cell nodrag nowheel" key={column.id} data-row-id={row.id} data-column-id={column.id}>
+        <SheetCell row={row} column={column} readOnly={readOnly} formulaActive={Boolean(formula)} formulaText={formula?formatFormula(formula.expression,dataset.columns,dataset.rows):undefined}
+          format={{rowId:row.id,columnId:column.id,...formats.get(key),...sheetConditionalFormat(row,column.id,dataset.rules??[],dataset.rows)}}
+          onChange={value=>{if(typeof value==='string'&&value.trim().startsWith('='))setFormula(row.id,column.id,compileFormula(value,dataset.columns,dataset.rows));else setCell(row.id,column.id,value);}}/>
+      </div>;})}
+    </div>)}
+  </div>
+  {filtered.length>rows.length&&<div className="table-node__more">Ещё {filtered.length-rows.length} строк — откройте таблицу для просмотра</div>}
+ </div>;
 }

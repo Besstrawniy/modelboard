@@ -4,7 +4,7 @@ import { Logger } from '@hocuspocus/extension-logger';
 import jwt from 'jsonwebtoken';
 import * as Y from 'yjs';
 import { pool, query, runMigrations } from '@modelboard/db';
-import { normalizeCanvasNodes, canEditBoard, type WorkspaceRole } from '@modelboard/shared';
+import { normalizeCanvasNodes, evaluateDatasetFormulas, canEditBoard, type WorkspaceRole } from '@modelboard/shared';
 
 const jwtSecret = process.env.JWT_SECRET ?? 'change-me-in-production';
 const port = Number(process.env.COLLAB_PORT ?? 1234);
@@ -164,7 +164,7 @@ async function projectDatasetStateToPostgres(
 
     const columns = Array.from(
       doc.getMap<any>('columns').values(),
-    ).map((column: any) => ({
+    ).map((stored: any) => { const column=stored instanceof Y.Map ? stored.toJSON() : stored; return ({
       id: String(column.id),
       name: String(column.name),
       dataType: String(column.dataType),
@@ -172,18 +172,18 @@ async function projectDatasetStateToPostgres(
       properties: column.key
         ? { key: String(column.key) }
         : {},
-    }));
+    });});
 
     const rows = Array.from(
       doc.getMap<any>('rows').values(),
-    ).map((row: any) => ({
+    ).map((stored: any) => { const row=stored instanceof Y.Map ? stored.toJSON() : stored; return ({
       id: String(row.id),
       ordinal: Number(row.ordinal ?? 0),
       values:
         row.values && typeof row.values === 'object'
           ? row.values
           : {},
-    }));
+    });});
 
     const formulas = Array.from(
       doc.getMap<any>('formulas').values(),
@@ -195,7 +195,8 @@ async function projectDatasetStateToPostgres(
 
     const formats = Array.from(
       doc.getMap<any>('formats').values(),
-    ).map((format: any) => ({
+    ).map((stored: any) => { const format=stored instanceof Y.Map ? stored.toJSON() : stored; return ({
+      color: format.color, wrap: Boolean(format.wrap), underline: Boolean(format.underline),
       rowId: String(format.rowId),
       columnId: String(format.columnId),
       bold: Boolean(format.bold),
@@ -222,61 +223,39 @@ async function projectDatasetStateToPostgres(
         format.decimalPlaces <= 6
           ? format.decimalPlaces
           : null,
-    }));
+    });});
 
     const client = await pool.connect();
 
     try {
       await client.query('BEGIN');
 
-      if (columns.length > 0) {
-        await client.query(
-          `UPDATE dataset_columns AS target
-           SET
-             name = source.name,
-             data_type = source.data_type,
-             ordinal = source.ordinal,
-             properties = source.properties
-           FROM jsonb_to_recordset($2::jsonb) AS source(
-             id uuid,
-             name text,
-             data_type text,
-             ordinal integer,
-             properties jsonb
-           )
-           WHERE target.dataset_id = $1
-             AND target.id = source.id`,
-          [
-            datasetId,
-            JSON.stringify(
-              columns.map((column) => ({
-                id: column.id,
-                name: column.name,
-                data_type: column.dataType,
-                ordinal: column.ordinal,
-                properties: column.properties,
-              })),
-            ),
-          ],
-        );
-      }
-
-      if (rows.length > 0) {
-        await client.query(
-          `UPDATE dataset_rows AS target
-           SET
-             ordinal = source.ordinal,
-             values = source.values
-           FROM jsonb_to_recordset($2::jsonb) AS source(
-             id uuid,
-             ordinal integer,
-             values jsonb
-           )
-           WHERE target.dataset_id = $1
-             AND target.id = source.id`,
-          [datasetId, JSON.stringify(rows)],
-        );
-      }
+      await client.query('SELECT id FROM datasets WHERE id=$1 FOR UPDATE',[datasetId]);
+      const orderedColumns=columns.sort((a,b)=>a.ordinal-b.ordinal||a.id.localeCompare(b.id));
+      const orderedRows=rows.sort((a,b)=>a.ordinal-b.ordinal||a.id.localeCompare(b.id));
+      const columnIds=orderedColumns.map(column=>column.id), rowIds=orderedRows.map(row=>row.id);
+      const protectedRows=await client.query('SELECT id FROM object_bindings WHERE dataset_id=$1 AND row_id IS NOT NULL AND NOT (row_id=ANY($2::uuid[])) LIMIT 1',[datasetId,rowIds]);
+      const protectedColumns=await client.query(`SELECT id FROM object_bindings WHERE dataset_id=$1 AND ((column_id IS NOT NULL AND NOT (column_id=ANY($2::uuid[]))) OR (presentation->>'titleColumnId' IS NOT NULL AND NOT((presentation->>'titleColumnId')::uuid=ANY($2::uuid[]))) OR (presentation->>'subtitleColumnId' IS NOT NULL AND NOT((presentation->>'subtitleColumnId')::uuid=ANY($2::uuid[]))))
+        UNION ALL SELECT id FROM dataset_relations WHERE (source_dataset_id=$1 AND NOT(source_column_id=ANY($2::uuid[]))) OR (target_dataset_id=$1 AND NOT(target_column_id=ANY($2::uuid[]))) LIMIT 1`,[datasetId,columnIds]);
+      if(protectedRows.rows.length || protectedColumns.rows.length) throw new Error('Dataset structure is referenced by bindings or relations');
+      if(orderedColumns.length)await client.query(
+        `INSERT INTO dataset_columns(id,dataset_id,name,data_type,ordinal,properties)
+         SELECT id,$1,name,data_type,ordinal,properties FROM jsonb_to_recordset($2::jsonb) AS source(id uuid,name text,data_type text,ordinal integer,properties jsonb)
+         ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,data_type=EXCLUDED.data_type,ordinal=EXCLUDED.ordinal,properties=EXCLUDED.properties WHERE dataset_columns.dataset_id=EXCLUDED.dataset_id`,
+        [datasetId,JSON.stringify(orderedColumns.map((column,ordinal)=>({id:column.id,name:column.name,data_type:column.dataType,ordinal,properties:column.properties})))]);
+      const calculated=evaluateDatasetFormulas(orderedRows as any,orderedColumns as any,formulas);
+      const projected=orderedRows.map((row,ordinal)=>{
+        const values={...row.values};
+        for(const column of orderedColumns) if(calculated.has(`${row.id}:${column.id}`)) values[column.id]=calculated.get(`${row.id}:${column.id}`) ?? null;
+        return {id:row.id,ordinal,values};
+      });
+      if(projected.length)await client.query(`INSERT INTO dataset_rows(id,dataset_id,ordinal,values)
+        SELECT id,$1,ordinal,values FROM jsonb_to_recordset($2::jsonb) AS source(id uuid,ordinal integer,values jsonb)
+        ON CONFLICT(id) DO UPDATE SET ordinal=EXCLUDED.ordinal,values=EXCLUDED.values WHERE dataset_rows.dataset_id=EXCLUDED.dataset_id`,[datasetId,JSON.stringify(projected)]);
+      await client.query('DELETE FROM dataset_rows WHERE dataset_id=$1 AND NOT(id=ANY($2::uuid[]))',[datasetId,rowIds]);
+      await client.query('DELETE FROM dataset_columns WHERE dataset_id=$1 AND NOT(id=ANY($2::uuid[]))',[datasetId,columnIds]);
+      const settings={views:Array.from(doc.getMap('views').values()).map((value:any)=>value instanceof Y.Map?value.toJSON():value),rules:Array.from(doc.getMap('rules').values()).map((value:any)=>value instanceof Y.Map?value.toJSON():value)};
+      await client.query(`INSERT INTO dataset_sheet_settings(dataset_id,settings) VALUES($1,$2::jsonb) ON CONFLICT(dataset_id) DO UPDATE SET settings=EXCLUDED.settings,updated_at=now()`,[datasetId,JSON.stringify(settings)]);
 
       await client.query(
         'DELETE FROM dataset_formulas WHERE dataset_id = $1',
@@ -338,6 +317,7 @@ async function projectDatasetStateToPostgres(
                 row_id: format.rowId,
                 column_id: format.columnId,
                 format: {
+                  color: format.color, wrap: format.wrap, underline: format.underline,
                   bold: format.bold,
                   italic: format.italic,
                   align: format.align,
@@ -351,6 +331,7 @@ async function projectDatasetStateToPostgres(
         );
       }
 
+      await client.query(`INSERT INTO collab_documents(document_name,state,updated_at) VALUES($1,$2,now()) ON CONFLICT(document_name) DO UPDATE SET state=EXCLUDED.state,updated_at=now()`,[`dataset:${datasetId}`,Buffer.from(state)]);
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -434,7 +415,9 @@ async function bootstrapDataset(datasetId: string) {
     [datasetId],
   );
 
+  const savedSettings=await query<{settings:any}>('SELECT settings FROM dataset_sheet_settings WHERE dataset_id=$1',[datasetId]);
   const doc = new Y.Doc();
+  for(const name of ['views','rules']) for(const item of savedSettings.rows[0]?.settings?.[name]??[]) doc.getMap(name).set(item.id,item);
   const meta = doc.getMap<any>('meta');
   const columns = doc.getMap<any>('columns');
   const rows = doc.getMap<any>('rows');
@@ -499,7 +482,9 @@ async function startCollaborationServer() {
   maxDebounce: 5000,
 
   async afterLoadDocument({ documentName, document }) {
-    if (parseDocumentName(documentName)?.kind === 'board') normalizeCanvasNodes(document);
+    const kind=parseDocumentName(documentName)?.kind;
+    if(kind==='board') normalizeCanvasNodes(document);
+    else if(kind==='dataset') normalizeCanvasNodes(document,['rows','columns','formats','views','rules']);
   },
 
   async onAuthenticate(data) {
@@ -610,7 +595,7 @@ async function startCollaborationServer() {
 
         return null;
       },
-      store: async ({ documentName, state }) => {
+      store: async ({ documentName, state, document }) => {
         const ref = parseDocumentName(documentName);
         if (!ref) return;
 
@@ -633,6 +618,21 @@ async function startCollaborationServer() {
           return;
         }
 
+        if (ref.kind === 'dataset') {
+          try {
+            await projectDatasetStateToPostgres(ref.id, state);
+            document.broadcastStateless(JSON.stringify({type:'dataset-storage',saved:true}));
+          } catch(error) {
+            document.broadcastStateless(JSON.stringify({type:'dataset-storage',saved:false,message:'Не удалось сохранить изменения таблицы. Проверьте конфликт структуры/привязок и отмените последнее действие; не закрывайте вкладку до устранения ошибки.'}));
+            throw error;
+          }
+        } else {
+          await projectBoardStateToPostgres(
+            ref.id,
+            state,
+          );
+        }
+        if(ref.kind==='dataset')return; // Dataset projection and CRDT snapshot commit atomically.
         await query(
           `INSERT INTO collab_documents (document_name, state, updated_at)
            VALUES ($1, $2, now())
@@ -641,17 +641,7 @@ async function startCollaborationServer() {
           [documentName, Buffer.from(state)],
         );
 
-        if (ref.kind === 'dataset') {
-          await projectDatasetStateToPostgres(
-            ref.id,
-            state,
-          );
-        } else {
-          await projectBoardStateToPostgres(
-            ref.id,
-            state,
-          );
-        }
+
       },
     }),
     new Logger({

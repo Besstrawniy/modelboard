@@ -3627,3 +3627,30 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .react-flow__node-freehand { pointer-events: none !important; }
 .freehand-node path { pointer-events: stroke; }
 .freehand-node .react-flow__resize-control, .freehand-node .canvas-rotation-handle { pointer-events: auto; }
+.spreadsheet-tools { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:8px 14px; border-bottom:1px solid #e4e8f0; background:#fafbff; font-size:11px; max-height:150px; overflow:auto; }
+.spreadsheet-tools button,.spreadsheet-tools input,.spreadsheet-tools select { font:inherit; border:1px solid #d7deea; background:white; border-radius:5px; padding:5px 7px; }
+.spreadsheet-tools button { cursor:pointer; }
+.spreadsheet-tools input:not([type=color]) { width:115px; }
+.spreadsheet-tools input[type=color] { width:30px; height:26px; padding:1px; }
+.spreadsheet-tools label { display:flex; align-items:center; gap:4px; }
+.spreadsheet-rules { flex-basis:100%; padding:8px; border:1px solid #d7deea; border-radius:6px; display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.sheet-summary { padding:5px 16px; color:#667085; background:#fafbff; font-size:11px; border-bottom:1px solid #e4e8f0; }
+.dataset-sheet__viewport { flex:1; overflow-anchor:none; }
+.dataset-sheet__table tbody tr:not(.sheet-spacer) { height:36px; }
+.dataset-sheet__table tbody td,.dataset-sheet__table tbody th { height:36px; }
+.dataset-sheet__table .sheet-spacer td { min-width:0; background:transparent; }
+.dataset-sheet__cell-editor[aria-invalid=true] { outline:2px solid #e45a62; background:#fff0f0; }
+.dataset-sheet__cell-editor[readonly] { cursor:cell; }
+.table-view-controls { display:flex; gap:8px; align-items:center; padding:5px 10px; font-size:10px; border-bottom:1px solid #e4e8ef; }
+.table-view-controls select { max-width:200px; font:inherit; }
+.table-node__title button { margin-left:auto; font-size:10px; border:1px solid #d7deea; border-radius:5px; background:white; cursor:pointer; }
+.table-grid__cell .dataset-sheet__cell-editor { font-size:11px; }
+
+.dataset-sheet { display:flex; flex-direction:column; }
+.dataset-sheet__topbar,.dataset-sheet__formula-bar,.dataset-sheet__toolbar,.spreadsheet-tools,.sheet-summary,.dataset-sheet__footer { flex-shrink:0; }
+.dataset-sheet__viewport { min-height:0; }
+.dataset-sheet__footer { min-height:50px; }
+
+textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16px; padding-top:7px; height:34px; overflow:auto; }
+
+.sheet-storage-error { flex-shrink:0; padding:8px 14px; background:#fff0f0; color:#a42c36; border-bottom:1px solid #edb5ba; font-size:12px; }
