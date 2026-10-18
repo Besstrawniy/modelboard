@@ -177,6 +177,8 @@ export type DatasetRelation = {
   targetDatasetId: string;
   targetColumnId: string;
   relationType: DatasetRelationType;
+  name?: string;
+  enforceIntegrity?: boolean;
   cardinality?: DatasetRelationCardinality | null;
 };
 
@@ -195,6 +197,12 @@ export type ObjectBindingType =
 export type ObjectBindingPresentation = {
   titleColumnId?: string;
   subtitleColumnId?: string;
+  fieldColumnIds?: string[];
+  statusColumnId?: string;
+  statusColors?: Record<string,string>;
+  aggregation?: 'FIRST'|'COUNT'|'SUM'|'AVG'|'MIN'|'MAX';
+  showLabels?: boolean;
+  emptyText?: string;
   [key: string]: unknown;
 };
 
@@ -315,3 +323,6 @@ export type DatasetConditionalRule = {
 export { CanvasNodeStore as SharedRecordStore } from './canvasDocument.js';
 
 export { evaluateDatasetFormulas } from './formulas.js';
+export { relationValueKey, validateRelationData } from './relations.js';
+export { cleanBoardResources } from './resourceLifecycle.js';
+export { resolveBindingPresentation } from './bindingPresentation.js';

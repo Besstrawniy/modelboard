@@ -1,3 +1,4 @@
+import { relationValueKey } from '@modelboard/shared';
 import { ArrowLeftRight, Database, GitBranchPlus, LayoutList, Link2, Network, XCircle } from 'lucide-react';
 import type {
   DatasetRelation,
@@ -15,7 +16,7 @@ function sameValue(a: unknown, b: unknown) {
   if (a === null || a === undefined || b === null || b === undefined) {
     return false;
   }
-  return String(a) === String(b);
+  return relationValueKey(a)!==null&&relationValueKey(a)===relationValueKey(b);
 }
 
 function compactRowLabel(row: DatasetRow, dataset: DatasetSnapshot) {
@@ -379,11 +380,12 @@ export function RelatedRecords({
   const [error, setError] = useState('');
 
   useEffect(() => {
-    void api.relations(workspaceId, token)
+    const load=()=>api.relations(workspaceId, token)
       .then(setRelations)
       .catch((err) =>
         setError(err instanceof Error ? err.message : String(err)),
       );
+    void load();const refresh=()=>void load();window.addEventListener('modelboard:resources',refresh);return()=>window.removeEventListener('modelboard:resources',refresh);
   }, [token, workspaceId]);
 
   const relevant = relations.filter(

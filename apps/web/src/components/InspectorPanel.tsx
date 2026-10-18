@@ -1,4 +1,16 @@
-import { Database, ExternalLink, LayoutDashboard, Link2, Table2, Trash2, X } from 'lucide-react';
+import {
+  resolveBindingPresentation,
+  type ObjectBindingType,
+} from '@modelboard/shared';
+import {
+  Database,
+  ExternalLink,
+  LayoutDashboard,
+  Link2,
+  Table2,
+  Trash2,
+  X,
+} from 'lucide-react';
 import type {
   BoardDatasetLocation,
   DatasetMeta,
@@ -6,7 +18,7 @@ import type {
   ObjectBindingRecord,
 } from '@modelboard/shared';
 import type { Node } from '@xyflow/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { api } from '../lib/api';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
 import { RelatedRecords } from './RelatedRecords';
@@ -18,9 +30,10 @@ function rowLabel(
   columns: Array<{ id: string; name: string }>,
 ) {
   const parts = columns
-    .slice(0, 3)
     .map((column) => row.values[column.id])
-    .filter((value) => value !== null && value !== undefined && String(value) !== '')
+    .filter(
+      (value) => value !== null && value !== undefined && String(value) !== '',
+    )
     .map(String);
 
   return parts.length ? parts.join(' · ') : row.id;
@@ -30,10 +43,7 @@ function suggestedPresentationFields(
   columns: Array<{ id: string; name: string }>,
 ) {
   const normalized = new Map(
-    columns.map((column) => [
-      column.name.trim().toLowerCase(),
-      column.id,
-    ]),
+    columns.map((column) => [column.name.trim().toLowerCase(), column.id]),
   );
 
   const first = (names: string[]) =>
@@ -56,14 +66,7 @@ function suggestedPresentationFields(
     '';
 
   const subtitle =
-    first([
-      'ip',
-      'ip_address',
-      'address',
-      'fqdn',
-      'status',
-      'port',
-    ]) ||
+    first(['ip', 'ip_address', 'address', 'fqdn', 'status', 'port']) ||
     columns.find((column) => column.id !== title)?.id ||
     '';
 
@@ -87,24 +90,43 @@ export function InspectorPanel({
   onClose: () => void;
   onUpdateNodeData: (nodeId: string, patch: Record<string, unknown>) => void;
 }) {
-  const {
-    openDatasetSheet,
-    navigateToDatasetLocation,
-  } = useBoardActions();
-  const existingBinding = (node.data as any)?.binding as ObjectBindingRecord | undefined;
+  const { openDatasetSheet, navigateToDatasetLocation } = useBoardActions();
+  const existingBinding = (node.data as any)?.binding as
+    | ObjectBindingRecord
+    | undefined;
   const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
   const [datasetId, setDatasetId] = useState(existingBinding?.datasetId ?? '');
   const [rowId, setRowId] = useState(existingBinding?.rowId ?? '');
   const [titleColumnId, setTitleColumnId] = useState(
-    existingBinding?.presentation?.titleColumnId as string | undefined ?? '',
+    (existingBinding?.presentation?.titleColumnId as string | undefined) ?? '',
   );
   const [subtitleColumnId, setSubtitleColumnId] = useState(
-    existingBinding?.presentation?.subtitleColumnId as string | undefined ?? '',
+    (existingBinding?.presentation?.subtitleColumnId as string | undefined) ??
+      '',
   );
+  const [bindingType, setBindingType] = useState<ObjectBindingType>(
+    existingBinding?.type ?? 'ROW',
+  );
+  const [columnId, setColumnId] = useState(existingBinding?.columnId ?? '');
+  const [fieldIds, setFieldIds] = useState<string[]>(
+    existingBinding?.presentation?.fieldColumnIds ?? [],
+  );
+  const [statusColumnId, setStatusColumnId] = useState(
+    existingBinding?.presentation?.statusColumnId ?? '',
+  );
+  const [statusColors, setStatusColors] = useState('');
+  const [aggregation, setAggregation] = useState<
+    'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'FIRST'
+  >(existingBinding?.presentation?.aggregation ?? 'COUNT');
+  const [showLabels, setShowLabels] = useState(
+    existingBinding?.presentation?.showLabels !== false,
+  );
+  const suggestedFor = useRef('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [datasetLocations, setDatasetLocations] =
-    useState<BoardDatasetLocation[]>([]);
+  const [datasetLocations, setDatasetLocations] = useState<
+    BoardDatasetLocation[]
+  >([]);
   const [rowSearch, setRowSearch] = useState('');
 
   const { dataset } = useCollaborativeDataset(
@@ -114,15 +136,21 @@ export function InspectorPanel({
   );
 
   useEffect(() => {
-    void api.datasets(workspaceId, token)
-      .then(setDatasets)
-      .catch((err) => setError(String(err)));
+    const load = () =>
+      api
+        .datasets(workspaceId, token)
+        .then(setDatasets)
+        .catch((err) => setError(String(err)));
+    void load();
+    const refresh = () => void load();
+    window.addEventListener('modelboard:resources', refresh);
+    return () => window.removeEventListener('modelboard:resources', refresh);
   }, [token, workspaceId]);
 
   const locationDatasetId =
     node.type === 'table'
       ? String((node.data as any)?.datasetId ?? '')
-      : existingBinding?.datasetId ?? '';
+      : (existingBinding?.datasetId ?? '');
 
   useEffect(() => {
     if (!locationDatasetId) {
@@ -131,21 +159,27 @@ export function InspectorPanel({
     }
 
     void api
-      .datasetLocations(
-        workspaceId,
-        locationDatasetId,
-        token,
-      )
+      .datasetLocations(workspaceId, locationDatasetId, token)
       .then(setDatasetLocations)
       .catch((err) => setError(String(err)));
-  }, [
-    locationDatasetId,
-    token,
-    workspaceId,
-  ]);
+  }, [locationDatasetId, token, workspaceId]);
 
   useEffect(() => {
-    const binding = (node.data as any)?.binding as ObjectBindingRecord | undefined;
+    const binding = (node.data as any)?.binding as
+      | ObjectBindingRecord
+      | undefined;
+    setBindingType(binding?.type ?? 'ROW');
+    setColumnId(binding?.columnId ?? '');
+    setFieldIds(binding?.presentation?.fieldColumnIds ?? []);
+    setStatusColumnId(binding?.presentation?.statusColumnId ?? '');
+    setAggregation(binding?.presentation?.aggregation ?? 'COUNT');
+    setShowLabels(binding?.presentation?.showLabels !== false);
+    setStatusColors(
+      Object.entries(binding?.presentation?.statusColors ?? {})
+        .map(([value, color]) => `${value}=${color}`)
+        .join('; '),
+    );
+    suggestedFor.current = '';
     setDatasetId(binding?.datasetId ?? '');
     setRowId(binding?.rowId ?? '');
     setTitleColumnId(
@@ -156,7 +190,7 @@ export function InspectorPanel({
     );
     setRowSearch('');
     setError('');
-  }, [node.id, node.data]);
+  }, [node.id, JSON.stringify(existingBinding)]);
 
   const selectedDatasetMeta = useMemo(
     () => datasets.find((item) => item.id === datasetId),
@@ -166,9 +200,10 @@ export function InspectorPanel({
   useEffect(() => {
     if (!dataset || dataset.id !== datasetId) return;
 
-    const suggested = suggestedPresentationFields(
-      dataset.columns,
-    );
+    if (suggestedFor.current === datasetId || !dataset.columns.length) return;
+    suggestedFor.current = datasetId;
+    if (existingBinding?.datasetId === datasetId) return;
+    const suggested = suggestedPresentationFields(dataset.columns);
 
     if (!titleColumnId) {
       setTitleColumnId(suggested.title);
@@ -191,53 +226,50 @@ export function InspectorPanel({
     if (!needle) return dataset.rows;
 
     return dataset.rows.filter((row) =>
-      rowLabel(row, dataset.columns)
-        .toLowerCase()
-        .includes(needle),
+      rowLabel(row, dataset.columns).toLowerCase().includes(needle),
     );
   }, [dataset, rowSearch]);
 
-  const previewRow =
-    rowId && dataset
-      ? dataset.rows.find((row) => row.id === rowId)
-      : undefined;
-
-  const previewTitle =
-    previewRow && titleColumnId
-      ? String(previewRow.values[titleColumnId] ?? '—')
-      : '—';
-
-  const previewSubtitle =
-    previewRow && subtitleColumnId
-      ? String(previewRow.values[subtitleColumnId] ?? '—')
-      : '';
-
   const boundRow =
-    existingBinding?.rowId &&
-    dataset?.id === existingBinding.datasetId
+    existingBinding?.rowId && dataset?.id === existingBinding.datasetId
       ? dataset.rows.find((row) => row.id === existingBinding.rowId)
       : undefined;
 
   const saveBinding = async () => {
-    if (!datasetId || !rowId) return;
+    if (
+      !datasetId ||
+      (['ROW', 'CELL'].includes(bindingType) && !rowId) ||
+      (['COLUMN', 'CELL'].includes(bindingType) && !columnId)
+    )
+      return;
 
     setBusy(true);
     setError('');
     try {
-      const binding = await api.upsertObjectBinding(
-        boardId,
-        node.id,
-        token,
-        {
-          type: 'ROW',
-          datasetId,
-          rowId,
-          presentation: {
-            ...(titleColumnId ? { titleColumnId } : {}),
-            ...(subtitleColumnId ? { subtitleColumnId } : {}),
-          },
+      const binding = await api.upsertObjectBinding(boardId, node.id, token, {
+        type: bindingType,
+        datasetId,
+        ...(['ROW', 'CELL'].includes(bindingType) ? { rowId } : {}),
+        ...(['COLUMN', 'CELL'].includes(bindingType) ? { columnId } : {}),
+        presentation: {
+          fieldColumnIds: fieldIds,
+          statusColumnId: statusColumnId || undefined,
+          showLabels,
+          aggregation,
+          statusColors: Object.fromEntries(
+            statusColors
+              .split(';')
+              .map((item) => item.trim())
+              .filter(Boolean)
+              .map((item) => {
+                const i = item.lastIndexOf('=');
+                return [item.slice(0, i).trim(), item.slice(i + 1).trim()];
+              }),
+          ),
+          ...(titleColumnId ? { titleColumnId } : {}),
+          ...(subtitleColumnId ? { subtitleColumnId } : {}),
         },
-      );
+      });
 
       onUpdateNodeData(node.id, { binding });
     } catch (err) {
@@ -264,12 +296,34 @@ export function InspectorPanel({
     }
   };
 
+  const preview = dataset
+    ? resolveBindingPresentation(
+        {
+          type: bindingType,
+          datasetId,
+          rowId,
+          columnId,
+          presentation: {
+            titleColumnId,
+            subtitleColumnId,
+            fieldColumnIds: fieldIds,
+            showLabels,
+            aggregation,
+            statusColumnId,
+          },
+        },
+        dataset,
+      )
+    : null;
+
   return (
     <aside className="inspector-panel">
       <header>
         <div>
           <strong>Инспектор</strong>
-          <small>{node.type ?? 'object'} · {node.id.slice(0, 8)}</small>
+          <small>
+            {node.type ?? 'object'} · {node.id.slice(0, 8)}
+          </small>
         </div>
         <button className="icon-button" onClick={onClose}>
           <X size={17} />
@@ -284,7 +338,9 @@ export function InspectorPanel({
             <input value={node.type ?? 'unknown'} disabled />
           </label>
 
-          {(node.type === 'shape' || node.type === 'sticky' || node.type === 'text') && (
+          {(node.type === 'shape' ||
+            node.type === 'sticky' ||
+            node.type === 'text') && (
             <label>
               Текст
               <textarea
@@ -381,7 +437,9 @@ export function InspectorPanel({
 
         {node.type === 'table' && (
           <section className="inspector-section">
-            <h3><Database size={14} /> Dataset</h3>
+            <h3>
+              <Database size={14} /> Dataset
+            </h3>
             <p className="inspector-muted">
               Этот TableNode является представлением Dataset:
             </p>
@@ -389,12 +447,16 @@ export function InspectorPanel({
           </section>
         )}
 
-        {(node.type === 'shape' || node.type === 'device' || node.type === 'template') && (
+        {(node.type === 'shape' ||
+          node.type === 'device' ||
+          node.type === 'template') && (
           <section className="inspector-section">
-            <h3><Link2 size={14} /> Привязка данных</h3>
+            <h3>
+              <Link2 size={14} /> Привязка данных
+            </h3>
 
             <div className="binding-guide">
-              <strong>Связать объект с реальной строкой Dataset</strong>
+              <strong>Настраиваемое представление данных</strong>
               <p>
                 После привязки изменение данных в таблице автоматически
                 обновляет этот объект на canvas.
@@ -418,13 +480,34 @@ export function InspectorPanel({
             )}
 
             <label>
+              Тип привязки
+              <select
+                aria-label="Тип привязки"
+                value={bindingType}
+                disabled={readOnly || busy}
+                onChange={(e) =>
+                  setBindingType(e.target.value as ObjectBindingType)
+                }
+              >
+                <option value="ROW">Строка — поля записи</option>
+                <option value="CELL">Ячейка — одно значение</option>
+                <option value="COLUMN">Колонка — агрегат</option>
+                <option value="DATASET">Dataset — сводка</option>
+              </select>
+            </label>
+            <label>
               <span className="binding-step-label">
                 <b>1</b> Dataset
               </span>
               <select
                 disabled={readOnly || busy}
+                aria-label="Dataset привязки"
                 value={datasetId}
                 onChange={(event) => {
+                  suggestedFor.current = '';
+                  setColumnId('');
+                  setFieldIds([]);
+                  setStatusColumnId('');
                   setDatasetId(event.target.value);
                   setRowId('');
                   setRowSearch('');
@@ -441,7 +524,7 @@ export function InspectorPanel({
               </select>
             </label>
 
-            {datasetId && (
+            {datasetId && ['ROW', 'CELL'].includes(bindingType) && (
               <div className="binding-row-picker">
                 <label>
                   <span className="binding-step-label">
@@ -451,26 +534,20 @@ export function InspectorPanel({
                     disabled={readOnly || busy || !dataset}
                     value={rowSearch}
                     placeholder="Поиск по значениям строки…"
-                    onChange={(event) =>
-                      setRowSearch(event.target.value)
-                    }
+                    onChange={(event) => setRowSearch(event.target.value)}
                   />
                 </label>
 
                 <label>
                   <select
                     disabled={readOnly || busy || !dataset}
+                    aria-label="Строка привязки"
                     value={rowId}
-                    onChange={(event) =>
-                      setRowId(event.target.value)
-                    }
-                    size={Math.min(
-                      7,
-                      Math.max(2, filteredRows.length + 1),
-                    )}
+                    onChange={(event) => setRowId(event.target.value)}
+                    size={Math.min(7, Math.max(2, filteredRows.length + 1))}
                   >
                     <option value="">Выберите строку</option>
-                    {filteredRows.map((row) => (
+                    {filteredRows.slice(0, 200).map((row) => (
                       <option key={row.id} value={row.id}>
                         {rowLabel(row, dataset!.columns)}
                       </option>
@@ -478,6 +555,12 @@ export function InspectorPanel({
                   </select>
                 </label>
 
+                {filteredRows.length > 200 && (
+                  <p className="inspector-muted">
+                    Первые 200 результатов. Уточните поиск для остальных
+                    записей.
+                  </p>
+                )}
                 {dataset && filteredRows.length === 0 && (
                   <p className="inspector-muted">
                     По запросу строк не найдено.
@@ -486,7 +569,7 @@ export function InspectorPanel({
               </div>
             )}
 
-            {rowId && dataset && (
+            {rowId && dataset && bindingType === 'ROW' && (
               <>
                 <label>
                   <span className="binding-step-label">
@@ -494,6 +577,7 @@ export function InspectorPanel({
                   </span>
                   <select
                     disabled={readOnly || busy}
+                    aria-label="Поле заголовка"
                     value={titleColumnId}
                     onChange={(event) => setTitleColumnId(event.target.value)}
                   >
@@ -510,8 +594,11 @@ export function InspectorPanel({
                   Поле подзаголовка
                   <select
                     disabled={readOnly || busy}
+                    aria-label="Поле подзаголовка"
                     value={subtitleColumnId}
-                    onChange={(event) => setSubtitleColumnId(event.target.value)}
+                    onChange={(event) =>
+                      setSubtitleColumnId(event.target.value)
+                    }
                   >
                     <option value="">Нет</option>
                     {dataset.columns.map((column) => (
@@ -524,11 +611,117 @@ export function InspectorPanel({
               </>
             )}
 
-            {previewRow && (
+            {dataset && ['COLUMN', 'CELL'].includes(bindingType) && (
+              <label>
+                Поле привязки
+                <select
+                  aria-label="Поле привязки"
+                  value={columnId}
+                  disabled={readOnly || busy}
+                  onChange={(e) => setColumnId(e.target.value)}
+                >
+                  <option value="">Выберите поле</option>
+                  {dataset.columns.map((column) => (
+                    <option key={column.id} value={column.id}>
+                      {column.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {dataset && bindingType === 'COLUMN' && (
+              <label>
+                Агрегат
+                <select
+                  aria-label="Агрегат"
+                  disabled={readOnly || busy}
+                  value={aggregation}
+                  onChange={(e) => setAggregation(e.target.value as any)}
+                >
+                  {['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'FIRST'].map(
+                    (mode) => (
+                      <option key={mode}>{mode}</option>
+                    ),
+                  )}
+                </select>
+              </label>
+            )}
+            {dataset && bindingType === 'ROW' && (
+              <>
+                <span>Поля на объекте (до 12)</span>
+                <div className="binding-field-options">
+                  {dataset.columns.map((column) => (
+                    <label key={column.id}>
+                      <input
+                        type="checkbox"
+                        disabled={
+                          readOnly ||
+                          busy ||
+                          (!fieldIds.includes(column.id) &&
+                            fieldIds.length >= 12)
+                        }
+                        checked={fieldIds.includes(column.id)}
+                        onChange={(e) =>
+                          setFieldIds((ids) =>
+                            e.target.checked
+                              ? [...ids, column.id]
+                              : ids.filter((id) => id !== column.id),
+                          )
+                        }
+                      />
+                      {column.name}
+                    </label>
+                  ))}
+                </div>
+                <label>
+                  <input
+                    type="checkbox"
+                    disabled={readOnly || busy}
+                    checked={showLabels}
+                    onChange={(e) => setShowLabels(e.target.checked)}
+                  />
+                  Подписи полей
+                </label>
+                <label>
+                  Поле статуса
+                  <select
+                    aria-label="Поле статуса"
+                    disabled={readOnly || busy}
+                    value={statusColumnId}
+                    onChange={(e) => setStatusColumnId(e.target.value)}
+                  >
+                    <option value="">Без статуса</option>
+                    {dataset.columns.map((column) => (
+                      <option key={column.id} value={column.id}>
+                        {column.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {statusColumnId && (
+                  <label>
+                    Цвета статусов
+                    <input
+                      disabled={readOnly || busy}
+                      placeholder="up=#22aa55; down=#cc3344"
+                      value={statusColors}
+                      onChange={(e) => setStatusColors(e.target.value)}
+                    />
+                  </label>
+                )}
+              </>
+            )}
+            {preview && (
               <div className="binding-preview">
                 <small>Предпросмотр объекта</small>
-                <strong>{previewTitle}</strong>
-                {previewSubtitle && <span>{previewSubtitle}</span>}
+                <strong>{preview.title}</strong>
+                {preview.subtitle && <span>{preview.subtitle}</span>}
+                {preview.fields.map((field) => (
+                  <span key={field.id}>
+                    {showLabels ? `${field.label}: ` : ''}
+                    {field.value}
+                  </span>
+                ))}
               </div>
             )}
 
@@ -543,7 +736,12 @@ export function InspectorPanel({
               <div className="inspector-actions">
                 <button
                   className="primary-button"
-                  disabled={!datasetId || !rowId || busy}
+                  disabled={
+                    !datasetId ||
+                    (['ROW', 'CELL'].includes(bindingType) && !rowId) ||
+                    (['COLUMN', 'CELL'].includes(bindingType) && !columnId) ||
+                    busy
+                  }
                   onClick={saveBinding}
                 >
                   <Link2 size={14} />
@@ -551,7 +749,9 @@ export function InspectorPanel({
                     ? 'Сохранение…'
                     : existingBinding
                       ? 'Обновить привязку'
-                      : 'Привязать строку к объекту'}
+                      : bindingType === 'ROW'
+                        ? 'Привязать строку к объекту'
+                        : 'Привязать данные к объекту'}
                 </button>
 
                 {existingBinding && (
@@ -571,65 +771,77 @@ export function InspectorPanel({
           </section>
         )}
 
-        {(node.type === 'shape' || node.type === 'device' || node.type === 'template') && existingBinding && dataset && boundRow && (
-          <>
-            <section className="inspector-section">
-              <h3><Database size={14} /> Текущие данные</h3>
-              <div className="bound-row-fields">
-                {dataset.columns.map((column) => (
-                  <div className="bound-row-field" key={column.id}>
-                    <small>{column.name}</small>
-                    <strong>
-                      {String(boundRow.values[column.id] ?? '—')}
-                    </strong>
-                  </div>
-                ))}
-              </div>
+        {(node.type === 'shape' ||
+          node.type === 'device' ||
+          node.type === 'template') &&
+          existingBinding &&
+          dataset &&
+          boundRow && (
+            <>
+              <section className="inspector-section">
+                <h3>
+                  <Database size={14} /> Текущие данные
+                </h3>
+                <div className="bound-row-fields">
+                  {dataset.columns.map((column) => (
+                    <div className="bound-row-field" key={column.id}>
+                      <small>{column.name}</small>
+                      <strong>
+                        {String(boundRow.values[column.id] ?? '—')}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
 
-              <button
-                className="secondary-button inspector-open-dataset"
-                onClick={() =>
-                  openDatasetSheet(
-                    existingBinding.datasetId,
-                    existingBinding.rowId,
-                  )
-                }
-              >
-                <Table2 size={14} />
-                Открыть в таблице
-              </button>
-            </section>
+                <button
+                  className="secondary-button inspector-open-dataset"
+                  onClick={() =>
+                    openDatasetSheet(
+                      existingBinding.datasetId,
+                      existingBinding.rowId,
+                    )
+                  }
+                >
+                  <Table2 size={14} />
+                  Открыть в таблице
+                </button>
+              </section>
 
-            <RelatedRecords
-              workspaceId={workspaceId}
-              token={token}
-              dataset={dataset}
-              row={boundRow}
-              parentNodeId={node.id}
-            />
-          </>
-        )}
+              <RelatedRecords
+                workspaceId={workspaceId}
+                token={token}
+                dataset={dataset}
+                row={boundRow}
+                parentNodeId={node.id}
+              />
+            </>
+          )}
 
         {locationDatasetId && (
           <section className="inspector-section">
             <h3>
               <LayoutDashboard size={14} />
-              Где показан Dataset
+              Где показаны данные
             </h3>
 
             {datasetLocations.filter(
-              (location) => location.objectType === 'table',
+              (location) =>
+                location.objectType === 'table' ||
+                !existingBinding?.rowId ||
+                location.rowId === existingBinding.rowId,
             ).length === 0 ? (
               <p className="inspector-muted">
-                TableNode с этим Dataset пока не найден в индексе Board.
-                Индекс обновляется при открытии и изменении досок.
+                TableNode с этим Dataset пока не найден в индексе Board. Индекс
+                обновляется при открытии и изменении досок.
               </p>
             ) : (
               <div className="dataset-location-list">
                 {datasetLocations
                   .filter(
                     (location) =>
-                      location.objectType === 'table',
+                      location.objectType === 'table' ||
+                      !existingBinding?.rowId ||
+                      location.rowId === existingBinding.rowId,
                   )
                   .map((location) => {
                     const current =
@@ -640,7 +852,7 @@ export function InspectorPanel({
                       <button
                         key={`${location.boardId}:${location.objectId}`}
                         className={current ? 'is-current' : ''}
-                        disabled={current && !existingBinding?.rowId}
+                        disabled={current && location.objectType !== 'table'}
                         onClick={() =>
                           void navigateToDatasetLocation(
                             location,
@@ -652,7 +864,9 @@ export function InspectorPanel({
                         <span>
                           <strong>{location.boardName}</strong>
                           <small>
-                            TableNode
+                            {location.objectType === 'table'
+                              ? 'Таблица'
+                              : 'Представление записи'}
                             {current ? ' · текущий объект' : ''}
                           </small>
                         </span>

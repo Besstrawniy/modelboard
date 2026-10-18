@@ -119,3 +119,13 @@ export function reorderCanvasLayers(nodes: CanvasGeometryNode[], selected: Reado
   });
   return result;
 }
+
+/** Find an unoccupied slot for palette insertion rather than stacking objects. */
+export function canvasInsertionPosition(nodes:CanvasGeometryNode[],center:Position,width:number,height:number){
+ const obstacles=nodes.filter(node=>node.type!=='frame'&&node.type!=='group'&&node.type!=='freehand');
+ const free=(point:Position)=>!obstacles.some(node=>point.x<node.position.x+canvasNodeSize(node,'width',220)+18&&point.x+width+18>node.position.x&&point.y<node.position.y+canvasNodeSize(node,'height',130)+18&&point.y+height+18>node.position.y);
+ const origin={x:center.x-width/2,y:center.y-height/2};
+ if(free(origin))return origin;
+ for(let ring=1;ring<=30;ring++)for(let y=-ring;y<=ring;y++)for(let x=-ring;x<=ring;x++){if(Math.max(Math.abs(x),Math.abs(y))!==ring)continue;const point={x:origin.x+x*(width+30),y:origin.y+y*(height+30)};if(free(point))return point;}
+ return {x:origin.x+(obstacles.length+1)*(width+30),y:origin.y};
+}

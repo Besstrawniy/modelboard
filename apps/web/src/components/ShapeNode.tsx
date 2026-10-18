@@ -1,3 +1,4 @@
+import { BoundData } from './BoundData';
 import { CanvasInlineText } from './CanvasInlineText';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
 import { Database } from 'lucide-react';
@@ -14,29 +15,6 @@ export function ShapeNode({ id, data, selected }: NodeProps<any>) {
 
   const shape = data as ShapeNodeData;
   const binding = shape.binding as ObjectBindingRecord | undefined;
-  const { dataset } = useCollaborativeDataset(
-    binding?.datasetId,
-    sessionToken,
-    true,
-  );
-
-  const boundRow = binding?.rowId
-    ? dataset?.rows.find((row) => row.id === binding.rowId)
-    : undefined;
-
-  const titleColumnId =
-    (binding?.presentation?.titleColumnId as string | undefined) ??
-    dataset?.columns[0]?.id;
-  const subtitleColumnId =
-    binding?.presentation?.subtitleColumnId as string | undefined;
-
-  const title = boundRow && titleColumnId
-    ? String(boundRow.values[titleColumnId] ?? '')
-    : shape.text ?? 'Объект';
-
-  const subtitle = boundRow && subtitleColumnId
-    ? String(boundRow.values[subtitleColumnId] ?? '')
-    : '';
 
   return (
     <div className={`shape-node ${selected ? 'is-selected' : ''} ${binding ? 'is-bound' : ''} shape-node--${String(data.shapeKind ?? 'rectangle')}`}>
@@ -59,8 +37,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<any>) {
             <Database size={11} />
             DATA
           </div>
-          <strong>{title || 'Без значения'}</strong>
-          {subtitle && <span>{subtitle}</span>}
+          <BoundData binding={binding}/>
         </div>
       ) : (
         <CanvasInlineText id={id} value={String(shape.text ?? '')} placeholder="Объект" />

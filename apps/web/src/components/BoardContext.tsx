@@ -24,6 +24,7 @@ export type MaterializeRelatedInput = {
 };
 
 export type BoardActions = {
+  showRelationOnCanvas: (relation:DatasetRelation)=>void;
   readOnly: boolean;
   keepAspectRatio: boolean;
   sessionToken: string;
@@ -57,6 +58,7 @@ export type BoardActions = {
 };
 
 const BoardActionsContext = createContext<BoardActions>({
+  showRelationOnCanvas:()=>undefined,
   readOnly: true,
   keepAspectRatio: false,
   sessionToken: '',

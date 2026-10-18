@@ -31,7 +31,11 @@ async function json<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${baseUrl}${url}`, options);
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    throw new Error(`${response.status} ${response.statusText}${detail ? `: ${detail}` : ''}`);
+    let message='';
+    try{const parsed=JSON.parse(detail);message=Array.isArray(parsed.message)?parsed.message.join('; '):typeof parsed.message==='string'?parsed.message:'';}catch{/* Non-JSON response, e.g. an unavailable proxy. */}
+    if(!message||message==='Internal server error')message='Не удалось выполнить операцию на сервере.';
+    if(message==='Forbidden resource')message='Недостаточно прав для этой операции.';
+    throw new Error(message);
   }
   return response.json();
 }
@@ -41,6 +45,12 @@ const authHeaders = (token: string) => ({
 });
 
 export const api = {
+  datasetColumns:(id:string,token:string)=>json<DatasetColumn[]>(`/datasets/${id}/columns`,{headers:authHeaders(token)}),
+  datasetDeletionPreview:(id:string,token:string)=>json<{name:string;rows:number;bindings:number;relations:number;views:number}>(`/datasets/${id}/deletion-preview`,{headers:authHeaders(token)}),
+  deleteDataset:(id:string,token:string)=>json<{ok:true}>(`/datasets/${id}`,{method:'DELETE',headers:authHeaders(token)}),
+  updateRelation:(workspaceId:string,id:string,token:string,body:CreateDatasetRelationInput)=>json<DatasetRelation>(`/workspaces/${workspaceId}/relations/${id}`,{method:'PUT',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify(body)}),
+  deleteRelation:(workspaceId:string,id:string,token:string)=>json<{ok:true}>(`/workspaces/${workspaceId}/relations/${id}`,{method:'DELETE',headers:authHeaders(token)}),
+  validateRelation:(workspaceId:string,id:string,token:string)=>json<{valid:boolean;issues:string[];matchedRows:number;orphanCount:number;sourceDuplicates:number;targetDuplicates:number}>(`/workspaces/${workspaceId}/relations/${id}/validation`,{headers:authHeaders(token)}),
   createDatasetRows:(datasetId:string,token:string,rows:Array<{id:string;values?:DatasetRow['values']}>)=>json<DatasetRow[]>(`/datasets/${datasetId}/rows/batch`,{method:'POST',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify({rows})}),
   devUsers: () => json<DevUser[]>('/auth/dev-users'),
 

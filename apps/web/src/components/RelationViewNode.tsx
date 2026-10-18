@@ -1,3 +1,4 @@
+import { relationValueKey } from '@modelboard/shared';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
 import { ExternalLink, Link2 } from 'lucide-react';
 import type {
@@ -23,7 +24,7 @@ function sameValue(left: unknown, right: unknown) {
   ) {
     return false;
   }
-  return String(left) === String(right);
+  return relationValueKey(left)!==null&&relationValueKey(left)===relationValueKey(right);
 }
 
 function rowFields(
@@ -68,13 +69,14 @@ export function RelationViewNode({
   );
 
   useEffect(() => {
-    void api.relations(workspaceId, sessionToken)
+    const load=()=>api.relations(workspaceId, sessionToken)
       .then((relations) =>
         setRelation(
           relations.find((item) => item.id === node.relationId) ?? null,
         ),
       )
       .catch(() => setRelation(null));
+    void load();const refresh=()=>void load();window.addEventListener('modelboard:resources',refresh);return()=>window.removeEventListener('modelboard:resources',refresh);
   }, [node.relationId, sessionToken, workspaceId]);
 
   const otherDatasetId = relation

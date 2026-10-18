@@ -101,7 +101,7 @@ export async function getDatasetAccess(datasetId: string, userId: string) {
      FROM datasets d
      JOIN workspaces w ON w.id = d.workspace_id
      JOIN workspace_members wm ON wm.workspace_id = w.id
-     WHERE d.id = $1 AND wm.user_id = $2`,
+     WHERE d.id = $1 AND d.deleted_at IS NULL AND wm.user_id = $2`,
     [datasetId, userId],
   );
 

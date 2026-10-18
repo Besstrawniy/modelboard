@@ -1,3 +1,4 @@
+import { BoundData } from './BoundData';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
 import {
   Handle,
@@ -30,29 +31,7 @@ export function TemplateNode({ data, selected }: NodeProps<any>) {
   const binding =
     node.binding as ObjectBindingRecord | null | undefined;
 
-  const { dataset } = useCollaborativeDataset(
-    binding?.datasetId,
-    sessionToken,
-    true,
-  );
-
-  const boundRow = binding?.rowId
-    ? dataset?.rows.find((row) => row.id === binding.rowId)
-    : undefined;
-
-  const titleColumnId =
-    (binding?.presentation?.titleColumnId as string | undefined) ??
-    dataset?.columns[0]?.id;
-  const subtitleColumnId =
-    binding?.presentation?.subtitleColumnId as string | undefined;
-
-  const title = boundRow && titleColumnId
-    ? String(boundRow.values[titleColumnId] ?? '')
-    : node.label || template?.name || 'SVG template';
-
-  const subtitle = boundRow && subtitleColumnId
-    ? String(boundRow.values[subtitleColumnId] ?? '')
-    : '';
+  const title=node.label||template?.name||'SVG template';
 
   const source = useMemo(
     () => template ? svgDataUrl(template.svg) : '',
@@ -87,8 +66,7 @@ export function TemplateNode({ data, selected }: NodeProps<any>) {
 
       <div className="template-node__caption">
         <span>{template?.name ?? 'Workspace SVG'}</span>
-        <strong>{title}</strong>
-        {subtitle && <small>{subtitle}</small>}
+        {binding?<BoundData binding={binding}/>:<strong>{title}</strong>}
       </div>
 
       <Handle type="source" position={Position.Right} isConnectable={!readOnly} />

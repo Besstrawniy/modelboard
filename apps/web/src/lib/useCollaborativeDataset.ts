@@ -1,3 +1,4 @@
+import { receiveResourceMessage } from './resources';
 import { SharedRecordStore, type DatasetView, type DatasetConditionalRule } from '@modelboard/shared';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import type {
@@ -82,7 +83,7 @@ export function useCollaborativeDataset(
       flushDelay: 40,
       onStatus: ({ status }) => setStatus(status),
       onAuthenticationFailed: () => { setStatus('error'); setSynced(false); },
-      onStateless: ({payload}) => {try{const message=JSON.parse(payload);if(message.type==='dataset-storage')setStorageError(message.saved?'':message.message);}catch{/* Ignore unrelated stateless messages. */}},
+      onStateless: ({payload}) => {try{const message=receiveResourceMessage(payload);if(message?.kind==='dataset-deleted'&&message.datasetId===datasetId){setStatus('deleted');setDataset(null);setSynced(false);provider.disconnect();}if(message?.type==='dataset-storage')setStorageError(message.saved?'':message.message);}catch{/* Ignore unrelated stateless messages. */}},
       onUnsyncedChanges: ({ number }) => setPendingChanges(number),
       onSynced: ({ state }) => {
         if (!state) return;

@@ -1,3 +1,5 @@
+import { canvasInsertionPosition } from '../lib/canvasGeometry';
+import { receiveResourceMessage } from '../lib/resources';
 import {
   addEdge,
   applyEdgeChanges,
@@ -422,6 +424,7 @@ function BoardInner({
           setHistoryTick((value) => value + 1);
         }
       },
+      onStateless: ({payload})=>{const message=receiveResourceMessage(payload);if(message?.kind==='dataset-deleted')setSheetTarget(current=>current?.datasetId===message.datasetId?null:current);},
       onAwarenessChange: ({ states }) => {
         setPresence(Array.from(states.entries()) as Array<[number, PresenceState]>);
       },
@@ -1519,11 +1522,7 @@ function BoardInner({
       ];
 
       const findColumn = (names: string[]) =>
-        dataset.columns.find((column) =>
-          names.includes(
-            column.name.trim().toLowerCase(),
-          ),
-        )?.id;
+        names.map(name=>dataset.columns.find(column=>column.name.trim().toLowerCase()===name)?.id).find(Boolean);
 
       const titleColumnId =
         findColumn(titleCandidates) ??
@@ -1620,7 +1619,10 @@ function BoardInner({
             },
           };
 
-      nodesMap.set(nodeId, node);
+      node.position=canvasInsertionPosition(Array.from(nodesMap.values()),center,220,170);node.style={...node.style,height:170};node.zIndex=Math.max(0,...Array.from(nodesMap.values()).map(item=>Number(item.zIndex??0)))+1;
+      undoManager.stopCapturing();nodesMap.set(nodeId, node);undoManager.stopCapturing();
+      setNodes(current=>current.map(item=>({...item,selected:item.id===nodeId})));
+      if(rf){const zoom=Math.max(.55,Math.min(1.2,rf.getZoom()));void rf.setCenter(node.position.x+110+100/zoom,node.position.y+85,{zoom,duration:200});}
       setSelectedNodeId(nodeId);
       setSelectedNodeIds([nodeId]);
       setToolMode('select');
@@ -1633,6 +1635,8 @@ function BoardInner({
       readOnly,
       rf,
       session.token,
+      undoManager,
+      setNodes,
     ],
   );
 
@@ -1659,9 +1663,7 @@ function BoardInner({
     const subtitleCandidates = ['ip', 'ip_address', 'address', 'port', 'status'];
 
     const byNames = (candidates: string[]) =>
-      dataset.columns.find((column) =>
-        candidates.includes(column.name.trim().toLowerCase()),
-      )?.id;
+      candidates.map(name=>dataset.columns.find(column=>column.name.trim().toLowerCase()===name)?.id).find(Boolean);
 
     const titleColumnId =
       byNames(titleCandidates) ??
@@ -2083,16 +2085,15 @@ function BoardInner({
 
     const id = crypto.randomUUID();
     const center = viewportCenter();
+    const position=canvasInsertionPosition(Array.from(nodesMap.values()),center,220,170);
 
     undoManager.stopCapturing();
     nodesMap.set(id, {
       id,
       type: 'device',
-      position: {
-        x: center.x - 110,
-        y: center.y - 65,
-      },
-      style: { width: 220, height: 130 },
+      position,
+      zIndex: Math.max(0,...Array.from(nodesMap.values()).map(node=>Number(node.zIndex??0)))+1,
+      style: { width: 220, height: 170 },
       data: {
         deviceKind: kind,
         label: '',
@@ -2103,9 +2104,10 @@ function BoardInner({
     setNodes((current)=>current.map((node)=>({...node,selected:node.id===id})));
     setSelectedNodeIds([id]);
     setSelectedNodeId(id);
-    setDevicesOpen(false);
+    setDevicesOpen(false);setDatasetsOpen(false);setCommentsOpen(false);
+    if(rf){const zoom=Math.max(.55,Math.min(1.2,rf.getZoom()));void rf.setCenter(position.x+110+100/zoom,position.y+85,{zoom,duration:200});}
     setToolMode('select');
-  }, [nodesMap, readOnly, viewportCenter, undoManager, setNodes]);
+  }, [nodesMap, readOnly, viewportCenter, undoManager, setNodes, rf]);
 
   const addTemplateNode = useCallback((templateId: string) => {
     if (readOnly) return;
@@ -2117,18 +2119,18 @@ function BoardInner({
 
     const id = crypto.randomUUID();
     const center = viewportCenter();
+    const height=Math.max(170,template.defaultHeight+54);
+    const position=canvasInsertionPosition(Array.from(nodesMap.values()),center,template.defaultWidth,height);
 
     undoManager.stopCapturing();
     nodesMap.set(id, {
       id,
       type: 'template',
-      position: {
-        x: center.x - template.defaultWidth / 2,
-        y: center.y - Math.max(100, template.defaultHeight + 54) / 2,
-      },
+      position,
+      zIndex:Math.max(0,...Array.from(nodesMap.values()).map(node=>Number(node.zIndex??0)))+1,
       style: {
         width: template.defaultWidth,
-        height: Math.max(100, template.defaultHeight + 54),
+        height,
       },
       data: {
         templateId: template.id,
@@ -2141,6 +2143,7 @@ function BoardInner({
     setSelectedNodeIds([id]);
     setSelectedNodeId(id);
     setDevicesOpen(false);
+    if(rf){const zoom=Math.max(.55,Math.min(1.2,rf.getZoom()));void rf.setCenter(position.x+template.defaultWidth/2+100/zoom,position.y+height/2,{zoom,duration:200});}
     setToolMode('select');
   }, [
     nodesMap,
@@ -2149,6 +2152,7 @@ function BoardInner({
     workspaceTemplates,
     undoManager,
     setNodes,
+    rf,
   ]);
 
   const eraseGestureSegment = useCallback((gesture: Extract<DrawingGesture, { mode: 'eraser' }>, point: FreehandPoint) => {
@@ -2395,7 +2399,7 @@ function BoardInner({
       duration: 450,
     });
 
-    if (navigationTarget.rowId) {
+    if (navigationTarget.rowId && node.type==='table') {
       setSheetTarget({
         datasetId:
           navigationTarget.location.datasetId,
@@ -2410,6 +2414,19 @@ function BoardInner({
     nodes,
     rf,
   ]);
+
+  const showRelationOnCanvas=(relation:DatasetRelation)=>{
+    if(readOnly)return;
+    const center=viewportCenter(),items:Node[]=[];
+    undoManager.stopCapturing();ydoc.transact(()=>{
+      for(const [index,datasetId] of [relation.sourceDatasetId,relation.targetDatasetId].entries()){
+        const id=`er-dataset:${datasetId}`;let node=nodesMap.get(id) as Node|undefined;
+        if(!node){node={id,type:'table',position:{x:center.x-590+index*620,y:center.y-150},style:{width:540,height:300},data:{datasetId}};nodesMap.set(id,node);}items.push(node);
+      }
+      const id=`er-relation:${relation.id}`;edgesMap.set(id,{id,type:'smoothstep',source:items[0].id,target:items[1].id,sourceHandle:`source:${relation.sourceColumnId}`,targetHandle:`target:${relation.targetColumnId}`,markerEnd:{type:MarkerType.ArrowClosed},label:`${relation.name||relation.relationType} ${relation.cardinality??''}`,data:{relationId:relation.id,relationType:relation.relationType,cardinality:relation.cardinality}});
+    });undoManager.stopCapturing();
+    setDatasetsOpen(false);setSelectedNodeId(null);setToolMode('select');requestAnimationFrame(()=>void rf?.fitView({nodes:items,padding:.25,duration:300}));
+  };
 
   const selectedNode = selectedNodeId
     ? nodes.find((node) => node.id === selectedNodeId) ?? null
@@ -2430,6 +2447,7 @@ function BoardInner({
     <BoardActionsProvider
       value={{
         readOnly,
+        showRelationOnCanvas,
         keepAspectRatio: modifiers.shift,
         sessionToken: session.token,
         boardId: meta.id,

@@ -3654,3 +3654,24 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16px; padding-top:7px; height:34px; overflow:auto; }
 
 .sheet-storage-error { flex-shrink:0; padding:8px 14px; background:#fff0f0; color:#a42c36; border-bottom:1px solid #edb5ba; font-size:12px; }
+.datasets-panel__tabs { display:flex; gap:6px; padding:8px 12px; border-bottom:1px solid #e0e5ee; }
+.datasets-panel__tabs button,.relation-manager button,.dataset-delete-confirm button { border:1px solid #d5dce8; background:white; border-radius:6px; padding:6px 9px; cursor:pointer; font:inherit; }
+.datasets-panel__tabs button[aria-pressed=true] { background:#eef0ff; border-color:#a6aff0; }
+.datasets-panel { max-height:calc(100% - 86px); }
+.relation-manager { padding:12px; overflow:auto; min-height:0; font-size:12px; }
+.relation-manager p { color:#657085; line-height:1.5; }
+.relation-editor { display:grid; gap:10px; border-top:1px solid #e0e5ee; padding-top:12px; margin-top:14px; }
+.relation-editor label { display:grid; gap:4px; }
+.relation-editor input,.relation-editor select { min-width:0; width:100%; border:1px solid #d5dce8; border-radius:6px; padding:7px; background:white; font:inherit; }
+.relation-editor label.relation-checkbox { display:flex; gap:7px; align-items:center; }.relation-checkbox input { width:auto; }
+.relation-card { padding:10px; margin:8px 0; border:1px solid #dce2ed; border-radius:8px; display:grid; gap:6px; }.relation-card small { color:#657085; }
+.relation-card__actions { display:flex; flex-wrap:wrap; gap:5px; }
+.dataset-delete-confirm { margin:10px; padding:12px; border:1px solid #e7b3b9; background:#fff6f6; border-radius:8px; font-size:12px; overflow:auto; flex-shrink:0; max-height:55vh; }
+.dataset-delete-confirm button { margin:4px; }
+.bound-data { display:grid; gap:4px; min-width:0; border-left:3px solid transparent; padding-left:5px; }
+.bound-data strong,.bound-data small,.bound-data__field { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bound-data__field,.bound-data__status { font-size:10px; }.bound-data__field em { font-style:normal; color:#687588; }
+.bound-data button { justify-self:start; border:0; padding:2px 0; color:#5864bb; background:transparent; font-size:10px; cursor:pointer; }
+.device-node__body { min-width:0; }.device-node { overflow:auto; }
+.binding-field-options { display:grid; grid-template-columns:1fr 1fr; gap:5px; max-height:160px; overflow:auto; padding:7px; border:1px solid #dce2ed; border-radius:7px; }
+.binding-field-options label { display:flex; align-items:center; gap:5px; font-size:11px; }.binding-field-options input { width:auto; }

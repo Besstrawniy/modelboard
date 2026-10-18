@@ -15,7 +15,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { pool, query } from '@modelboard/db';
+import {
+  pool,
+  query,
+  relationFromSql,
+  validateSqlRelation,
+  assertDatasetRelations,
+} from '@modelboard/db';
 import {
   canComment,
   canEditBoard,
@@ -79,7 +85,9 @@ export class AppController {
       id: string;
       email: string;
       display_name: string;
-    }>('SELECT id, email, display_name FROM users WHERE id = $1', [body.userId]);
+    }>('SELECT id, email, display_name FROM users WHERE id = $1', [
+      body.userId,
+    ]);
 
     const user = result.rows[0];
     if (!user) throw new NotFoundException('Demo user not found');
@@ -102,10 +110,7 @@ export class AppController {
 
   @UseGuards(AuthGuard)
   @Get('workspaces/:id/boards')
-  async boards(
-    @Param('id') workspaceId: string,
-    @Req() req: any,
-  ) {
+  async boards(@Param('id') workspaceId: string, @Req() req: any) {
     const access = await getWorkspaceAccess(workspaceId, req.user.sub);
     if (!access) throw new ForbiddenException();
 
@@ -147,9 +152,7 @@ export class AppController {
       throw new BadRequestException('Board name is required');
     }
     if (name.length > 120) {
-      throw new BadRequestException(
-        'Board name is limited to 120 characters',
-      );
+      throw new BadRequestException('Board name is limited to 120 characters');
     }
 
     const boardId = randomUUID();
@@ -188,9 +191,7 @@ export class AppController {
       throw new BadRequestException('Board name is required');
     }
     if (name.length > 120) {
-      throw new BadRequestException(
-        'Board name is limited to 120 characters',
-      );
+      throw new BadRequestException('Board name is limited to 120 characters');
     }
 
     await query(
@@ -211,10 +212,7 @@ export class AppController {
 
   @UseGuards(AuthGuard)
   @Delete('boards/:id')
-  async deleteBoard(
-    @Param('id') boardId: string,
-    @Req() req: any,
-  ) {
+  async deleteBoard(@Param('id') boardId: string, @Req() req: any) {
     const access = await getBoardAccess(boardId, req.user.sub);
     if (!access) throw new ForbiddenException();
     if (access.role !== 'OWNER') {
@@ -241,10 +239,7 @@ export class AppController {
         'DELETE FROM collab_documents WHERE document_name = $1',
         [`board:${boardId}`],
       );
-      await client.query(
-        'DELETE FROM boards WHERE id = $1',
-        [boardId],
-      );
+      await client.query('DELETE FROM boards WHERE id = $1', [boardId]);
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -285,7 +280,7 @@ export class AppController {
     }>(
       `SELECT id, workspace_id, name, kind
        FROM datasets
-       WHERE workspace_id = $1
+       WHERE deleted_at IS NULL AND workspace_id = $1
        ORDER BY created_at, name`,
       [id],
     );
@@ -300,29 +295,100 @@ export class AppController {
   }
 
   @UseGuards(AuthGuard)
+  @Get('datasets/:id/deletion-preview')
+  async datasetDeletionPreview(@Param('id') id: string, @Req() req: any) {
+    const access = await getDatasetAccess(id, req.user.sub);
+    if (!access) throw new NotFoundException('Dataset не найден');
+    if (!canEditBoard(access.role)) throw new ForbiddenException();
+    const count = async (sql: string) =>
+      Number((await query(sql, [id])).rows[0].count);
+    return {
+      name: access.dataset_name,
+      rows: await count(
+        'SELECT count(*) FROM dataset_rows WHERE dataset_id=$1',
+      ),
+      bindings: await count(
+        'SELECT count(*) FROM object_bindings WHERE dataset_id=$1',
+      ),
+      relations: await count(
+        'SELECT count(*) FROM dataset_relations WHERE deleted_at IS NULL AND (source_dataset_id=$1 OR target_dataset_id=$1)',
+      ),
+      views: await count(
+        'SELECT count(*) FROM board_object_index WHERE dataset_id=$1',
+      ),
+    };
+  }
+
+  @UseGuards(AuthGuard)
+  @Delete('datasets/:id')
+  async deleteDataset(@Param('id') id: string, @Req() req: any) {
+    const access = await getDatasetAccess(id, req.user.sub);
+    if (!access) throw new NotFoundException('Dataset не найден');
+    if (!canEditBoard(access.role)) throw new ForbiddenException();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        [access.workspace_id],
+      );
+      const deleted = await client.query(
+        'UPDATE datasets SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING id',
+        [id],
+      );
+      if (!deleted.rowCount) throw new NotFoundException('Dataset уже удалён');
+      const relations = await client.query(
+        'UPDATE dataset_relations SET deleted_at=now() WHERE deleted_at IS NULL AND (source_dataset_id=$1 OR target_dataset_id=$1) RETURNING id',
+        [id],
+      );
+      const relationIds = relations.rows.map((row) => row.id);
+      await client.query(
+        "DELETE FROM object_bindings WHERE dataset_id=$1 OR EXISTS(SELECT 1 FROM jsonb_array_elements_text(COALESCE(NULLIF(relation_path,'null'::jsonb),'[]'::jsonb)) path WHERE path.value=ANY($2::text[]))",
+        [id, relationIds],
+      );
+      await client.query('DELETE FROM board_object_index WHERE dataset_id=$1', [
+        id,
+      ]);
+      await client.query(
+        'DELETE FROM collab_documents WHERE document_name=$1',
+        [`dataset:${id}`],
+      );
+      await client.query("SELECT pg_notify('modelboard_resources',$1)", [
+        JSON.stringify({
+          kind: 'dataset-deleted',
+          workspaceId: access.workspace_id,
+          datasetId: id,
+        }),
+      ]);
+      await client.query('COMMIT');
+      return { ok: true };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  @UseGuards(AuthGuard)
   @Get('workspaces/:id/datasets/:datasetId/locations')
   async datasetLocations(
     @Param('id') workspaceId: string,
     @Param('datasetId') datasetId: string,
     @Req() req: any,
   ): Promise<BoardDatasetLocation[]> {
-    const access = await getWorkspaceAccess(
-      workspaceId,
-      req.user.sub,
-    );
+    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
     if (!access) throw new ForbiddenException();
 
     const dataset = await query<{ id: string }>(
       `SELECT id
        FROM datasets
-       WHERE id = $1 AND workspace_id = $2`,
+       WHERE deleted_at IS NULL AND id = $1 AND workspace_id = $2`,
       [datasetId, workspaceId],
     );
 
     if (!dataset.rows[0]) {
-      throw new NotFoundException(
-        'Dataset not found in this workspace',
-      );
+      throw new NotFoundException('Dataset not found in this workspace');
     }
 
     const result = await query<{
@@ -385,6 +451,25 @@ export class AppController {
   }
 
   @UseGuards(AuthGuard)
+  @Get('datasets/:id/columns')
+  async datasetColumns(@Param('id') id: string, @Req() req: any) {
+    if (!(await getDatasetAccess(id, req.user.sub)))
+      throw new ForbiddenException();
+    return (
+      await query(
+        'SELECT id,name,data_type,ordinal,properties FROM dataset_columns WHERE dataset_id=$1 ORDER BY ordinal,id',
+        [id],
+      )
+    ).rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      dataType: row.data_type,
+      ordinal: row.ordinal,
+      ...(row.properties?.key ? { key: row.properties.key } : {}),
+    }));
+  }
+
+  @UseGuards(AuthGuard)
   @Post('datasets/:id/columns')
   async createDatasetColumn(
     @Param('id') datasetId: string,
@@ -411,7 +496,11 @@ export class AppController {
     }
 
     const dataType = body.dataType ?? 'TEXT';
-    if (!['TEXT', 'INTEGER', 'NUMBER', 'BOOLEAN', 'DATE', 'UUID'].includes(dataType)) {
+    if (
+      !['TEXT', 'INTEGER', 'NUMBER', 'BOOLEAN', 'DATE', 'UUID'].includes(
+        dataType,
+      )
+    ) {
       throw new BadRequestException('Unsupported column data type');
     }
 
@@ -429,10 +518,9 @@ export class AppController {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(
-        'SELECT id FROM datasets WHERE id = $1 FOR UPDATE',
-        [datasetId],
-      );
+      await client.query('SELECT id FROM datasets WHERE id = $1 FOR UPDATE', [
+        datasetId,
+      ]);
 
       let ordinal: number;
 
@@ -486,13 +574,7 @@ export class AppController {
            id, dataset_id, name, data_type, ordinal, properties
          )
          VALUES ($1, $2, $3, $4, $5, '{}'::jsonb)`,
-        [
-          column.id,
-          datasetId,
-          column.name,
-          column.dataType,
-          column.ordinal,
-        ],
+        [column.id, datasetId, column.name, column.dataType, column.ordinal],
       );
 
       await client.query('COMMIT');
@@ -616,7 +698,7 @@ export class AppController {
       const relation = await query<{ id: string }>(
         `SELECT id
          FROM dataset_relations
-         WHERE source_column_id = $1 OR target_column_id = $1
+         WHERE deleted_at IS NULL AND (source_column_id = $1 OR target_column_id = $1)
          LIMIT 1`,
         [columnId],
       );
@@ -649,7 +731,9 @@ export class AppController {
     }
 
     const isUuid = (value: string) =>
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value,
+      );
 
     const isIsoDate = (value: string) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -689,9 +773,12 @@ export class AppController {
     try {
       await client.query('BEGIN');
       await client.query(
-        'SELECT id FROM datasets WHERE id = $1 FOR UPDATE',
-        [datasetId],
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        [access.workspace_id],
       );
+      await client.query('SELECT id FROM datasets WHERE id = $1 FOR UPDATE', [
+        datasetId,
+      ]);
 
       const updated = await client.query<{
         id: string;
@@ -726,6 +813,20 @@ export class AppController {
         );
       }
 
+      try {
+        await assertDatasetRelations(
+          client,
+          datasetId,
+          (
+            await client.query(
+              'SELECT id,ordinal,values FROM dataset_rows WHERE dataset_id=$1',
+              [datasetId],
+            )
+          ).rows,
+        );
+      } catch (error) {
+        throw new ConflictException((error as Error).message);
+      }
       await client.query('COMMIT');
 
       const row = updated.rows[0];
@@ -766,20 +867,20 @@ export class AppController {
     );
     if (Number(columnCount.rows[0]?.count ?? 0) <= 1) {
       throw new ConflictException(
-        'A dataset must keep at least one column',
+        'В Dataset должна остаться хотя бы одна колонка',
       );
     }
 
     const relation = await query<{ id: string }>(
       `SELECT id
        FROM dataset_relations
-       WHERE source_column_id = $1 OR target_column_id = $1
+       WHERE deleted_at IS NULL AND (source_column_id = $1 OR target_column_id = $1)
        LIMIT 1`,
       [columnId],
     );
     if (relation.rows[0]) {
       throw new ConflictException(
-        'Column is used by a dataset relation. Remove the relation first.',
+        'Колонка используется в связи данных. Сначала измените или удалите связь.',
       );
     }
 
@@ -796,7 +897,7 @@ export class AppController {
     );
     if (formula.rows[0]) {
       throw new ConflictException(
-        'Column is used by a formula. Remove or change the formula first.',
+        'Колонка используется в формуле. Сначала измените или удалите формулу.',
       );
     }
 
@@ -804,20 +905,35 @@ export class AppController {
       `SELECT id
        FROM object_bindings
        WHERE column_id = $1
-          OR presentation ->> 'titleColumnId' = $1
-          OR presentation ->> 'subtitleColumnId' = $1
+          OR presentation ->> 'titleColumnId' = $1::text
+          OR presentation ->> 'subtitleColumnId' = $1::text
+          OR presentation ->> 'statusColumnId' = $1::text
+          OR presentation -> 'fieldColumnIds' ? $1::text
        LIMIT 1`,
       [columnId],
     );
     if (binding.rows[0]) {
       throw new ConflictException(
-        'Column is used by an object binding. Change or remove the binding first.',
+        'Колонка используется в привязке объекта. Измените или удалите привязку.',
       );
     }
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        [access.workspace_id],
+      );
+      if (
+        (
+          await client.query(
+            'SELECT id FROM dataset_relations WHERE deleted_at IS NULL AND (source_column_id=$1 OR target_column_id=$1)',
+            [columnId],
+          )
+        ).rowCount
+      )
+        throw new ConflictException('Колонка используется активной связью');
 
       const deleted = await client.query<{ id: string }>(
         `DELETE FROM dataset_columns
@@ -849,23 +965,87 @@ export class AppController {
 
   @UseGuards(AuthGuard)
   @Post('datasets/:id/rows/batch')
-  async createDatasetRows(@Param('id') datasetId:string,@Req() req:any,@Body() body:{rows:Array<{id:string;values?:DatasetRow['values']}>}) {
-    const access=await getDatasetAccess(datasetId,req.user.sub);
-    if(!access||!canEditBoard(access.role))throw new ForbiddenException();
-    if(!Array.isArray(body.rows)||body.rows.length<1||body.rows.length>10000)throw new BadRequestException('Expected 1–10000 rows');
-    const ids=new Set<string>();
-    for(const row of body.rows){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.id)||ids.has(row.id))throw new BadRequestException('Row IDs must be unique UUIDs');ids.add(row.id);}
-    const columns=await query<{id:string}>('SELECT id FROM dataset_columns WHERE dataset_id=$1',[datasetId]);
-    const columnIds=new Set(columns.rows.map(column=>column.id));
-    for(const row of body.rows)if(Object.keys(row.values??{}).some(id=>!columnIds.has(id)))throw new BadRequestException('Unknown column');
-    const client=await pool.connect();
+  async createDatasetRows(
+    @Param('id') datasetId: string,
+    @Req() req: any,
+    @Body()
+    body: { rows: Array<{ id: string; values?: DatasetRow['values'] }> },
+  ) {
+    const access = await getDatasetAccess(datasetId, req.user.sub);
+    if (!access || !canEditBoard(access.role)) throw new ForbiddenException();
+    if (
+      !Array.isArray(body.rows) ||
+      body.rows.length < 1 ||
+      body.rows.length > 10000
+    )
+      throw new BadRequestException('Expected 1–10000 rows');
+    const ids = new Set<string>();
+    for (const row of body.rows) {
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          row.id,
+        ) ||
+        ids.has(row.id)
+      )
+        throw new BadRequestException('Row IDs must be unique UUIDs');
+      ids.add(row.id);
+    }
+    const columns = await query<{ id: string }>(
+      'SELECT id FROM dataset_columns WHERE dataset_id=$1',
+      [datasetId],
+    );
+    const columnIds = new Set(columns.rows.map((column) => column.id));
+    for (const row of body.rows)
+      if (Object.keys(row.values ?? {}).some((id) => !columnIds.has(id)))
+        throw new BadRequestException('Unknown column');
+    const client = await pool.connect();
     try {
-      await client.query('BEGIN');await client.query('SELECT id FROM datasets WHERE id=$1 FOR UPDATE',[datasetId]);
-      const first=Number((await client.query('SELECT COALESCE(MAX(ordinal),-1)+1 AS ordinal FROM dataset_rows WHERE dataset_id=$1',[datasetId])).rows[0].ordinal);
-      const rows=body.rows.map((row,index)=>({id:row.id,ordinal:first+index,values:row.values??{}}));
-      await client.query(`INSERT INTO dataset_rows(id,dataset_id,ordinal,values) SELECT id,$1,ordinal,values FROM jsonb_to_recordset($2::jsonb) AS data(id uuid,ordinal integer,values jsonb)`,[datasetId,JSON.stringify(rows)]);
-      await client.query('COMMIT');return rows;
-    }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        [access.workspace_id],
+      );
+      await client.query('SELECT id FROM datasets WHERE id=$1 FOR UPDATE', [
+        datasetId,
+      ]);
+      const first = Number(
+        (
+          await client.query(
+            'SELECT COALESCE(MAX(ordinal),-1)+1 AS ordinal FROM dataset_rows WHERE dataset_id=$1',
+            [datasetId],
+          )
+        ).rows[0].ordinal,
+      );
+      const rows = body.rows.map((row, index) => ({
+        id: row.id,
+        ordinal: first + index,
+        values: row.values ?? {},
+      }));
+      try {
+        await assertDatasetRelations(client, datasetId, [
+          ...(
+            await client.query(
+              'SELECT id,ordinal,values FROM dataset_rows WHERE dataset_id=$1',
+              [datasetId],
+            )
+          ).rows,
+          ...rows,
+        ]);
+      } catch (error) {
+        throw new ConflictException((error as Error).message);
+      }
+      await client.query(
+        `INSERT INTO dataset_rows(id,dataset_id,ordinal,values) SELECT id,$1,ordinal,values FROM jsonb_to_recordset($2::jsonb) AS data(id uuid,ordinal integer,values jsonb)`,
+        [datasetId, JSON.stringify(rows)],
+      );
+      await client.query('COMMIT');
+      return rows;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   @UseGuards(AuthGuard)
@@ -905,9 +1085,12 @@ export class AppController {
     try {
       await client.query('BEGIN');
       await client.query(
-        'SELECT id FROM datasets WHERE id = $1 FOR UPDATE',
-        [datasetId],
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        [access.workspace_id],
       );
+      await client.query('SELECT id FROM datasets WHERE id = $1 FOR UPDATE', [
+        datasetId,
+      ]);
 
       let ordinal: number;
 
@@ -961,6 +1144,20 @@ export class AppController {
         [row.id, datasetId, row.ordinal, JSON.stringify(row.values)],
       );
 
+      try {
+        await assertDatasetRelations(
+          client,
+          datasetId,
+          (
+            await client.query(
+              'SELECT id,ordinal,values FROM dataset_rows WHERE dataset_id=$1',
+              [datasetId],
+            )
+          ).rows,
+        );
+      } catch (error) {
+        throw new ConflictException((error as Error).message);
+      }
       await client.query('COMMIT');
       return row;
     } catch (error) {
@@ -1014,18 +1211,41 @@ export class AppController {
       );
     }
 
-    const result = await query<{ id: string }>(
-      `DELETE FROM dataset_rows
-       WHERE id = $1 AND dataset_id = $2
-       RETURNING id`,
-      [rowId, datasetId],
-    );
-
-    if (!result.rows[0]) {
-      throw new NotFoundException('Dataset row not found');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        [access.workspace_id],
+      );
+      const remaining = (
+        await client.query(
+          'SELECT id,ordinal,values FROM dataset_rows WHERE dataset_id=$1 AND id<>$2',
+          [datasetId, rowId],
+        )
+      ).rows;
+      try {
+        await assertDatasetRelations(client, datasetId, remaining);
+      } catch (error) {
+        throw new ConflictException(
+          error instanceof Error
+            ? error.message
+            : 'Нарушение целостности связи',
+        );
+      }
+      const result = await client.query(
+        'DELETE FROM dataset_rows WHERE id=$1 AND dataset_id=$2 RETURNING id',
+        [rowId, datasetId],
+      );
+      if (!result.rowCount) throw new NotFoundException('Строка не найдена');
+      await client.query('COMMIT');
+      return { ok: true };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    return { ok: true as const };
   }
 
   @UseGuards(AuthGuard)
@@ -1037,14 +1257,17 @@ export class AppController {
   ) {
     const access = await getWorkspaceAccess(workspaceId, req.user.sub);
     if (!access) throw new ForbiddenException();
-    if (!canEditBoard(access.role)) throw new ForbiddenException('Edit permission required');
+    if (!canEditBoard(access.role))
+      throw new ForbiddenException('Edit permission required');
 
     const datasetId = randomUUID();
     const name = body.name?.trim() || 'untitled_dataset';
     const kind = body.kind ?? 'MANUAL';
 
     if (name.length > 120) {
-      throw new BadRequestException('Dataset name is limited to 120 characters');
+      throw new BadRequestException(
+        'Dataset name is limited to 120 characters',
+      );
     }
 
     if (!['MANUAL', 'CSV', 'SQL', 'API'].includes(kind)) {
@@ -1052,11 +1275,15 @@ export class AppController {
     }
 
     if ((body.columns?.length ?? 0) > 100) {
-      throw new BadRequestException('Dataset is limited to 100 columns in this MVP');
+      throw new BadRequestException(
+        'Dataset is limited to 100 columns in this MVP',
+      );
     }
 
     if ((body.rows?.length ?? 0) > 2000) {
-      throw new BadRequestException('Dataset is limited to 2000 rows in this MVP');
+      throw new BadRequestException(
+        'Dataset is limited to 2000 rows in this MVP',
+      );
     }
 
     const suppliedColumns = body.columns?.length
@@ -1148,6 +1375,9 @@ export class AppController {
         );
       }
 
+      await client.query("SELECT pg_notify('modelboard_resources',$1)", [
+        JSON.stringify({ kind: 'dataset-created', workspaceId, datasetId }),
+      ]);
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -1165,8 +1395,6 @@ export class AppController {
     };
   }
 
-
-
   @UseGuards(AuthGuard)
   @Get('workspaces/:id/search')
   async searchWorkspace(
@@ -1174,10 +1402,7 @@ export class AppController {
     @Query('q') queryText: string | undefined,
     @Req() req: any,
   ): Promise<WorkspaceSearchResult[]> {
-    const access = await getWorkspaceAccess(
-      workspaceId,
-      req.user.sub,
-    );
+    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
     if (!access) throw new ForbiddenException();
 
     const term = queryText?.trim();
@@ -1235,7 +1460,7 @@ export class AppController {
           NULL::uuid AS column_id,
           2 AS rank
         FROM datasets AS dataset
-        WHERE dataset.workspace_id = $1
+        WHERE dataset.deleted_at IS NULL AND dataset.workspace_id = $1
           AND position(lower($2) in lower(dataset.name)) > 0
 
         UNION ALL
@@ -1343,10 +1568,7 @@ export class AppController {
 
   @UseGuards(AuthGuard)
   @Get('workspaces/:id/templates')
-  async objectTemplates(
-    @Param('id') workspaceId: string,
-    @Req() req: any,
-  ) {
+  async objectTemplates(@Param('id') workspaceId: string, @Req() req: any) {
     const access = await getWorkspaceAccess(workspaceId, req.user.sub);
     if (!access) throw new ForbiddenException();
 
@@ -1400,7 +1622,9 @@ export class AppController {
       throw new BadRequestException('Template name is required');
     }
     if (name.length > 120) {
-      throw new BadRequestException('Template name is limited to 120 characters');
+      throw new BadRequestException(
+        'Template name is limited to 120 characters',
+      );
     }
 
     let svg: string;
@@ -1509,183 +1733,222 @@ export class AppController {
   @UseGuards(AuthGuard)
   @Get('workspaces/:id/relations')
   async relations(@Param('id') workspaceId: string, @Req() req: any) {
-    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
-    if (!access) throw new ForbiddenException();
+    if (!(await getWorkspaceAccess(workspaceId, req.user.sub)))
+      throw new ForbiddenException();
+    return (
+      await query(
+        'SELECT * FROM dataset_relations WHERE workspace_id=$1 AND deleted_at IS NULL ORDER BY created_at,id',
+        [workspaceId],
+      )
+    ).rows.map(relationFromSql);
+  }
 
-    const result = await query<{
-      id: string;
-      workspace_id: string;
-      source_dataset_id: string;
-      source_column_id: string;
-      target_dataset_id: string;
-      target_column_id: string;
-      relation_type: DatasetRelationType;
-      cardinality: DatasetRelationCardinality | null;
-    }>(
-      `SELECT id, workspace_id, source_dataset_id, source_column_id,
-              target_dataset_id, target_column_id, relation_type, cardinality
-       FROM dataset_relations
-       WHERE workspace_id = $1
-       ORDER BY created_at, id`,
-      [workspaceId],
-    );
-
-    return result.rows.map((row) => ({
-      id: row.id,
-      workspaceId: row.workspace_id,
-      sourceDatasetId: row.source_dataset_id,
-      sourceColumnId: row.source_column_id,
-      targetDatasetId: row.target_dataset_id,
-      targetColumnId: row.target_column_id,
-      relationType: row.relation_type,
-      cardinality: row.cardinality,
-    }));
+  private async saveRelation(
+    workspaceId: string,
+    userId: string,
+    body: CreateDatasetRelationInput,
+    relationId?: string,
+  ) {
+    const access = await getWorkspaceAccess(workspaceId, userId);
+    if (!access || !canEditBoard(access.role)) throw new ForbiddenException();
+    if (
+      !['REFERENCE', 'FOREIGN_KEY', 'DEPENDENCY', 'MAP', 'FLOW'].includes(
+        body.relationType,
+      ) ||
+      (body.cardinality != null &&
+        !['1:1', '1:N', 'N:1', 'N:M'].includes(body.cardinality))
+    )
+      throw new BadRequestException(
+        'Некорректный тип связи или кардинальность',
+      );
+    if (
+      [
+        body.sourceDatasetId,
+        body.sourceColumnId,
+        body.targetDatasetId,
+        body.targetColumnId,
+      ].some((id) => !id || !/^[0-9a-f-]{36}$/i.test(id))
+    )
+      throw new BadRequestException('Выберите таблицы и поля связи');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        [workspaceId],
+      );
+      if (
+        relationId &&
+        !(
+          await client.query(
+            'SELECT id FROM dataset_relations WHERE id=$1 AND workspace_id=$2 AND deleted_at IS NULL',
+            [relationId, workspaceId],
+          )
+        ).rowCount
+      )
+        throw new NotFoundException('Связь не найдена');
+      const endpoints = await client.query(
+        `SELECT sc.data_type AS source_type,tc.data_type AS target_type FROM datasets sd JOIN dataset_columns sc ON sc.dataset_id=sd.id AND sc.id=$2 JOIN datasets td ON td.id=$3 JOIN dataset_columns tc ON tc.dataset_id=td.id AND tc.id=$4 WHERE sd.id=$5 AND sd.workspace_id=$1 AND td.workspace_id=$1 AND sd.deleted_at IS NULL AND td.deleted_at IS NULL`,
+        [
+          workspaceId,
+          body.sourceColumnId,
+          body.targetDatasetId,
+          body.targetColumnId,
+          body.sourceDatasetId,
+        ],
+      );
+      if (!endpoints.rows[0])
+        throw new BadRequestException(
+          'Таблицы и поля должны принадлежать этому Workspace',
+        );
+      const types = endpoints.rows[0];
+      const numeric = (type: string) => ['NUMBER', 'INTEGER'].includes(type);
+      if (
+        types.source_type !== types.target_type &&
+        !(numeric(types.source_type) && numeric(types.target_type))
+      )
+        throw new ConflictException('Типы ключевых полей несовместимы');
+      if (
+        relationId &&
+        (
+          await client.query(
+            'SELECT id FROM object_bindings WHERE relation_path @> $1::jsonb AND NOT(dataset_id=ANY($2::uuid[])) LIMIT 1',
+            [
+              JSON.stringify([relationId]),
+              [body.sourceDatasetId, body.targetDatasetId],
+            ],
+          )
+        ).rowCount
+      )
+        throw new ConflictException(
+          'Relation View использует прежний Dataset. Удалите его представление перед сменой конца связи.',
+        );
+      const relation = {
+        ...body,
+        id: relationId ?? randomUUID(),
+        workspaceId,
+        name: String(body.name ?? '')
+          .trim()
+          .slice(0, 120),
+        enforceIntegrity:
+          body.relationType === 'FOREIGN_KEY' || Boolean(body.enforceIntegrity),
+      };
+      const report = await validateSqlRelation(client, relation);
+      if (relation.enforceIntegrity && !report.valid)
+        throw new ConflictException(report.issues.join('; '));
+      await client.query(
+        `INSERT INTO dataset_relations(id,workspace_id,source_dataset_id,source_column_id,target_dataset_id,target_column_id,relation_type,cardinality,properties) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) ON CONFLICT(id) DO UPDATE SET source_dataset_id=EXCLUDED.source_dataset_id,source_column_id=EXCLUDED.source_column_id,target_dataset_id=EXCLUDED.target_dataset_id,target_column_id=EXCLUDED.target_column_id,relation_type=EXCLUDED.relation_type,cardinality=EXCLUDED.cardinality,properties=EXCLUDED.properties`,
+        [
+          relation.id,
+          workspaceId,
+          relation.sourceDatasetId,
+          relation.sourceColumnId,
+          relation.targetDatasetId,
+          relation.targetColumnId,
+          relation.relationType,
+          relation.cardinality ?? null,
+          JSON.stringify({
+            name: relation.name,
+            enforceIntegrity: relation.enforceIntegrity,
+          }),
+        ],
+      );
+      await client.query("SELECT pg_notify('modelboard_resources',$1)", [
+        JSON.stringify({
+          kind: 'relation-changed',
+          workspaceId,
+          relationId: relation.id,
+        }),
+      ]);
+      await client.query('COMMIT');
+      return relation;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   @UseGuards(AuthGuard)
   @Post('workspaces/:id/relations')
   async createRelation(
-    @Param('id') workspaceId: string,
+    @Param('id') id: string,
     @Req() req: any,
     @Body() body: CreateDatasetRelationInput,
   ) {
-    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
-    if (!access) throw new ForbiddenException();
-    if (!canEditBoard(access.role)) {
-      throw new ForbiddenException('Edit permission required');
-    }
-
-    const allowedTypes: DatasetRelationType[] = [
-      'REFERENCE',
-      'FOREIGN_KEY',
-      'DEPENDENCY',
-      'MAP',
-      'FLOW',
-    ];
-    const allowedCardinality: DatasetRelationCardinality[] = [
-      '1:1',
-      '1:N',
-      'N:1',
-      'N:M',
-    ];
-
-    if (!allowedTypes.includes(body.relationType)) {
-      throw new BadRequestException('Unsupported relation type');
-    }
-
-    if (
-      body.cardinality != null &&
-      !allowedCardinality.includes(body.cardinality)
-    ) {
-      throw new BadRequestException('Unsupported cardinality');
-    }
-
-    const endpoints = await query<{
-      source_dataset_id: string;
-      source_column_id: string;
-      target_dataset_id: string;
-      target_column_id: string;
-    }>(
-      `SELECT
-         sd.id AS source_dataset_id,
-         sc.id AS source_column_id,
-         td.id AS target_dataset_id,
-         tc.id AS target_column_id
-       FROM datasets sd
-       JOIN dataset_columns sc
-         ON sc.dataset_id = sd.id AND sc.id = $2
-       JOIN datasets td
-         ON td.id = $3 AND td.workspace_id = $1
-       JOIN dataset_columns tc
-         ON tc.dataset_id = td.id AND tc.id = $4
-       WHERE sd.id = $5 AND sd.workspace_id = $1`,
-      [
-        workspaceId,
-        body.sourceColumnId,
-        body.targetDatasetId,
-        body.targetColumnId,
-        body.sourceDatasetId,
-      ],
-    );
-
-    if (!endpoints.rows[0]) {
-      throw new BadRequestException(
-        'Datasets/columns must exist and belong to this workspace',
-      );
-    }
-
-    const existing = await query<{
-      id: string;
-      workspace_id: string;
-      source_dataset_id: string;
-      source_column_id: string;
-      target_dataset_id: string;
-      target_column_id: string;
-      relation_type: DatasetRelationType;
-      cardinality: DatasetRelationCardinality | null;
-    }>(
-      `SELECT id, workspace_id, source_dataset_id, source_column_id,
-              target_dataset_id, target_column_id, relation_type, cardinality
-       FROM dataset_relations
-       WHERE workspace_id = $1
-         AND source_dataset_id = $2
-         AND source_column_id = $3
-         AND target_dataset_id = $4
-         AND target_column_id = $5
-         AND relation_type = $6
-         AND cardinality IS NOT DISTINCT FROM $7
-       LIMIT 1`,
-      [
-        workspaceId,
-        body.sourceDatasetId,
-        body.sourceColumnId,
-        body.targetDatasetId,
-        body.targetColumnId,
-        body.relationType,
-        body.cardinality ?? null,
-      ],
-    );
-
-    let row = existing.rows[0];
-
-    if (!row) {
-      const relationId = randomUUID();
-      const inserted = await query<typeof existing.rows[number]>(
-        `INSERT INTO dataset_relations (
-           id, workspace_id,
-           source_dataset_id, source_column_id,
-           target_dataset_id, target_column_id,
-           relation_type, cardinality
-         )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         RETURNING id, workspace_id, source_dataset_id, source_column_id,
-                   target_dataset_id, target_column_id, relation_type, cardinality`,
-        [
-          relationId,
-          workspaceId,
-          body.sourceDatasetId,
-          body.sourceColumnId,
-          body.targetDatasetId,
-          body.targetColumnId,
-          body.relationType,
-          body.cardinality ?? null,
-        ],
-      );
-      row = inserted.rows[0];
-    }
-
-    return {
-      id: row.id,
-      workspaceId: row.workspace_id,
-      sourceDatasetId: row.source_dataset_id,
-      sourceColumnId: row.source_column_id,
-      targetDatasetId: row.target_dataset_id,
-      targetColumnId: row.target_column_id,
-      relationType: row.relation_type,
-      cardinality: row.cardinality,
-    };
+    return this.saveRelation(id, req.user.sub, body);
   }
 
+  @UseGuards(AuthGuard)
+  @Put('workspaces/:id/relations/:relationId')
+  async updateRelation(
+    @Param('id') id: string,
+    @Param('relationId') relationId: string,
+    @Req() req: any,
+    @Body() body: CreateDatasetRelationInput,
+  ) {
+    return this.saveRelation(id, req.user.sub, body, relationId);
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('workspaces/:id/relations/:relationId/validation')
+  async validateRelation(
+    @Param('id') id: string,
+    @Param('relationId') relationId: string,
+    @Req() req: any,
+  ) {
+    if (!(await getWorkspaceAccess(id, req.user.sub)))
+      throw new ForbiddenException();
+    const result = await query(
+      'SELECT * FROM dataset_relations WHERE id=$1 AND workspace_id=$2 AND deleted_at IS NULL',
+      [relationId, id],
+    );
+    if (!result.rows[0]) throw new NotFoundException();
+    return validateSqlRelation(pool, relationFromSql(result.rows[0]));
+  }
+
+  @UseGuards(AuthGuard)
+  @Delete('workspaces/:id/relations/:relationId')
+  async deleteRelation(
+    @Param('id') workspaceId: string,
+    @Param('relationId') relationId: string,
+    @Req() req: any,
+  ) {
+    const access = await getWorkspaceAccess(workspaceId, req.user.sub);
+    if (!access || !canEditBoard(access.role)) throw new ForbiddenException();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        [workspaceId],
+      );
+      const result = await client.query(
+        'UPDATE dataset_relations SET deleted_at=now() WHERE id=$1 AND workspace_id=$2 AND deleted_at IS NULL RETURNING id',
+        [relationId, workspaceId],
+      );
+      if (!result.rowCount) throw new NotFoundException();
+      await client.query(
+        'DELETE FROM object_bindings WHERE relation_path @> $1::jsonb',
+        [JSON.stringify([relationId])],
+      );
+      await client.query("SELECT pg_notify('modelboard_resources',$1)", [
+        JSON.stringify({
+          kind: 'relation-deleted',
+          workspaceId,
+          relationIds: [relationId],
+        }),
+      ]);
+      await client.query('COMMIT');
+      return { ok: true };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 
   @UseGuards(AuthGuard)
   @Get('boards/:id/objects/:objectId/binding')
@@ -1746,16 +2009,67 @@ export class AppController {
       throw new ForbiddenException('Edit permission required');
     }
 
-    if (!['DATASET', 'ROW', 'COLUMN', 'CELL', 'RELATION_VIEW'].includes(body.type)) {
+    if (
+      !['DATASET', 'ROW', 'COLUMN', 'CELL', 'RELATION_VIEW'].includes(body.type)
+    ) {
       throw new BadRequestException('Unsupported binding type');
     }
 
+    if (['ROW', 'CELL', 'RELATION_VIEW'].includes(body.type) && !body.rowId)
+      throw new BadRequestException('Выберите строку');
+    if (['COLUMN', 'CELL'].includes(body.type) && !body.columnId)
+      throw new BadRequestException('Выберите поле');
+    const isId = (value: unknown) =>
+      typeof value === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        value,
+      );
+    if (
+      !isId(body.datasetId) ||
+      (body.rowId && !isId(body.rowId)) ||
+      (body.columnId && !isId(body.columnId)) ||
+      (body.relationPath &&
+        (!Array.isArray(body.relationPath) ||
+          body.relationPath.some((id) => !isId(id))))
+    )
+      throw new BadRequestException('Некорректный ID источника');
+    if (
+      body.presentation?.fieldColumnIds &&
+      (!Array.isArray(body.presentation.fieldColumnIds) ||
+        body.presentation.fieldColumnIds.length > 12)
+    )
+      throw new BadRequestException('Можно показать до 12 полей');
+    if (
+      body.presentation?.aggregation &&
+      !['FIRST', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(
+        body.presentation.aggregation,
+      )
+    )
+      throw new BadRequestException('Неизвестный агрегат');
+    if (
+      body.presentation?.statusColors &&
+      (typeof body.presentation.statusColors !== 'object' ||
+        Object.entries(body.presentation.statusColors).length > 40 ||
+        Object.values(body.presentation.statusColors).some(
+          (color) =>
+            typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color),
+        ))
+    )
+      throw new BadRequestException('Цвет статуса задаётся как #RRGGBB');
+    if (body.type === 'DATASET') {
+      delete body.rowId;
+      delete body.columnId;
+    }
+    if (body.type === 'COLUMN') delete body.rowId;
+    if (body.type === 'ROW') delete body.columnId;
     const dataset = await query<{ id: string }>(
-      'SELECT id FROM datasets WHERE id = $1 AND workspace_id = $2',
+      'SELECT id FROM datasets WHERE deleted_at IS NULL AND id = $1 AND workspace_id = $2',
       [body.datasetId, access.workspace_id],
     );
     if (!dataset.rows[0]) {
-      throw new BadRequestException('Dataset does not belong to this workspace');
+      throw new BadRequestException(
+        'Dataset does not belong to this workspace',
+      );
     }
 
     if (body.rowId) {
@@ -1780,9 +2094,7 @@ export class AppController {
 
     if (body.type === 'RELATION_VIEW') {
       if (!body.rowId) {
-        throw new BadRequestException(
-          'RELATION_VIEW requires an anchor row',
-        );
+        throw new BadRequestException('RELATION_VIEW requires an anchor row');
       }
 
       if (!body.relationPath || body.relationPath.length !== 1) {
@@ -1795,17 +2107,14 @@ export class AppController {
         `SELECT id
          FROM dataset_relations
          WHERE id = $1
+           AND deleted_at IS NULL
            AND workspace_id = $2
            AND (
              source_dataset_id = $3 OR
              target_dataset_id = $3
            )
          LIMIT 1`,
-        [
-          body.relationPath[0],
-          access.workspace_id,
-          body.datasetId,
-        ],
+        [body.relationPath[0], access.workspace_id, body.datasetId],
       );
 
       if (!relation.rows[0]) {
@@ -1818,9 +2127,15 @@ export class AppController {
     const presentationColumnIds = [
       body.presentation?.titleColumnId,
       body.presentation?.subtitleColumnId,
-    ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+      body.presentation?.statusColumnId,
+      ...(body.presentation?.fieldColumnIds ?? []),
+    ].filter(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    );
 
     for (const columnId of presentationColumnIds) {
+      if (!isId(columnId))
+        throw new BadRequestException('Некорректное поле представления');
       const column = await query<{ id: string }>(
         'SELECT id FROM dataset_columns WHERE id = $1 AND dataset_id = $2',
         [columnId, body.datasetId],
@@ -1832,6 +2147,16 @@ export class AppController {
       }
     }
 
+    if (!['ROW', 'RELATION_VIEW'].includes(body.type) && body.presentation) {
+      for (const key of [
+        'titleColumnId',
+        'subtitleColumnId',
+        'fieldColumnIds',
+        'statusColumnId',
+        'statusColors',
+      ])
+        delete body.presentation[key];
+    }
     const bindingId = randomUUID();
     const result = await query<{
       id: string;
@@ -1935,14 +2260,23 @@ export class AppController {
   ) {
     const access = await getBoardAccess(id, req.user.sub);
     if (!access) throw new ForbiddenException();
-    if (!canComment(access.role)) throw new ForbiddenException('Comment permission required');
-    if (!body.body?.trim()) throw new ForbiddenException('Comment text is required');
+    if (!canComment(access.role))
+      throw new ForbiddenException('Comment permission required');
+    if (!body.body?.trim())
+      throw new ForbiddenException('Comment text is required');
 
     const result = await query(
       `INSERT INTO comments (board_id, object_id, author_id, body, x, y)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [id, body.objectId ?? null, req.user.sub, body.body.trim(), body.x ?? null, body.y ?? null],
+      [
+        id,
+        body.objectId ?? null,
+        req.user.sub,
+        body.body.trim(),
+        body.x ?? null,
+        body.y ?? null,
+      ],
     );
     return result.rows[0];
   }

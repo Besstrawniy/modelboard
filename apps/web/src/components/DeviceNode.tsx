@@ -1,3 +1,4 @@
+import { BoundData } from './BoundData';
 import { CanvasInlineText } from './CanvasInlineText';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
@@ -110,29 +111,6 @@ export function DeviceNode({ id, data, selected }: NodeProps<any>) {
   const kind = device.deviceKind ?? 'SERVER';
   const binding = device.binding as ObjectBindingRecord | null | undefined;
 
-  const { dataset } = useCollaborativeDataset(
-    binding?.datasetId,
-    sessionToken,
-    true,
-  );
-
-  const boundRow = binding?.rowId
-    ? dataset?.rows.find((row) => row.id === binding.rowId)
-    : undefined;
-
-  const titleColumnId =
-    (binding?.presentation?.titleColumnId as string | undefined) ??
-    dataset?.columns[0]?.id;
-  const subtitleColumnId =
-    binding?.presentation?.subtitleColumnId as string | undefined;
-
-  const title = boundRow && titleColumnId
-    ? String(boundRow.values[titleColumnId] ?? '')
-    : device.label || DEVICE_LABELS[kind];
-
-  const subtitle = boundRow && subtitleColumnId
-    ? String(boundRow.values[subtitleColumnId] ?? '')
-    : '';
 
   return (
     <div className={`device-node ${selected ? 'is-selected' : ''} ${binding ? 'is-bound' : ''}`}>
@@ -157,10 +135,7 @@ export function DeviceNode({ id, data, selected }: NodeProps<any>) {
         </span>
 
         {binding ? (
-          <>
-            <strong>{title || 'Без значения'}</strong>
-            {subtitle && <small>{subtitle}</small>}
-          </>
+          <BoundData binding={binding}/>
         ) : (
           <CanvasInlineText id={id} field="label" value={String(device.label ?? '')} placeholder={DEVICE_LABELS[kind]} />
         )}
