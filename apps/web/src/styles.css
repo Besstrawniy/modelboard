@@ -3771,6 +3771,7 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 .session-panel > header .icon-button { border: 0; }
 
 /* Document review: compact editing controls and generous connection hit areas. */
+.canvas-legacy-port { opacity: 0; pointer-events: none !important; }
 .compact-properties { gap: 6px; padding: 8px; }
 .compact-properties label { margin: 0; flex-direction: row; align-items: center; gap: 4px; color: #566174; }
 .compact-properties button { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 4px; }

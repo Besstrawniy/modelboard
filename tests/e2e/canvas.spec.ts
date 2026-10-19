@@ -185,7 +185,7 @@ test('review fixes: shape palette, ghost placement, sticky draft and connector s
   const rect=await triangle.boundingBox();
   expect(Math.abs(rect!.x+rect!.width/2-center.x)).toBeLessThan(3);
   expect(Math.abs(rect!.y+rect!.height/2-center.y)).toBeLessThan(3);
-  await expect(triangle.locator('.react-flow__handle')).toHaveCount(4);
+  await expect(triangle.locator('.canvas-port')).toHaveCount(4);
   const rotate=await triangle.getByRole('button',{name:'Повернуть объект'}).boundingBox();
   expect(rotate!.x).toBeGreaterThan(rect!.x+rect!.width-2);
   await page.getByTitle('Стикер',{exact:true}).click();
@@ -209,4 +209,14 @@ test('review fixes: shape palette, ghost placement, sticky draft and connector s
   await page.getByLabel('Стиль коннектора',{exact:true}).selectOption('dashed');
   await expect(page.locator('.react-flow__edge-path')).toHaveCSS('stroke-width','5px');
   await expect(page.locator('.react-flow__edge-path')).toHaveAttribute('style',/stroke-dasharray: 8 5/);
+  // Left -> bottom used to be target -> target, which Loose mode could accept
+  // but could not render because neither endpoint had a source handle.
+  await page.keyboard.press('v');
+  const from = await triangle.locator('.canvas-port.react-flow__handle-left').boundingBox();
+  const to = await sticky.locator('.canvas-port.react-flow__handle-bottom').boundingBox();
+  await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height / 2, { steps: 15 });
+  await page.mouse.up();
+  await expect(page.locator('.react-flow__edge-path')).toHaveCount(2);
 });

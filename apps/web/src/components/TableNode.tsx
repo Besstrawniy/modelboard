@@ -26,10 +26,11 @@ export function TableNode({ id,data,selected }:NodeProps<any>) {
  const formats=new Map(dataset.formats.map(format=>[formulaKey(format.rowId,format.columnId),format]));
  const formulas=new Map(dataset.formulas.map(formula=>[formulaKey(formula.rowId,formula.columnId),formula]));
  return <div style={{'--data-view-max-height':`${limit}px`} as CSSProperties} className={`table-node ${selected?'is-selected':''}`}>
-  <Handle id="table:target" type="target" position={Position.Left} isConnectable={!readOnly} className="canvas-port" title="Связать записи таблиц" />
+  <Handle type="target" position={Position.Left} isConnectable={false} className="canvas-legacy-port" />
   <Handle id="table:source" type="source" position={Position.Right} isConnectable={!readOnly} className="canvas-port" title="Связать записи таблиц" />
+  <Handle id="table:target" type="source" position={Position.Left} isConnectable={!readOnly} className="canvas-port" title="Связать записи таблиц" />
   <Handle id="table:top" type="source" position={Position.Top} isConnectable={!readOnly} className="canvas-port"/>
-  <Handle id="table:bottom" type="target" position={Position.Bottom} isConnectable={!readOnly} className="canvas-port"/>
+  <Handle id="table:bottom" type="source" position={Position.Bottom} isConnectable={!readOnly} className="canvas-port"/>
   <CanvasNodeResizer minWidth={360} minHeight={180} isVisible={selected}/>
   <div className="table-node__title"><span className="table-node__kind">DATASET</span><strong>{view.view?.labelOverride||dataset.name}</strong><DatasetConnections dataset={dataset}/><DatasetRename id={dataset.id} name={dataset.name} token={sessionToken} readOnly={readOnly}/><span className="dataset-status">{pendingChanges?'saving':status}</span>
     <button className="nodrag" title="Открыть таблицу" onClick={()=>openDatasetSheet(dataset.id)} aria-label="Открыть таблицу"><ExternalLink size={15}/></button>
@@ -42,7 +43,7 @@ export function TableNode({ id,data,selected }:NodeProps<any>) {
   <div className="table-grid nowheel" style={{overflow:'auto'}}>
     <div className="table-grid__header table-grid__row" style={{gridTemplateColumns:`repeat(${columns.length},minmax(140px,1fr))`}}>
       {columns.map(column=><div className="table-grid__cell table-grid__column" key={column.id}>
-        <Handle id={`target:${column.id}`} type="target" position={Position.Left} className="column-handle column-handle--left" isConnectable={!readOnly}/>
+        <Handle id={`target:${column.id}`} type="source" position={Position.Left} className="column-handle column-handle--left" isConnectable={!readOnly}/>
         <div className="column-name"><span>{column.name}</span>{column.key&&<em>{column.key}</em>}</div><small>{column.dataType}</small>
         <Handle id={`source:${column.id}`} type="source" position={Position.Right} className="column-handle column-handle--right" isConnectable={!readOnly}/>
       </div>)}
