@@ -1156,7 +1156,8 @@ test('short viewport tools scroll below header, infrastructure has no scrollbar 
   await addServer(page);
   await bindServer(page);
   const device = page.locator('.device-node');
-  await expect(device).toHaveCSS('overflow-x', 'hidden');
+  // Outer controls may extend beyond the card; the card itself must not scroll.
+  expect(await device.evaluate(el => { el.scrollLeft = 100; return el.scrollLeft; })).toBe(0);
   const headers = { Authorization: `Bearer ${token}` };
   const relation = await page.request.post(
     `${base}/workspaces/${workspace}/relations`,
