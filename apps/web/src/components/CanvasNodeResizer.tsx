@@ -21,8 +21,8 @@ export function CanvasNodeResizer(props: ComponentProps<typeof NodeResizer>) {
     return () => { cancel(); window.removeEventListener('blur',cancel); window.removeEventListener('keydown',key); };
   }, []);
   if (readOnly || !showTransformControls || props.isVisible === false) return null;
-  return <><NodeResizer {...props} keepAspectRatio={props.keepAspectRatio || keepAspectRatio} />
-    {props.isVisible && <button className="canvas-rotation-handle nodrag nopan" aria-label="Повернуть объект" title="Поворот; Shift — шаг 15°"
+  return <><NodeResizer {...props} handleClassName={`nokey ${props.handleClassName ?? ''}`} lineClassName={`nokey ${props.lineClassName ?? ''}`} keepAspectRatio={props.keepAspectRatio || keepAspectRatio} />
+    {props.isVisible && <button className="canvas-rotation-handle nodrag nopan nokey" aria-label="Повернуть объект" title="Поворот; Shift — шаг 15°"
       onPointerDown={(event) => {
         if (!id || event.button !== 0) return;
         event.preventDefault(); event.stopPropagation();
