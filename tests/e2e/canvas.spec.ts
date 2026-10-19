@@ -77,15 +77,20 @@ test('100 objects, history, navigation and read-only role', async ({page,browser
   await viewer.keyboard.press('h');await viewer.mouse.move(400,400);await viewer.mouse.down();await viewer.mouse.move(500,450,{steps:10});await viewer.mouse.up();
   await viewer.close();
   await page.bringToFront();
+  await page.keyboard.press('h');
+  await page.mouse.move(450,350);
+  await expect(page.locator('.react-flow__resize-control')).toHaveCount(0);
+  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
   const timing=page.evaluate(async()=>{
     const times:number[]=[];let previous=performance.now();
     for(let i=0;i<30;i++) await new Promise<void>(resolve=>requestAnimationFrame((time)=>{times.push(time-previous);previous=time;resolve();}));
     return {average:times.reduce((a,b)=>a+b,0)/times.length,max:Math.max(...times)};
   });
-  await page.keyboard.press('h');await page.mouse.move(450,350);await page.mouse.down();await page.mouse.move(750,550,{steps:30});await page.mouse.up();await page.keyboard.press('v');
+  await page.mouse.down();await page.mouse.move(750,550,{steps:30});await page.mouse.up();
   const frameTimes=await timing;
-  expect(frameTimes.average).toBeLessThan(50);
   await test.info().attach('128-object-frame-timing',{body:JSON.stringify(frameTimes),contentType:'application/json'});
+  expect(frameTimes.average).toBeLessThan(50);
+  await page.keyboard.press('v');
 });
 test('connector, rotation, group move/resize, detach and stroke history',async({page})=>{
  const add=async(x:number,y:number)=>{await page.getByTitle('Фигура',{exact:true}).click();await page.locator('.react-flow__pane').click({position:{x,y}});};

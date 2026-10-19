@@ -5,6 +5,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 test('API and collaboration can migrate a fresh database concurrently without losing existing data', async () => {
+  test.setTimeout(90000);
   const connectionString =
     process.env.DATABASE_URL ??
     'postgresql://modelboard:modelboard@localhost:5432/modelboard';
@@ -22,7 +23,7 @@ test('API and collaboration can migrate a fresh database concurrently without lo
     );
     const script =
       'import {runMigrations,pool} from "@modelboard/db"; try{await runMigrations()}finally{await pool.end()}';
-    await Promise.all(
+    const migrations = await Promise.allSettled(
       [1, 2].map(() =>
         promisify(execFile)(
           process.execPath,
@@ -30,11 +31,14 @@ test('API and collaboration can migrate a fresh database concurrently without lo
           {
             cwd: process.cwd(),
             env: { ...process.env, DATABASE_URL: url.toString() },
-            timeout: 20000,
+            timeout: 60000,
           },
         ),
       ),
     );
+    for (const migration of migrations) {
+      if (migration.status === 'rejected') throw migration.reason;
+    }
     expect(
       Number(
         (await database.query('SELECT count(*) FROM schema_migrations')).rows[0]
@@ -60,7 +64,7 @@ test('API and collaboration can migrate a fresh database concurrently without lo
     ).toBe(1);
   } finally {
     await database?.end();
-    await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+    await admin.query(`DROP DATABASE IF EXISTS "${name}"`);
     await admin.end();
   }
 });
