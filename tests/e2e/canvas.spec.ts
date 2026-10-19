@@ -254,4 +254,6 @@ test('square sticky, complete text controls, smooth color preview and first-clic
  const server=page.locator('.react-flow__node-device').last();
  await page.locator('.react-flow__pane').click({position:{x:100,y:100}});await server.locator('.device-node__kind').click();
  await expect(server).toHaveClass(/selected/);await expect(inspector).toContainText('Сервер');
+ await page.getByTitle('Текст',{exact:true}).click();await page.locator('.react-flow__pane').click({position:{x:850,y:200}});
+ const freeText=page.locator('.react-flow__node-text .canvas-inline-text');await expect(freeText).toBeVisible();await inspector.getByRole('button',{name:'Жирный',exact:true}).click();await expect(freeText).toHaveCSS('font-weight','700');await inspector.getByRole('button',{name:'Жирный',exact:true}).click();await expect(freeText).toHaveCSS('font-weight','400');
 });
