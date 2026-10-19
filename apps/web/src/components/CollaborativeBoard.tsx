@@ -294,6 +294,14 @@ function BoardInner({
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
   const [presence, setPresence] = useState<Array<[number, PresenceState]>>([]);
   const [rf, setRf] = useState<ReactFlowInstance | null>(null);
+  const initialViewReady = useRef(false);
+  useEffect(() => {
+    if (!synced || !rf || initialViewReady.current) return;
+    initialViewReady.current = true;
+    // Fit only the loaded board. A queued fit on an empty board would move the
+    // camera when the first object is placed and break the placement preview.
+    if (nodesRef.current.length) void rf.fitView({ maxZoom: 1 });
+  }, [synced, rf]);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [datasetsOpen, setDatasetsOpen] = useState(false);
   const [csvDrop, setCsvDrop] = useState<CsvDropState | null>(null);
@@ -2774,8 +2782,6 @@ function BoardInner({
           multiSelectionKeyCode="Shift"
           elevateNodesOnSelect={false}
           deleteKeyCode={null}
-          fitView
-          fitViewOptions={{ maxZoom: 1 }}
           snapToGrid={gridActive}
           snapGrid={[22, 22]}
           panOnScroll={trackpadMode}
