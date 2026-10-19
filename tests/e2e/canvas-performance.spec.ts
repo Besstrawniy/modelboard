@@ -22,6 +22,13 @@ test.afterEach(async ({ request }) => {
 test.use({ trace: 'off' });
 test('100 objects, history, navigation and read-only role', async ({page,browser})=>{
   await page.getByTitle('Инфраструктура',{exact:true}).click();await page.getByRole('button',{name:'Сервер',exact:true}).click();
+  const server = page.locator('.react-flow__node-device');
+  await server.hover();
+  const ports = await server.locator('.canvas-port').evaluateAll(elements=>elements.map(element=>{
+    const box=element.getBoundingClientRect();
+    return document.elementFromPoint(box.x+box.width/2,box.y+box.height/2)===element;
+  }));
+  expect(ports).toEqual([true,true,true,true]);
   await page.locator('.react-flow__pane').click({position:{x:100,y:100}});
   for(let i=0;i<7;i++) {await page.keyboard.press('Control+a');await page.keyboard.press('Control+d');await expect(page.locator('.react-flow__node-device')).toHaveCount(2**(i+1));}
   await page.keyboard.press('Control+a');

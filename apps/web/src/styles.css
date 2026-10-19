@@ -3774,6 +3774,9 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 
 /* Document review: compact editing controls and generous connection hit areas. */
 .canvas-legacy-port { opacity: 0; pointer-events: none !important; }
+.device-node, .template-node, .relation-view-node { overflow: visible; }
+.device-node__body { overflow: hidden; }
+.template-node__visual, .relation-view-node__header { border-radius: 12px 12px 0 0; }
 .react-flow__viewport { will-change: transform; }
 /* Navigation only transforms the scene: node hit testing and hover affordances
    are restored immediately when the select tool (or temporary Space hand) ends. */
