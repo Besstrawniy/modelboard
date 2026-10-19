@@ -43,6 +43,9 @@ test('100 objects, history, navigation and read-only role', async ({page,browser
   await expect(page.locator('.react-flow__resize-control')).toHaveCount(0);
   await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
   const viewportBefore = await page.locator('.react-flow__viewport').getAttribute('style');
+  const profiler = await page.context().newCDPSession(page);
+  await profiler.send('Performance.enable');
+  const baseline = new Map((await profiler.send('Performance.getMetrics')).metrics.map(metric=>[metric.name,metric.value]));
   const timing=page.evaluate(async()=>{
     const times:number[]=[];let previous=performance.now();
     for(let i=0;i<30;i++) await new Promise<void>(resolve=>requestAnimationFrame((time)=>{times.push(time-previous);previous=time;resolve();}));
@@ -50,6 +53,9 @@ test('100 objects, history, navigation and read-only role', async ({page,browser
   });
   await page.mouse.down();await page.mouse.move(750,550,{steps:30});await page.mouse.up();
   const frameTimes=await timing;
+  const metrics = (await profiler.send('Performance.getMetrics')).metrics;
+  console.log('128-object-cpu-timing',JSON.stringify(Object.fromEntries(metrics.filter(metric=>['TaskDuration','ScriptDuration','LayoutDuration','RecalcStyleDuration'].includes(metric.name)).map(metric=>[metric.name,metric.value-(baseline.get(metric.name)??0)]))));
+  await profiler.detach();
   console.log('128-object-frame-timing',JSON.stringify(frameTimes));
   await test.info().attach('128-object-frame-timing',{body:JSON.stringify(frameTimes),contentType:'application/json'});
   expect(await page.locator('.react-flow__viewport').getAttribute('style')).not.toBe(viewportBefore);

@@ -3774,6 +3774,13 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 
 /* Document review: compact editing controls and generous connection hit areas. */
 .canvas-legacy-port { opacity: 0; pointer-events: none !important; }
+.react-flow__viewport { will-change: transform; }
+/* Navigation only transforms the scene: node hit testing and hover affordances
+   are restored immediately when the select tool (or temporary Space hand) ends. */
+.canvas-flow--hand .react-flow__node,
+.canvas-flow--hand .react-flow__node * { pointer-events: none !important; }
+.canvas-flow--hand .canvas-port { visibility: hidden; }
+.board-shell:has(.canvas-flow--hand) .topbar { backdrop-filter: none; }
 .react-flow__resize-control.handle { width: 10px; height: 10px; z-index: 22; pointer-events: auto; }
 .compact-properties { gap: 6px; padding: 8px; }
 .compact-properties label { margin: 0; flex-direction: row; align-items: center; gap: 4px; color: #566174; }
