@@ -3229,6 +3229,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 /* Realtime spreadsheet cell formatting */
 .dataset-sheet__format-group {
+  margin: 0;
+  min-width: 0;
   min-height: 32px;
   padding: 2px;
   border: 1px solid #dce0e6;

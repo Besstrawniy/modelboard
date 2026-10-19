@@ -2177,8 +2177,8 @@ export function DatasetSheet({
           </button>
         )}
 
-        {!readOnly && selectedCell && (
-          <div className="dataset-sheet__format-group">
+        {!readOnly && (
+          <fieldset className="dataset-sheet__format-group" disabled={!selectedCell} aria-label="Оформление ячеек">
             <select
               className="dataset-sheet__number-format"
               title="Числовой формат выделения (исходные значения не изменяются)"
@@ -2317,7 +2317,7 @@ export function DatasetSheet({
             >
               <X size={13} />
             </button>
-          </div>
+          </fieldset>
         )}
 
         <button

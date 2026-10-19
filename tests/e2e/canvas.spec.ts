@@ -76,6 +76,7 @@ test('100 objects, history, navigation and read-only role', async ({page,browser
   await expect(page.locator('.react-flow__node-device')).toHaveCount(128);
   await viewer.keyboard.press('h');await viewer.mouse.move(400,400);await viewer.mouse.down();await viewer.mouse.move(500,450,{steps:10});await viewer.mouse.up();
   await viewer.close();
+  await page.bringToFront();
   const timing=page.evaluate(async()=>{
     const times:number[]=[];let previous=performance.now();
     for(let i=0;i<30;i++) await new Promise<void>(resolve=>requestAnimationFrame((time)=>{times.push(time-previous);previous=time;resolve();}));
@@ -163,7 +164,8 @@ test('marquee, Shift resize, rotation handle and keyboard tool escape',async({pa
  // Close the data-binding inspector to leave the resize handle unobstructed.
  await page.locator('.inspector-panel > header button').click();
  const original=await nodes.nth(0).boundingBox();const handle=await nodes.nth(0).locator('.react-flow__resize-control.bottom.right.handle').boundingBox();
- await page.keyboard.down('Shift');await page.mouse.move(handle!.x+3,handle!.y+3);await page.mouse.down();await page.mouse.move(handle!.x+100,handle!.y+70,{steps:10});await page.mouse.up();await page.keyboard.up('Shift');
+ await page.keyboard.down('Shift');await page.mouse.move(handle!.x+handle!.width/2,handle!.y+handle!.height/2);await page.mouse.down();await page.mouse.move(handle!.x+100,handle!.y+70,{steps:10});await page.mouse.up();await page.keyboard.up('Shift');
+ await expect.poll(async()=>(await nodes.nth(0).boundingBox())!.width).toBeGreaterThan(original!.width+10);
  const resized=await nodes.nth(0).boundingBox();expect(resized!.width/resized!.height).toBeCloseTo(original!.width/original!.height,1);
  const rotation=await nodes.nth(0).getByRole('button',{name:'Повернуть объект'}).boundingBox();
  const centre={x:resized!.x+resized!.width/2,y:resized!.y+resized!.height/2};
@@ -208,7 +210,7 @@ test('review fixes: shape palette, ghost placement, sticky draft and connector s
   await page.getByLabel('Толщина коннектора',{exact:true}).fill('5');
   await page.getByLabel('Стиль коннектора',{exact:true}).selectOption('dashed');
   await expect(page.locator('.react-flow__edge-path')).toHaveCSS('stroke-width','5px');
-  await expect(page.locator('.react-flow__edge-path')).toHaveAttribute('style',/stroke-dasharray: 8 5/);
+  await expect(page.locator('.react-flow__edge-path')).toHaveCSS('stroke-dasharray',/8px[,\s]+5px/);
   // Left -> bottom used to be target -> target, which Loose mode could accept
   // but could not render because neither endpoint had a source handle.
   await page.keyboard.press('v');
