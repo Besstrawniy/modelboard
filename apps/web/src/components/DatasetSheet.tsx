@@ -2452,7 +2452,7 @@ export function DatasetSheet({
         onHide={(id)=>{if(dataset.columns.length-hiddenColumns.length>1)setHiddenColumns(list=>[...new Set([...list,id])]);}} onShowAll={()=>setHiddenColumns([])}
         onFill={fillSelection} onCut={()=>void copyCells(true)} onPasteValues={()=>void pasteCells(true)} onFormat={formatCellsInSelection}
         onMultiSort={(columnId,direction)=>setSecondarySort(list=>[...list.filter(item=>item.columnId!==columnId),{columnId,direction}])}/ >}
-      {selectionStats&&<div className="sheet-summary" role="status">Заполнено: {selectionStats.count} · Чисел: {selectionStats.numbers} · Сумма: {selectionStats.sum} · Среднее: {selectionStats.average??'—'}{pendingChanges>0?' · Сохранение…':''}</div>}
+      {dataset&&<div className="sheet-summary" role="status">{selectionStats ? <>Заполнено: {selectionStats.count} · Чисел: {selectionStats.numbers} · Сумма: {selectionStats.sum} · Среднее: {selectionStats.average??'—'}</> : 'Выделите ячейки для расчёта суммы и среднего'}{pendingChanges>0?' · Сохранение…':''}</div>}
       <div className="dataset-sheet__viewport" ref={viewportRef} onScroll={(event)=>setScrollTop(event.currentTarget.scrollTop)}>
         {!dataset || !synced ? (
           <div className="dataset-sheet__loading">

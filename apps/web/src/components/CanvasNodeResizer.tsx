@@ -5,7 +5,7 @@ import { useBoardActions } from './BoardContext';
 
 /** Shared resize behaviour for every resizable canvas object. */
 export function CanvasNodeResizer(props: ComponentProps<typeof NodeResizer>) {
-  const { readOnly, keepAspectRatio, updateNodeData } = useBoardActions();
+  const { readOnly, keepAspectRatio, showTransformControls, updateNodeData } = useBoardActions();
   const id = useNodeId();
   const rf = useReactFlow();
   const updateInternals = useUpdateNodeInternals();
@@ -20,7 +20,7 @@ export function CanvasNodeResizer(props: ComponentProps<typeof NodeResizer>) {
     window.addEventListener('blur',cancel); window.addEventListener('keydown',key);
     return () => { cancel(); window.removeEventListener('blur',cancel); window.removeEventListener('keydown',key); };
   }, []);
-  if (readOnly) return null;
+  if (readOnly || !showTransformControls || props.isVisible === false) return null;
   return <><NodeResizer {...props} keepAspectRatio={props.keepAspectRatio || keepAspectRatio} />
     {props.isVisible && <button className="canvas-rotation-handle nodrag nopan" aria-label="Повернуть объект" title="Поворот; Shift — шаг 15°"
       onPointerDown={(event) => {

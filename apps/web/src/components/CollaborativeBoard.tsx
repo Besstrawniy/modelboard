@@ -2464,28 +2464,23 @@ function BoardInner({
   const remotePresence = presence.filter(([clientId, state]) =>
     clientId !== ydoc.clientID && state.user,
   );
+  const boardActions = useMemo(() => ({
+    readOnly, showRelationOnCanvas, keepAspectRatio: modifiers.shift,
+    showTransformControls: effectiveToolMode === 'select',
+    sessionToken: session.token, boardId: meta.id, workspaceId: meta.workspaceId,
+    workspaceTemplates, refreshWorkspaceTemplates, updateNodeData,
+    materializeRelated, createRelationView, hideMaterializedRelated,
+    materializedRelatedCount,
+    openDatasetSheet: (datasetId: string, rowId?: string) => setSheetTarget({ datasetId, rowId }),
+    createBoundRowObject, navigateToDatasetLocation,
+  }), [readOnly, showRelationOnCanvas, modifiers.shift, effectiveToolMode, session.token,
+    meta.id, meta.workspaceId, workspaceTemplates, refreshWorkspaceTemplates,
+    updateNodeData, materializeRelated, createRelationView, hideMaterializedRelated,
+    materializedRelatedCount, createBoundRowObject, navigateToDatasetLocation]);
 
   return (
     <BoardActionsProvider
-      value={{
-        readOnly,
-        showRelationOnCanvas,
-        keepAspectRatio: modifiers.shift,
-        sessionToken: session.token,
-        boardId: meta.id,
-        workspaceId: meta.workspaceId,
-        workspaceTemplates,
-        refreshWorkspaceTemplates,
-        updateNodeData,
-        materializeRelated,
-        createRelationView,
-        hideMaterializedRelated,
-        materializedRelatedCount,
-        openDatasetSheet: (datasetId, rowId) =>
-          setSheetTarget({ datasetId, rowId }),
-        createBoundRowObject,
-        navigateToDatasetLocation,
-      }}
+      value={boardActions}
     >
       <div
         className={`board-shell${objectsOpen ? ' has-objects-panel' : ''}`}

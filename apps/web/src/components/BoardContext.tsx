@@ -27,6 +27,7 @@ export type BoardActions = {
   showRelationOnCanvas: (relation:DatasetRelation)=>void;
   readOnly: boolean;
   keepAspectRatio: boolean;
+  showTransformControls: boolean;
   sessionToken: string;
   boardId: string;
   workspaceId: string;
@@ -61,6 +62,7 @@ const BoardActionsContext = createContext<BoardActions>({
   showRelationOnCanvas:()=>undefined,
   readOnly: true,
   keepAspectRatio: false,
+  showTransformControls: true,
   sessionToken: '',
   boardId: '',
   workspaceId: '',
