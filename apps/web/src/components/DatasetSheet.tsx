@@ -359,7 +359,7 @@ export function SheetCell({
         cancelled.current=false;
         onFocus?.();
       }}
-      onDoubleClick={() => {if(!readOnly)setEditDraft(original.current);}}
+      onDoubleClick={() => {if(!readOnly){cancelled.current=false;setEditDraft(original.current);}}}
       onBlur={() => {
         if(cancelled.current){setEditDraft(null);return;}
         try{if(editDraft!==null&&editDraft!==original.current)onChange(normalizeInput(editDraft,column));setEditDraft(null);setEditError('');}
@@ -367,8 +367,8 @@ export function SheetCell({
       }}
       onKeyDown={(event) => {
         if(editDraft===null && event.shiftKey && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();onNavigate?.(({ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'} as const)[event.key as 'ArrowUp'],true);return;}
-        if(editDraft===null&&!readOnly&&event.key.length===1&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();setEditDraft(event.key);setEditError('');return;}
-        if(event.key==='F2'){event.preventDefault();if(!readOnly)setEditDraft(original.current);return;}
+        if(editDraft===null&&!readOnly&&event.key.length===1&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();cancelled.current=false;setEditDraft(event.key);setEditError('');return;}
+        if(event.key==='F2'){event.preventDefault();if(!readOnly){cancelled.current=false;setEditDraft(original.current);}return;}
         if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelled.current=true;setEditDraft(null);setEditError('');return;}
 
         if (event.key === 'Enter' || event.key === 'Tab') {
@@ -415,7 +415,7 @@ export function SheetCell({
           onNavigate?.('right');
         }
       }}
-      onChange={(event) => {setEditDraft(event.target.value);setEditError('');
+      onChange={(event) => {cancelled.current=false;setEditDraft(event.target.value);setEditError('');
       }}
     />
   );
@@ -542,7 +542,7 @@ export function DatasetSheet({
   } });
 
   const deleteModal = useDialogFocus({ open: Boolean(deleteColumnTarget), onClose: () => { if (!columnBusy) setDeleteColumnTarget(null); } });
-  const columnModal = useDialogFocus({ open: Boolean(columnDialog), onClose: () => { if (!columnBusy) setColumnDialog(null); } });
+  const columnModal = useDialogFocus({ open: Boolean(columnDialog), restoreFocus:()=>sheetRef.current?.querySelector<HTMLElement>('.sheet-command-menu>summary')??null, onClose: () => { if (!columnBusy) setColumnDialog(null); } });
 
   useEffect(() => {
     if (!cellMenu) return;
@@ -1510,7 +1510,7 @@ export function DatasetSheet({
       if (!readOnly && mod && key === 'x' && !typing) {event.preventDefault();void copyCells(true);return;}
       if (!readOnly && mod && key === 'v' && !typing) {
         event.preventDefault();
-        void pasteCells();
+        void pasteCells(event.shiftKey);
         return;
       }
 
@@ -1654,6 +1654,7 @@ export function DatasetSheet({
     const index=(findIndex+direction+findResults.cells.length)%findResults.cells.length;
     setFindIndex(index);const cell=findResults.cells[index];setSelectedCell(cell);setSelectionRange({startRowId:cell.rowId,endRowId:cell.rowId,startColumnId:cell.columnId,endColumnId:cell.columnId});
     const row=visibleRows.findIndex(item=>item.id===cell.rowId);if(viewportRef.current)viewportRef.current.scrollTop=Math.max(0,(row-3)*ROW_HEIGHT);
+    requestAnimationFrame(()=>sheetRef.current?.querySelector(`td[data-row-id="${cell.rowId}"][data-column-id="${cell.columnId}"]`)?.scrollIntoView({block:'nearest',inline:'nearest'}));
   };
 
   const conversionModal = useDialogFocus({ open: Boolean(convertColumnTarget && conversionPreview), onClose: () => { if (!columnBusy) setConvertColumnTarget(null); } });

@@ -236,6 +236,7 @@ test('square sticky, complete text controls, smooth color preview and first-clic
  await expect.poll(async()=>(await editor.boundingBox())!.height).toBeGreaterThan(150);
  await editor.fill('Строка 1\nСтрока 2\nСтрока 3\nСтрока 4');await editor.press('Control+Enter');
  const inspector=page.locator('.inspector-panel');
+ const controls=inspector.getByRole('group',{name:'Шрифт и текст'});const controlBounds=await controls.boundingBox();for(const button of await controls.getByRole('button').all()){const bounds=await button.boundingBox();expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(controlBounds!.x+controlBounds!.width+1);}
  await inspector.getByRole('button',{name:'Жирный',exact:true}).click();await inspector.getByRole('button',{name:'Курсив',exact:true}).click();await inspector.getByRole('button',{name:'Подчёркнутый',exact:true}).click();
  await expect(text).toHaveCSS('font-weight','700');await expect(text).toHaveCSS('font-style','italic');await expect(text).toHaveCSS('text-decoration-line','underline');
  await inspector.getByLabel('Заливка',{exact:true}).evaluate((input:HTMLInputElement)=>{for(let i=0;i<20;i++){input.value=`#aa00${i.toString(16).padStart(2,'0')}`;input.dispatchEvent(new Event('input',{bubbles:true}));}});
@@ -245,6 +246,7 @@ test('square sticky, complete text controls, smooth color preview and first-clic
  await expect(sticky.locator('.sticky-node')).toHaveCSS('background-color','rgb(255, 241, 168)');
  const lower=await sticky.boundingBox();await sticky.click({position:{x:lower!.width/2,y:lower!.height-30}});await expect(inspector.getByLabel('Шрифт',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Подогнать высоту под текст',exact:true}).click();
+ await expect.poll(()=>text.evaluate(element=>element.scrollHeight<=element.clientHeight)).toBe(true);
  await page.getByTitle('Фигура',{exact:true}).click({button:'right'});await expect(page.getByRole('group',{name:'Фигуры',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Треугольник',exact:true}).click();await page.locator('.react-flow__pane').click({position:{x:850,y:550}});await expect(page.locator('.shape-node--triangle')).toBeVisible();
  await page.screenshot({path:info.outputPath('canvas-controls.png')});

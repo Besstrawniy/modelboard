@@ -3962,3 +3962,14 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 .relation-view-node__rows { overflow-x:auto; }
 .sticky-node,.shape-node { font-size:var(--canvas-font-size,16px); }
 .sticky-node { color:var(--canvas-color,#344054); }
+.text-format-controls { width:100%; }
+.text-format-controls :is(select,input[type=number],button) { min-width:0; height:29px; padding:4px; border:1px solid #dce0e6; border-radius:5px; background:#fff; color:#344054; font:11px Inter,Arial,sans-serif; }
+.text-format-controls select { flex:1 1 0; width:0; min-width:60px; max-width:none; }
+.text-format-controls input[type=number] { flex:0 0 45px; width:45px; }
+.text-format-controls button { flex:0 0 26px; width:26px; display:inline-grid; place-items:center; }
+.text-format-controls button.is-active { background:#eef0ff; border-color:#a6aff0; color:#4859b8; }
+.dataset-sheet__format-group .text-format-controls { width:330px; }
+.dataset-sheet__format-group .text-format-controls select { width:0; }
+.dataset-sheet__identity > div { flex-direction:row; }
+.dataset-sheet__identity small { margin-top:2px; }
+.dataset-rename button { border:1px solid #dce0e6; border-radius:5px; background:#fff; color:#59677c; cursor:pointer; display:inline-flex; align-items:center; }

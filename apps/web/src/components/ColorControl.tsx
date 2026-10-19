@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 /** Native picker previews locally; only the final choice enters collaborative history. */
-export function ColorControl({ label, value, onChange, onPreview, children }: {
+export function ColorControl({ label, value, onChange, onPreview, children, disabled = false }: {
   label: string; value: string; onChange: (color: string) => void;
-  onPreview?: (color: string) => void; children?: ReactNode;
+  onPreview?: (color: string) => void; children?: ReactNode; disabled?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
   const input = useRef<HTMLInputElement>(null);
@@ -21,7 +21,7 @@ export function ColorControl({ label, value, onChange, onPreview, children }: {
   return <label className="color-control" title={label}>
     <span className="color-control__symbol">{children ?? 'A'}</span>
     <span className="color-control__sample" style={{ background: draft }}/>
-    <input ref={input} aria-label={label} type="color" value={draft} onInput={event => {
+    <input ref={input} disabled={disabled} aria-label={label} type="color" value={draft} onInput={event => {
       const color = event.currentTarget.value; pending.current = color; setDraft(color); onPreview?.(color);
     }} onChange={() => { /* The native change event commits once, after picker input events. */ }}/>
   </label>;

@@ -11,10 +11,12 @@ function focusable(root: HTMLElement) {
 
 /** One focus boundary per modal, including modals rendered through portals. */
 export function useDialogFocus<T extends HTMLElement = HTMLElement>({
-  open = true, onClose, containerRef,
-}: { open?: boolean; onClose: () => void; containerRef?: RefObject<T | null> }) {
+  open = true, onClose, containerRef, restoreFocus,
+}: { open?: boolean; onClose: () => void; containerRef?: RefObject<T | null>; restoreFocus?: () => HTMLElement | null }) {
   const ownRef = useRef<T>(null);
   const ref = containerRef ?? ownRef;
+  const restoreRef=useRef(restoreFocus);
+  restoreRef.current=restoreFocus;
   useLayoutEffect(() => {
     const root = ref.current;
     if (!open || !root) return;
@@ -45,8 +47,9 @@ export function useDialogFocus<T extends HTMLElement = HTMLElement>({
       document.removeEventListener('keydown', containTab, true);
       if (!wasTop) return;
       const parent = dialogs.at(-1);
-      if (previous?.isConnected && (!parent || parent.contains(previous))) {
-        const target=previous.getClientRects().length?previous:previous.closest('details')?.querySelector<HTMLElement>('summary');
+      const destination=restoreRef.current?.()??previous;
+      if (destination?.isConnected && (!parent || parent.contains(destination))) {
+        const target=destination.getClientRects().length?destination:destination.closest('details')?.querySelector<HTMLElement>('summary');
         if(target)target.focus({preventScroll:true});else if(parent)(focusable(parent)[0]??parent).focus({preventScroll:true});
       }
       else if (parent) (focusable(parent)[0] ?? parent).focus({ preventScroll: true });

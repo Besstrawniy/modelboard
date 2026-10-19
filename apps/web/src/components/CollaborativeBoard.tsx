@@ -1,3 +1,4 @@
+import { ColorControl } from './ColorControl';
 import { useDialogFocus } from '../lib/useDialogFocus';
 import { CanvasEdgeProperties } from './CanvasEdgeProperties';
 import { reconcileCanvasPresence, type CanvasPresence } from '../lib/canvasPresence';
@@ -1511,9 +1512,9 @@ function BoardInner({
         const width=nodeSize(current,'width',240);
         const context=document.createElement('canvas').getContext('2d');
         if(context) {
-          context.font=`${data.italic ? 'italic ' : ''}${data.bold ? 'bold ' : ''}${fontSize}px ${String(data.fontFamily ?? "Inter, sans-serif")}`;
+          context.font=`${data.italic ? 'italic ' : ''}${data.bold ? 'bold ' : ''}${fontSize}px ${String(data.fontFamily ?? (current.type==='sticky'?'Segoe Print, Comic Sans MS, cursive':'Inter, sans-serif'))}`;
           const lines=String(data.text??'').split('\n').reduce((count,line)=>count+Math.max(1,Math.ceil(context.measureText(line).width/Math.max(40,width-28))),0);
-          const height=Math.max(current.type==='sticky'?120:40,Math.ceil(lines*fontSize*1.45+28));
+          const height=Math.max(current.type==='sticky'?120:40,Math.ceil(lines*fontSize*1.45+(current.type==='sticky'?48:28)));
           updated={...updated,height,measured:undefined,style:{...updated.style,height}};
         }
       }
@@ -3034,15 +3035,7 @@ function BoardInner({
               </strong>
             </div>
 
-            <label title="Цвет пера">
-              <span>Цвет</span>
-              <input
-                type="color"
-                value={penColor}
-                disabled={toolMode !== 'pen'}
-                onChange={(event) => setPenColor(event.target.value)}
-              />
-            </label>
+            <ColorControl label="Цвет пера" value={penColor} disabled={toolMode!=='pen'} onChange={setPenColor}/>
 
             <label className="freehand-options__width">
               <span>Толщина</span>

@@ -157,6 +157,7 @@ test('formula bar targets, suggestions, reference frames, regex search and font 
  await formula.press('Enter');await expect(cell(page,0,3)).toHaveValue('60');await expect(cell(page,1,3)).toHaveValue('');
  await cell(page,1,3).click();await formula.fill('=D2');await formula.press('Enter');await expect(cell(page,1,3)).toHaveValue('#CYCLE!');
  await cell(page,2,0).click();await page.keyboard.type('Typing stays here');await page.keyboard.press('Enter');await expect(cell(page,2,0)).toHaveValue('Typing stays here');await expect(cell(page,0,0)).toHaveValue('Item 1');
+ await cell(page,2,0).fill('Discard');await cell(page,2,0).press('Escape');await expect(cell(page,2,0)).toHaveValue('Typing stays here');await page.keyboard.type('After escape');await page.keyboard.press('Enter');await expect(cell(page,2,0)).toHaveValue('After escape');
  await page.keyboard.press('Control+f');const find=sheet(page).getByRole('search',{name:'Поиск в таблице'});await find.getByRole('textbox',{name:'Найти в таблице'}).fill('^Item (1|2)$');await find.getByRole('checkbox',{name:'Регулярное выражение'}).check();
  await expect(find.getByRole('status')).toHaveText('1 / 2');await expect(sheet(page).getByRole('grid')).toHaveAttribute('aria-rowcount','20');
  await find.getByRole('textbox').fill('[');await expect(find.getByRole('status')).toHaveText('Некорректное регулярное выражение');
