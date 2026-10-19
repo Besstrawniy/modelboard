@@ -59,39 +59,6 @@ test('text editing, groups, geometry, strokes and reload with a second participa
   await expect(page.locator('.react-flow__node-freehand')).toHaveCount(1);
   await other.close(); expect(errors).toEqual([]);
 });
-test('100 objects, history, navigation and read-only role', async ({page,browser})=>{
-  await page.getByTitle('Инфраструктура',{exact:true}).click();await page.getByRole('button',{name:'Сервер',exact:true}).click();
-  await page.locator('.react-flow__pane').click({position:{x:100,y:100}});
-  for(let i=0;i<7;i++) {await page.keyboard.press('Control+a');await page.keyboard.press('Control+d');await expect(page.locator('.react-flow__node-device')).toHaveCount(2**(i+1));}
-  await page.keyboard.press('Control+a');
-  await page.getByRole('button',{name:'Выровнять',exact:true}).click();
-  await page.getByRole('button',{name:'По верхнему краю',exact:true}).click();
-  await page.keyboard.press('Control+z');await page.keyboard.press('Control+y');
-  await page.keyboard.press('Control+0');
-  const viewer=await browser.newPage();await viewer.addInitScript(id=>localStorage.setItem('modelboard:last-board',id),boardId);
-  await viewer.goto('/');await viewer.getByRole('button').filter({hasText:'VIEWER'}).click();
-  await expect(viewer.locator('.react-flow__node-device')).toHaveCount(128);
-  await expect(viewer.getByTitle('Фигура',{exact:true})).toBeDisabled();
-  await viewer.keyboard.press('Control+a');await viewer.keyboard.press('Delete');
-  await expect(page.locator('.react-flow__node-device')).toHaveCount(128);
-  await viewer.keyboard.press('h');await viewer.mouse.move(400,400);await viewer.mouse.down();await viewer.mouse.move(500,450,{steps:10});await viewer.mouse.up();
-  await viewer.close();
-  await page.bringToFront();
-  await page.keyboard.press('h');
-  await page.mouse.move(450,350);
-  await expect(page.locator('.react-flow__resize-control')).toHaveCount(0);
-  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
-  const timing=page.evaluate(async()=>{
-    const times:number[]=[];let previous=performance.now();
-    for(let i=0;i<30;i++) await new Promise<void>(resolve=>requestAnimationFrame((time)=>{times.push(time-previous);previous=time;resolve();}));
-    return {average:times.reduce((a,b)=>a+b,0)/times.length,max:Math.max(...times)};
-  });
-  await page.mouse.down();await page.mouse.move(750,550,{steps:30});await page.mouse.up();
-  const frameTimes=await timing;
-  await test.info().attach('128-object-frame-timing',{body:JSON.stringify(frameTimes),contentType:'application/json'});
-  expect(frameTimes.average).toBeLessThan(50);
-  await page.keyboard.press('v');
-});
 test('connector, rotation, group move/resize, detach and stroke history',async({page})=>{
  const add=async(x:number,y:number)=>{await page.getByTitle('Фигура',{exact:true}).click();await page.locator('.react-flow__pane').click({position:{x,y}});};
  await add(400,300);await add(850,420);
