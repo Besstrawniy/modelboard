@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { handleRoomMessage, disconnectRoom } from './rooms.js';
 import { Server } from '@hocuspocus/server';
 import { Database } from '@hocuspocus/extension-database';
 import { Logger } from '@hocuspocus/extension-logger';
@@ -681,6 +682,9 @@ async function startCollaborationServer() {
     port,
     debounce: 1000,
     maxDebounce: 5000,
+
+    onStateless: handleRoomMessage,
+    onDisconnect: disconnectRoom,
 
     async afterLoadDocument({ documentName, document }) {
       const kind = parseDocumentName(documentName)?.kind;

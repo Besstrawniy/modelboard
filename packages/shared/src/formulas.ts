@@ -714,6 +714,14 @@ export function translateFormulaForCopy(
   }));
 }
 
+/** Reassign archive identities while leaving quoted business text intact. */
+export function remapFormulaIds(canonical: string, ids: ReadonlyMap<string, string>) {
+  return replaceOutsideStrings(canonical, chunk => chunk.replace(
+    /([#@])\{([^}]+)\}/g,
+    (match, marker: string, id: string) => `${marker}{${ids.get(id) ?? id}}`,
+  ));
+}
+
 export function retargetFormula(canonical:string,targets:Map<string,{rowId:string;columnId:string}>) {
   return replaceOutsideStrings(canonical,chunk=>chunk.replace(new RegExp(CELL_SOURCE,'gi'),(match,rowLock:string,rowId:string,colLock:string,columnId:string)=>{
     const target=targets.get(formulaKey(rowId,columnId));return target?`${rowLock}#{${target.rowId}}${colLock}@{${target.columnId}}`:match;

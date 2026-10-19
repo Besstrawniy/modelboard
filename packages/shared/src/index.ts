@@ -325,6 +325,10 @@ export type DatasetConditionalRule = {
 export { CanvasNodeStore as SharedRecordStore } from './canvasDocument.js';
 
 export { evaluateDatasetFormulas } from './formulas.js';
-export { relationValueKey, validateRelationData, relatedRows, validateRecordLinks } from './relations.js';
+export { sameRelationEndpoints, relationValueKey, validateRelationData, relatedRows, validateRecordLinks } from './relations.js';
 export { cleanBoardResources } from './resourceLifecycle.js';
 export { resolveBindingPresentation } from './bindingPresentation.js';
+export { FILE_LIMITS, assertSafeJson, validateDatasetFile, validateBoardArchive, remapBoardArchive } from './files.js';
+export type { BoardArchive, FileAssetInput } from './files.js';
+export { newRoom, applyRoomCommand, musicPosition, timerRemaining, roomCanControl, persistentRoom, presenceColor, ROOM_REACTIONS, ROOM_TRACKS } from './room.js';
+export type { RoomState, RoomActor, RoomCamera, MusicSource } from './room.js';

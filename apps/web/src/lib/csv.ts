@@ -10,7 +10,7 @@ import type {
 export const CSV_LIMITS = {
   maxBytes: 5 * 1024 * 1024,
   maxColumns: 100,
-  maxRows: 2000,
+  maxRows: 10000,
 } as const;
 
 export type ParsedCsv = {
@@ -32,7 +32,8 @@ const uuidPattern =
 const integerPattern = /^-?(?:0|[1-9]\d*)$/;
 const numberPattern =
   /^[+-]?(?:(?:0|[1-9]\d*)?\.\d+|(?:0|[1-9]\d*)[eE][+-]?\d+)$/;
-const isoDatePattern = /^\d{4}-\d{2}-\d{2}(?:[T ][0-2]\d:[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-][0-2]\d:[0-5]\d)?)?$/;
+const isoDatePattern =
+  /^\d{4}-\d{2}-\d{2}(?:[T ][0-2]\d:[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-][0-2]\d:[0-5]\d)?)?$/;
 
 function normalizeRow(row: unknown[]): string[] {
   return row.map((value) => String(value ?? '').trim());
@@ -54,7 +55,9 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
 
   const fatalError = result.errors.find((error) => error.type === 'Quotes');
   if (fatalError) {
-    throw new Error(`CSV parse error on row ${fatalError.row ?? '?'}: ${fatalError.message}`);
+    throw new Error(
+      `CSV parse error on row ${fatalError.row ?? '?'}: ${fatalError.message}`,
+    );
   }
 
   const matrix = result.data.map((row) => normalizeRow(row as unknown[]));
@@ -65,7 +68,9 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
   }
 
   if (width > CSV_LIMITS.maxColumns) {
-    throw new Error(`CSV contains ${width} columns. MVP limit is ${CSV_LIMITS.maxColumns}.`);
+    throw new Error(
+      `CSV contains ${width} columns. MVP limit is ${CSV_LIMITS.maxColumns}.`,
+    );
   }
 
   if (matrix.length > CSV_LIMITS.maxRows + 1) {
@@ -83,24 +88,40 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
 }
 
 function uniqueHeaders(rawHeaders: string[], width: number) {
-  const used = new Map<string, number>();
-
+  const used = new Set<string>();
   return Array.from({ length: width }, (_, index) => {
     const base = rawHeaders[index]?.trim() || `column_${index + 1}`;
-    const count = used.get(base) ?? 0;
-    used.set(base, count + 1);
-    return count === 0 ? base : `${base}_${count + 1}`;
+    let name = base,
+      suffix = 1;
+    while (used.has(name)) name = `${base}_${++suffix}`;
+    used.add(name);
+    return name;
   });
 }
 
 function inferType(values: string[]): DatasetDataType {
-  const samples = values.filter((value) => value !== '').slice(0, 200);
+  const samples = values.filter((value) => value !== '');
   if (samples.length === 0) return 'TEXT';
 
   if (samples.every((value) => uuidPattern.test(value))) return 'UUID';
   if (samples.every((value) => /^(true|false)$/i.test(value))) return 'BOOLEAN';
-  if (samples.every((value) => integerPattern.test(value))) return 'INTEGER';
-  if (samples.every((value) => numberPattern.test(value))) return 'NUMBER';
+  if (
+    samples.every(
+      (value) =>
+        integerPattern.test(value) && Number.isSafeInteger(Number(value)),
+    )
+  )
+    return 'INTEGER';
+  if (
+    samples.every(
+      (value) =>
+        (integerPattern.test(value) || numberPattern.test(value)) &&
+        Number.isFinite(Number(value)) &&
+        (!Number.isInteger(Number(value)) ||
+          Number.isSafeInteger(Number(value))),
+    )
+  )
+    return 'NUMBER';
   if (
     samples.every(
       (value) => isoDatePattern.test(value) && !Number.isNaN(Date.parse(value)),
@@ -134,7 +155,10 @@ export function buildCsvImportDraft(
   parsed: ParsedCsv,
   firstRowIsHeader: boolean,
 ): CsvImportDraft {
-  const width = parsed.matrix.reduce((max, row) => Math.max(max, row.length), 0);
+  const width = parsed.matrix.reduce(
+    (max, row) => Math.max(max, row.length),
+    0,
+  );
   const rawHeaders = firstRowIsHeader ? parsed.matrix[0] : [];
   const dataRows = firstRowIsHeader ? parsed.matrix.slice(1) : parsed.matrix;
 
@@ -158,10 +182,7 @@ export function buildCsvImportDraft(
     const values: DatasetRow['values'] = {};
 
     columns.forEach((column, columnIndex) => {
-      values[column.id] = coerce(
-        sourceRow[columnIndex] ?? '',
-        column.dataType,
-      );
+      values[column.id] = coerce(sourceRow[columnIndex] ?? '', column.dataType);
     });
 
     return {
@@ -174,9 +195,11 @@ export function buildCsvImportDraft(
   return {
     columns,
     rows,
-    preview: dataRows.slice(0, 8).map((row) =>
-      Array.from({ length: width }, (_, index) => row[index] ?? ''),
-    ),
+    preview: dataRows
+      .slice(0, 8)
+      .map((row) =>
+        Array.from({ length: width }, (_, index) => row[index] ?? ''),
+      ),
   };
 }
 

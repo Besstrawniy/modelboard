@@ -59,6 +59,7 @@ export default function App() {
     try {
       setError('');
       const board = await api.board(boardId, session.token);
+      setBoards(current=>current.some(item=>item.id===board.id)?current:[...current,board]);
       setMeta(board);
       localStorage.setItem(LAST_BOARD_KEY, board.id);
     } catch (err) {

@@ -1,3 +1,5 @@
+import { useStore } from '@xyflow/react';
+import type { CSSProperties } from 'react';
 import { relatedRows } from '@modelboard/shared';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
 import { ExternalLink, Link2 } from 'lucide-react';
@@ -28,10 +30,13 @@ function rowFields(
     .slice(0, 3);
 }
 
-export function RelationViewNode({ data, selected }: NodeProps<any>) {
+export function RelationViewNode({ id, data, selected }: NodeProps<any>) {
   const { readOnly, sessionToken, workspaceId, openDatasetSheet } =
     useBoardActions();
 
+  const limit = useStore(
+    (state) => Number(state.nodeLookup.get(id)?.style?.height) || 290,
+  );
   const node = data as RelationViewNodeData;
   const binding = node.binding;
   const [relation, setRelation] = useState<any>(null);
@@ -103,13 +108,25 @@ export function RelationViewNode({ data, selected }: NodeProps<any>) {
     [relation, anchorDataset, anchorRow, otherDataset],
   );
 
-  const maxRows =
-    typeof binding.presentation?.maxRows === 'number'
-      ? Math.max(1, Math.min(20, binding.presentation.maxRows))
-      : 8;
+  const [scrollTop, setScrollTop] = useState(0);
+  const windowSize = Math.max(12, Math.ceil(limit / 40) + 4);
+  const first =
+    matches.length > 100
+      ? Math.max(
+          0,
+          Math.min(Math.floor(scrollTop / 40) - 2, matches.length - windowSize),
+        )
+      : 0;
+  const last =
+    matches.length > 100
+      ? Math.min(matches.length, first + windowSize)
+      : matches.length;
 
   return (
-    <div className={`relation-view-node ${selected ? 'is-selected' : ''}`}>
+    <div
+      style={{ '--data-view-max-height': `${limit}px` } as CSSProperties}
+      className={`relation-view-node ${selected ? 'is-selected' : ''}`}
+    >
       {!readOnly && (
         <CanvasNodeResizer
           minWidth={300}
@@ -159,13 +176,17 @@ export function RelationViewNode({ data, selected }: NodeProps<any>) {
         Найдено связанных строк: <strong>{matches.length}</strong>
       </div>
 
-      <div className="relation-view-node__rows">
+      <div
+        className="relation-view-node__rows nodrag nowheel"
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      >
+        {first > 0 && <div aria-hidden="true" style={{ height: first * 40 }} />}
         {matches.length === 0 ? (
           <div className="relation-view-node__empty">
             Связанных записей пока нет.
           </div>
         ) : (
-          matches.slice(0, maxRows).map((row) => {
+          matches.slice(first, last).map((row) => {
             const fields = otherDataset
               ? rowFields(row, otherDataset.columns)
               : [];
@@ -192,10 +213,11 @@ export function RelationViewNode({ data, selected }: NodeProps<any>) {
           })
         )}
 
-        {matches.length > maxRows && (
-          <div className="relation-view-node__more">
-            + ещё {matches.length - maxRows}
-          </div>
+        {last < matches.length && (
+          <div
+            aria-hidden="true"
+            style={{ height: (matches.length - last) * 40 }}
+          />
         )}
       </div>
 

@@ -11,7 +11,7 @@ async function bootstrap() {
     bodyParser: false,
   });
 
-  app.use(json({ limit: '6mb' }));
+  app.use(json({ limit: '40mb' }));
   app.setGlobalPrefix('api');
   app.enableCors({
     origin: process.env.WEB_ORIGIN ?? 'http://localhost:5173',

@@ -67,7 +67,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .shape-node input { width: 90%; text-align: center; border: 0; outline: 0; background: transparent; font-weight: 650; }
 
 .remote-cursor { position: absolute; pointer-events: none; color: #ef476f; z-index: 1000; }
-.remote-cursor span { position: absolute; left: 14px; top: 17px; white-space: nowrap; background: currentColor; color: white; padding: 3px 6px; border-radius: 5px; font-size: 9px; font-weight: 700; }
+.remote-cursor span { position: absolute; left: 14px; top: 17px; white-space: nowrap; background: var(--cursor-color, #6941c6); color: white; padding: 4px 7px; border-radius: 5px; font-size: 11px; font-weight: 700; box-shadow: 0 2px 5px #0002; }
 .readonly-banner { position: absolute; z-index: 30; left: 50%; bottom: 18px; transform: translateX(-50%); background: #1e2229; color: white; border-radius: 999px; padding: 8px 14px; font-size: 11px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
 
 .comments-panel, .datasets-panel { position: absolute; z-index: 40; right: 14px; top: 72px; bottom: 14px; width: 340px; background: white; border: 1px solid #dde1e7; border-radius: 14px; display: flex; flex-direction: column; box-shadow: 0 15px 45px rgba(24,30,40,.18); }
@@ -3672,7 +3672,7 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 .bound-data strong,.bound-data small,.bound-data__field { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .bound-data__field,.bound-data__status { font-size:10px; }.bound-data__field em { font-style:normal; color:#687588; }
 .bound-data button { justify-self:start; border:0; padding:2px 0; color:#5864bb; background:transparent; font-size:10px; cursor:pointer; }
-.device-node__body { min-width:0; }.device-node { overflow:auto; }
+.device-node__body { min-width:0; }.device-node { overflow:hidden; }
 .binding-field-options { display:grid; grid-template-columns:1fr 1fr; gap:5px; max-height:160px; overflow:auto; padding:7px; border:1px solid #dce2ed; border-radius:7px; }
 .binding-field-options label { display:flex; align-items:center; gap:5px; font-size:11px; }.binding-field-options input { width:auto; }
 
@@ -3694,3 +3694,78 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 .relation-dialog__header,.relation-dialog__footer { flex-shrink:0; }
 .relation-form { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
 .relation-form select { width:100%; min-width:0; }
+
+/* Keep every tool reachable below the fixed header, without a visible scrollbar. */
+.toolbar-panel { top:72px !important; bottom:14px !important; transform:none !important; display:flex; align-items:flex-start; max-height:calc(100% - 86px); }
+.toolbar { max-height:100%; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; scrollbar-width:none; }
+.toolbar::-webkit-scrollbar { display:none; }
+.toolbar > button,.toolbar-separator { flex-shrink:0; }
+.bound-data { max-width:100%; }
+.device-node .bound-data { overflow:hidden; }
+/* The saved height is a ceiling; short views follow their contents. */
+.react-flow__node-relationView,.react-flow__node-table { height:auto !important; }
+.relation-view-node { height:auto; max-height:var(--data-view-max-height,290px); }
+.table-node { min-height:0; max-height:var(--data-view-max-height,300px); display:flex; flex-direction:column; }
+.table-node__title,.table-view-controls,.table-node__more { flex-shrink:0; }
+.table-node .table-grid { min-height:0; overflow:auto; }
+.relation-view-node__rows,.table-grid { overscroll-behavior:contain; }
+
+.relation-view-node__row { height:40px; }
+
+.image-node { width:100%; height:100%; display:grid; place-items:center; background:transparent; }
+.image-node img { display:block; width:100%; height:100%; object-fit:contain; pointer-events:none; }
+.files-panel { position:absolute; top:72px; right:14px; bottom:14px; width:min(400px,calc(100vw - 100px)); z-index:60; background:white; border:1px solid #dce2ea; border-radius:14px; display:flex; flex-direction:column; box-shadow:0 12px 45px #16223822; }
+.files-panel header,.file-dialog header { display:flex; align-items:center; justify-content:space-between; padding:12px 18px; border-bottom:1px solid #e0e5ee; }
+.files-panel__body { overflow:auto; padding:16px; font-size:13px; }
+.files-panel__body p { color:#677385; line-height:1.5; }.files-panel button { padding:7px 10px; margin:3px; }
+.file-input { display:none; }.file-library-item { display:flex; flex-wrap:wrap; gap:5px; padding:12px 0; border-top:1px solid #dce2ea; }.file-library-item strong,.file-library-item small { width:100%; overflow-wrap:anywhere; }
+.file-modal-backdrop { position:fixed; inset:0; z-index:180; display:grid; place-items:center; background:#17223966; padding:24px; }
+.file-dialog { background:white; border-radius:16px; width:min(1000px,95vw); max-height:90vh; display:flex; flex-direction:column; box-shadow:0 20px 70px #0003; }
+.file-dialog h2 { font-size:18px; }.file-dialog__body { overflow:auto; padding:18px; }.file-dialog footer { display:flex; gap:15px; justify-content:space-between; align-items:center; padding:16px 18px; border-top:1px solid #dce2ea; }.file-dialog footer span { font-size:12px; color:#677385; }
+.file-sheet-preview { padding:12px 0; border-bottom:1px solid #dce2ea; }.file-sheet-preview label { display:inline-flex; align-items:center; gap:7px; margin:7px 12px 7px 0; font-size:13px; }.file-preview-table { overflow:auto; max-height:240px; }.file-preview-table table { border-collapse:collapse; font-size:12px; }.file-preview-table th,.file-preview-table td { padding:7px 12px; border:1px solid #dce2ea; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.file-preview-table small { display:block; font-weight:400; color:#677385; }.file-note { color:#896322; font-size:12px; }
+.file-image-preview { display:flex; align-items:center; gap:16px; padding:12px; }.file-image-preview img { max-width:180px; max-height:100px; object-fit:contain; }
+.dataset-export { display:flex; flex-wrap:wrap; gap:5px; font-size:11px; }.dataset-export button,.dataset-export select { padding:6px 8px; }
+
+.dataset-sheet__topbar { grid-template-columns:minmax(0,1fr) auto auto 36px; min-height:70px; padding:8px 12px; }
+.dataset-export { align-items:center; }.dataset-export select { max-width:250px; }
+@media(max-width:900px){ .dataset-sheet__topbar { grid-template-columns:minmax(0,1fr) auto 36px; }.dataset-sheet__stats { display:none; }.dataset-export select { max-width:130px; } }
+
+/* Shared session controls stay independent of canvas document/history. */
+.session-trigger { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; }
+.session-timer-badge { font-variant-numeric: tabular-nums; background: #eef0ff; padding: 2px 5px; border-radius: 5px; color: #4338ca; }
+.session-panel { position: absolute; z-index: 65; right: 14px; top: 76px; bottom: 14px; width: min(390px, calc(100vw - 28px)); background: white; border: 1px solid #dde1e7; border-radius: 14px; box-shadow: 0 15px 45px #181e402e; display: flex; flex-direction: column; color: #252936; font-size: 13px; white-space: normal; }
+.session-panel[hidden], .room-music[hidden] { display: none !important; }
+.session-panel > header { padding: 8px 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #eaecf0; }
+.session-panel h3 { margin: 0; font-size: 16px; }
+.session-panel > nav { display: flex; overflow-x: auto; gap: 4px; padding: 8px; flex-shrink: 0; }
+.session-panel > nav button { padding: 7px 8px; font-size: 11px; white-space: nowrap; }
+.session-panel button[aria-pressed=true] { background: #eef0ff; color: #4338ca; border-color: #818cf8; }
+.session-panel__body { min-height: 0; overflow: auto; padding: 0 16px 16px; flex: 1; }
+.session-panel__body h4 { margin: 12px 0; font-size: 15px; }
+.session-panel__body h5 { margin: 12px 0; font-size: 15px; }
+.session-panel__body p { line-height: 1.55; color: #667085; }
+.session-panel__body label { display: grid; gap: 6px; margin: 12px 0; }
+.session-panel__body input:not([type=range]), .session-panel__body select, .session-panel__body textarea { width: 100%; padding: 8px; border: 1px solid #d0d5dd; border-radius: 7px; background: white; color: #252936; font: inherit; }
+.session-panel__body small { display: block; margin: 8px 0; line-height: 1.5; color: #667085; }
+.room-button-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.session-panel > footer { flex-shrink: 0; border-top: 1px solid #eaecf0; padding: 10px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.room-reactions { display: flex; gap: 4px; }
+.room-reactions button { padding: 5px 7px; font-size: 19px; }
+.room-timer { font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.room-poll-option { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+.room-poll-option button { flex: 1; text-align: left; }
+.room-poll-option span { min-width: 24px; text-align: center; font-weight: 700; }
+.room-frame { display: block; width: 100%; text-align: left; margin: 6px 0; }
+.room-call-link { display: block; padding: 10px 0; color: #4338ca; }
+.room-participants { list-style: none; padding: 0; }
+.room-participants li { margin: 10px 0; }
+.room-reaction-feed { position: absolute; z-index: 70; bottom: 70px; left: 50%; transform: translateX(-50%); display: flex; align-items: end; gap: 12px; pointer-events: none; }
+.room-reaction { display: grid; justify-items: center; gap: 5px; padding: 8px 12px; background: #fffef8; border: 1px solid #e4e7ec; border-radius: 12px; box-shadow: 0 4px 15px #0001; animation: room-reaction-pop .25s ease-out; }
+.room-reaction span { font-size: 32px; }
+.room-reaction strong { max-width: 130px; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: #344054; }
+@keyframes room-reaction-pop { from { opacity: 0; transform: translateY(12px) scale(.7); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .room-reaction { animation: none; } }
+@media (max-height: 550px) { .session-panel { top: 64px; bottom: 6px; } }
+.session-panel, .room-reaction-feed { position: fixed; }
+.session-panel button, .session-trigger { border: 1px solid #d0d5dd; border-radius: 7px; background: white; color: #344054; padding: 7px 10px; font-size: 12px; }
+.session-panel > header .icon-button { border: 0; }

@@ -1,3 +1,4 @@
+import { sameRelationEndpoints } from '@modelboard/shared';
 import { datasetRecordLabel as label } from '../lib/datasetRecordLabel';
 import { api } from '../lib/api';
 import { useBoardActions } from './BoardContext';
@@ -39,12 +40,16 @@ export function RelationDialog({
   const { workspaceId } = useBoardActions();
   const [existing, setExisting] = useState<DatasetRelation[]>([]),
     [existingId, setExistingId] = useState('');
+  const [fieldRelations, setFieldRelations] = useState<DatasetRelation[]>([]);
   useEffect(() => {
     let live = true;
     void api
       .relations(workspaceId, token)
       .then((items) => {
-        if (live)
+        if (live) {
+          setFieldRelations(
+            items.filter((r) => (r.matchMode ?? 'FIELDS') === 'FIELDS'),
+          );
           setExisting(
             items.filter(
               (r) =>
@@ -53,6 +58,7 @@ export function RelationDialog({
                 r.targetDatasetId === relation.targetDatasetId,
             ),
           );
+        }
       })
       .catch((e) => setError(e.message));
     return () => {
@@ -84,6 +90,19 @@ export function RelationDialog({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [query, setQuery] = useState('');
+  const duplicateField =
+    mode === 'FIELDS' &&
+    sourceColumn &&
+    targetColumn &&
+    fieldRelations.find((item) =>
+      sameRelationEndpoints(item, {
+        sourceDatasetId: relation.sourceDatasetId,
+        targetDatasetId: relation.targetDatasetId,
+        sourceColumnId: sourceColumn,
+        targetColumnId: targetColumn,
+        matchMode: 'FIELDS',
+      }),
+    );
   const submit = async () => {
     setBusy(true);
     setError('');
@@ -334,6 +353,12 @@ export function RelationDialog({
               </p>
             </>
           )}
+          {duplicateField && (
+            <p role="status">
+              Эти поля уже связаны. Откройте «Связи таблицы», чтобы настроить
+              существующую связь.
+            </p>
+          )}
           {error && (
             <div className="relation-dialog__error" role="alert">
               {error}
@@ -346,7 +371,7 @@ export function RelationDialog({
           </button>
           <button
             className="primary-button"
-            disabled={busy || !source || !target}
+            disabled={busy || !source || !target || Boolean(duplicateField)}
             onClick={submit}
           >
             {busy ? 'Сохранение…' : 'Создать связь'}

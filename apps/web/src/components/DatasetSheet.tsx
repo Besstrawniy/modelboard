@@ -1,3 +1,4 @@
+import { DatasetExport } from './DatasetExport';
 import { DatasetConnections } from './DatasetConnections';
 import { DatasetRename } from './DatasetRename';
 import { SpreadsheetTools } from './SpreadsheetTools';
@@ -2054,6 +2055,7 @@ export function DatasetSheet({
           </div>
         </div>
 
+        <>{dataset&&<DatasetExport dataset={dataset}/>}</>
         <div className="dataset-sheet__stats">
           <span>{dataset?.rows.length ?? 0} строк</span>
           <span>{dataset?.columns.length ?? 0} колонок</span>

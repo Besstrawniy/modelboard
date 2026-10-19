@@ -1,3 +1,5 @@
+import { useStore } from '@xyflow/react';
+import type { CSSProperties } from 'react';
 import { DatasetConnections } from './DatasetConnections';
 import { DatasetRename } from './DatasetRename';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
@@ -11,6 +13,7 @@ import { matchesSheetFilter, sheetConditionalFormat } from '../lib/spreadsheetMo
 
 export function TableNode({ id,data,selected }:NodeProps<any>) {
  const {readOnly,sessionToken,updateNodeData,openDatasetSheet}=useBoardActions();
+ const limit=useStore(state=>Number(state.nodeLookup.get(id)?.style?.height)||300);
  const view=data as TableNodeData;
  const {dataset,status,synced,setCell,setFormula,pendingChanges,storageError}=useCollaborativeDataset(view.datasetId,sessionToken,readOnly);
  if(!view.datasetId||!dataset||!synced)return <div className="table-node table-node--loading"><strong>Загрузка Dataset…</strong><span>{status}</span></div>;
@@ -21,7 +24,7 @@ export function TableNode({ id,data,selected }:NodeProps<any>) {
  const rows=filtered.slice(0,view.view?.maxRows??20);
  const formats=new Map(dataset.formats.map(format=>[formulaKey(format.rowId,format.columnId),format]));
  const formulas=new Map(dataset.formulas.map(formula=>[formulaKey(formula.rowId,formula.columnId),formula]));
- return <div className={`table-node ${selected?'is-selected':''}`}>
+ return <div style={{'--data-view-max-height':`${limit}px`} as CSSProperties} className={`table-node ${selected?'is-selected':''}`}>
   <Handle id="table:target" type="target" position={Position.Left} isConnectable={!readOnly} title="Связать записи таблиц" />
   <Handle id="table:source" type="source" position={Position.Right} isConnectable={!readOnly} title="Связать записи таблиц" />
   <CanvasNodeResizer minWidth={360} minHeight={180} isVisible={selected}/>

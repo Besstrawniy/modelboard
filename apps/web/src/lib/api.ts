@@ -44,7 +44,13 @@ const authHeaders = (token: string) => ({
   authorization: `Bearer ${token}`,
 });
 
+export type StoredFile = {id:string;name:string;mime:string;size:number;createdAt?:string};
 export const api = {
+  files:(workspaceId:string,token:string)=>json<StoredFile[]>(`/workspaces/${workspaceId}/files`,{headers:authHeaders(token)}),
+  fileBlob:async(id:string,token:string)=>{const response=await fetch(`${baseUrl}/files/${id}/content`,{headers:authHeaders(token)});if(!response.ok)throw new Error('Файл недоступен');return response.blob();},
+  importFiles:(workspaceId:string,token:string,body:{datasets:import('@modelboard/shared').DatasetSnapshot[];files:import('@modelboard/shared').FileAssetInput[]})=>json<{datasets:Array<{id:string;name:string}>;files:StoredFile[]}>(`/workspaces/${workspaceId}/files/import`,{method:'POST',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify(body)}),
+  exportBoard:(id:string,token:string,state:unknown)=>json<import('@modelboard/shared').BoardArchive>(`/boards/${id}/export`,{method:'POST',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify(state)}),
+  importBoard:(workspaceId:string,token:string,archive:import('@modelboard/shared').BoardArchive)=>json<{id:string;name:string}>(`/workspaces/${workspaceId}/boards/import`,{method:'POST',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify(archive)}),
   appendRecordLinks:(workspaceId:string,id:string,token:string,links:Array<{sourceRowId:string;targetRowId:string}>)=>json<DatasetRelation>(`/workspaces/${workspaceId}/relations/${id}/links`,{method:'POST',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify({links})}),
   changeRecordLink:(workspaceId:string,id:string,token:string,body:{sourceRowId:string;targetRowId:string;remove?:boolean})=>json<DatasetRelation>(`/workspaces/${workspaceId}/relations/${id}/links`,{method:'POST',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify(body)}),
   renameDataset:(id:string,token:string,name:string)=>json<{id:string;name:string}>(`/datasets/${id}`,{method:'PUT',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify({name})}),

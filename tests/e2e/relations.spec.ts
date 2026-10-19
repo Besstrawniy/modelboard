@@ -1,3 +1,6 @@
+import { HocuspocusProvider } from '@hocuspocus/provider';
+import * as Y from 'yjs';
+import { CanvasNodeStore } from '../../packages/shared/src/canvasDocument';
 import { test, expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
@@ -1030,10 +1033,11 @@ test('general table connector opens field mapping by names and supports parent t
   await expect(
     dialog.getByLabel('Поле слева', { exact: true }).locator('option:checked'),
   ).toHaveText('id (UUID)');
-  await dialog
-    .getByRole('button', { name: 'Создать связь', exact: true })
-    .click();
-  await expect(dialog).toHaveCount(0);
+  await expect(dialog).toContainText('Эти поля уже связаны');
+  await expect(
+    dialog.getByRole('button', { name: 'Создать связь', exact: true }),
+  ).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
   const relations = (
     await (
       await request.get(`${base}/workspaces/${workspace}/relations`, {
@@ -1044,43 +1048,30 @@ test('general table connector opens field mapping by names and supports parent t
     (r: any) =>
       r.sourceDatasetId === servers.id && r.targetDatasetId === vms.id,
   );
-  expect(relations).toHaveLength(2);
-  expect(relations.every((r: any) => r.cardinality === '1:N')).toBeTruthy();
-  await page.getByTitle('Коннектор (C)', { exact: true }).click();
-  await tables
-    .filter({ hasText: servers.name })
-    .locator('.table-node__title strong')
-    .click();
-  await tables
-    .filter({ hasText: vms.name })
-    .locator('.table-node__title strong')
-    .click();
-  await dialog
-    .getByLabel('Способ связи', { exact: true })
-    .selectOption('FIELDS');
-  await dialog
-    .getByLabel('Поле слева', { exact: true })
-    .selectOption(servers.columns[0].id);
-  await dialog
-    .getByLabel('Поле справа', { exact: true })
-    .selectOption(vms.columns[1].id);
-  await dialog
-    .getByLabel('Кардинальность', { exact: true })
-    .selectOption('N:M');
-  await dialog
-    .getByRole('button', { name: 'Создать связь', exact: true })
-    .click();
-  await expect(dialog).toHaveCount(0);
-  const many = (
-    await (
-      await request.get(`${base}/workspaces/${workspace}/relations`, {
-        headers,
-      })
-    ).json()
-  ).find(
-    (r: any) => r.sourceDatasetId === servers.id && r.cardinality === 'N:M',
+  expect(relations).toHaveLength(1);
+  const reverse = await request.post(
+    `${base}/workspaces/${workspace}/relations`,
+    {
+      headers,
+      data: {
+        ...data,
+        sourceDatasetId: vms.id,
+        targetDatasetId: servers.id,
+        sourceColumnId: vms.columns[1].id,
+        targetColumnId: servers.columns[0].id,
+        cardinality: 'N:1',
+      },
+    },
   );
-  expect(many.relationType).toBe('REFERENCE');
+  expect(reverse.status()).toBe(409);
+  const many = await request.put(
+    `${base}/workspaces/${workspace}/relations/${relations[0].id}`,
+    {
+      headers,
+      data: { ...data, relationType: 'REFERENCE', cardinality: 'N:M' },
+    },
+  );
+  expect(many.ok()).toBeTruthy();
 });
 
 test('concurrent record links survive metadata edits and reject foreign rows and invalid dataset names', async ({
@@ -1140,4 +1131,175 @@ test('concurrent record links survive metadata edits and reject foreign rows and
     data: { name: '   ' },
   });
   expect(invalidName.status()).toBe(400);
+});
+
+test('short viewport tools scroll below header, infrastructure has no scrollbar and views fit contents', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 600 });
+  const tools = page.locator('.toolbar');
+  const rect = await tools.boundingBox();
+  expect(rect!.y).toBeGreaterThanOrEqual(58);
+  expect(rect!.y + rect!.height).toBeLessThanOrEqual(600);
+  expect(
+    await tools.evaluate((el) => getComputedStyle(el).scrollbarWidth),
+  ).toBe('none');
+  await tools.hover();
+  await page.mouse.wheel(0, 900);
+  await expect
+    .poll(() => tools.evaluate((el) => el.scrollTop))
+    .toBeGreaterThan(0);
+  await expect(page.getByTitle('Комментарии', { exact: true })).toBeVisible();
+  await tools.evaluate((el) => (el.scrollTop = 0));
+  await addServer(page);
+  await bindServer(page);
+  const device = page.locator('.device-node');
+  await expect(device).toHaveCSS('overflow-x', 'hidden');
+  const headers = { Authorization: `Bearer ${token}` };
+  const relation = await page.request.post(
+    `${base}/workspaces/${workspace}/relations`,
+    {
+      headers,
+      data: {
+        sourceDatasetId: servers.id,
+        sourceColumnId: servers.columns[0].id,
+        targetDatasetId: vms.id,
+        targetColumnId: vms.columns[1].id,
+        relationType: 'FOREIGN_KEY',
+        cardinality: '1:N',
+      },
+    },
+  );
+  expect(relation.ok()).toBeTruthy();
+  // Refreshing metadata arrives through the collaboration resource channel.
+  await inspector(page)
+    .getByRole('button', { name: 'Добавить Relation View', exact: true })
+    .click();
+  const view = page.locator('.relation-view-node'),
+    rows = view.locator('.relation-view-node__rows');
+  await expect(view.locator('.relation-view-node__row')).toHaveCount(2);
+  await expect
+    .poll(async () => (await view.boundingBox())!.height)
+    .toBeLessThan(290);
+  expect(
+    await rows.evaluate((el) => el.scrollHeight <= el.clientHeight + 1),
+  ).toBe(true);
+  const doc = new Y.Doc();
+  let provider: HocuspocusProvider | undefined;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error('dataset sync timeout')),
+        10000,
+      );
+      provider = new HocuspocusProvider({
+        url: 'ws://localhost:1234',
+        name: `dataset:${vms.id}`,
+        document: doc,
+        token,
+        WebSocketPolyfill: WebSocket,
+        onSynced: ({ state }) => {
+          if (state) {
+            clearTimeout(timer);
+            resolve();
+          }
+        },
+        onAuthenticationFailed: () => {
+          clearTimeout(timer);
+          reject(new Error('authentication failed'));
+        },
+      });
+    });
+    const records = new CanvasNodeStore(doc, 'rows'),
+      added = Array.from({ length: 118 }, (_, i) => ({
+        id: randomUUID(),
+        ordinal: i + 2,
+        values: {
+          [vms.columns[0].id]: randomUUID(),
+          [vms.columns[1].id]: servers.rows[0].values[servers.columns[0].id],
+          [vms.columns[2].id]: `extra-${i}`,
+        },
+      }));
+    doc.transact(() => {
+      for (const row of added) records.set(row.id, row);
+    });
+    await expect(view.locator('.relation-view-node__summary')).toContainText(
+      '120',
+    );
+    expect(await view.locator('.relation-view-node__row').count()).toBeLessThan(
+      25,
+    );
+    await expect
+      .poll(() => rows.evaluate((el) => el.scrollHeight > el.clientHeight + 1))
+      .toBe(true);
+    expect((await view.boundingBox())!.height).toBeLessThanOrEqual(291);
+    await rows.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(
+      view.locator('.relation-view-node__row').filter({ hasText: 'extra-117' }),
+    ).toBeVisible();
+    doc.transact(() => {
+      for (const row of added) records.delete(row.id);
+    });
+    await expect(view.locator('.relation-view-node__row')).toHaveCount(2);
+    await expect
+      .poll(() => rows.evaluate((el) => el.scrollHeight <= el.clientHeight + 1))
+      .toBe(true);
+  } finally {
+    provider?.destroy();
+    doc.destroy();
+  }
+});
+
+test('concurrent relationship creation and reversed record endpoints cannot create duplicates', async ({
+  request,
+}) => {
+  const headers = { Authorization: `Bearer ${token}` };
+  const data = {
+    sourceDatasetId: servers.id,
+    targetDatasetId: vms.id,
+    sourceColumnId: '__row__',
+    targetColumnId: '__row__',
+    matchMode: 'ROW_LINKS',
+    links: [{ sourceRowId: servers.rows[0].id, targetRowId: vms.rows[0].id }],
+    relationType: 'REFERENCE',
+    cardinality: '1:N',
+  };
+  const responses = await Promise.all([
+    request.post(`${base}/workspaces/${workspace}/relations`, {
+      headers,
+      data,
+    }),
+    request.post(`${base}/workspaces/${workspace}/relations`, {
+      headers,
+      data,
+    }),
+  ]);
+  expect(responses.map((r) => r.status()).sort()).toEqual([201, 409]);
+  const reverse = await request.post(
+    `${base}/workspaces/${workspace}/relations`,
+    {
+      headers,
+      data: {
+        ...data,
+        sourceDatasetId: vms.id,
+        targetDatasetId: servers.id,
+        links: [
+          { sourceRowId: vms.rows[0].id, targetRowId: servers.rows[0].id },
+        ],
+        cardinality: 'N:1',
+      },
+    },
+  );
+  expect(reverse.status()).toBe(409);
+  const list = (
+    await (
+      await request.get(`${base}/workspaces/${workspace}/relations`, {
+        headers,
+      })
+    ).json()
+  ).filter(
+    (r: any) =>
+      r.sourceDatasetId === servers.id && r.targetDatasetId === vms.id,
+  );
+  expect(list).toHaveLength(1);
 });

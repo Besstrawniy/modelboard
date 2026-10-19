@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as Y from 'yjs';
 import {
+  sameRelationEndpoints,
   relatedRows,validateRecordLinks,
   validateRelationData,
   relationValueKey,
@@ -229,4 +230,13 @@ test('1:N foreign key validates children against unique parents and reports orph
  const result=validateRelationData(relation,rows(['a'],'id'),rows(['a','missing'],'parent'));
  assert.equal(result.valid,false);assert.equal(result.orphanCount,1);assert.deepEqual(result.orphanRowIds,['row1']);
  assert.equal(validateRelationData(relation,rows(['a','a'],'id'),rows(['a'],'parent')).valid,false);
+});
+
+test('relationship identity ignores labels, metadata and reversed endpoints, but preserves distinct fields and modes',()=>{
+ const a={sourceDatasetId:'servers',sourceColumnId:'id',targetDatasetId:'vms',targetColumnId:'host',matchMode:'FIELDS'};
+ assert.equal(sameRelationEndpoints(a,{...a,name:'another',cardinality:'1:1'}),true);
+ assert.equal(sameRelationEndpoints(a,{sourceDatasetId:'vms',sourceColumnId:'host',targetDatasetId:'servers',targetColumnId:'id'}),true);
+ assert.equal(sameRelationEndpoints(a,{...a,targetColumnId:'another'}),false);
+ assert.equal(sameRelationEndpoints(a,{...a,matchMode:'ROW_LINKS'}),false);
+ assert.equal(sameRelationEndpoints({...a,matchMode:'ROW_LINKS'},{...a,matchMode:'ROW_LINKS',sourceColumnId:'ignored'}),true);
 });

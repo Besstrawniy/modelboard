@@ -12,6 +12,8 @@
     "@hocuspocus/provider": "^4.0.0",
     "@modelboard/shared": "0.1.0",
     "@xyflow/react": "^12.11.2",
+    "exceljs": "^4.4.0",
+    "html-to-image": "^1.11.13",
     "lucide-react": "^0.468.0",
     "papaparse": "^5.5.3",
     "react": "^19.0.0",

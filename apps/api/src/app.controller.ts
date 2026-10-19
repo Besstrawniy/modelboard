@@ -23,6 +23,7 @@ import {
   assertDatasetRelations,
 } from '@modelboard/db';
 import {
+  sameRelationEndpoints,
   canComment,
   canEditBoard,
   type BoardDatasetLocation,
@@ -1908,6 +1909,18 @@ export class AppController {
       )
         throw new ConflictException(
           'Relation View использует прежний Dataset. Удалите его представление перед сменой конца связи.',
+        );
+      const existingRelations = await client.query(
+        'SELECT * FROM dataset_relations WHERE workspace_id=$1 AND deleted_at IS NULL AND id<>$2',
+        [workspaceId, relationId ?? '00000000-0000-0000-0000-000000000000'],
+      );
+      if (
+        existingRelations.rows.some((row) =>
+          sameRelationEndpoints(body, relationFromSql(row)),
+        )
+      )
+        throw new ConflictException(
+          'Такая связь уже существует, в том числе в обратном направлении. Откройте «Связи таблицы» для её настройки или выберите «Использовать связь», чтобы добавить пары записей.',
         );
       const relation = {
         ...body,

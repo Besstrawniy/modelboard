@@ -162,3 +162,37 @@ export function validateRecordLinks(
     matchedRows: links.length,
   };
 }
+
+/** Metadata and direction do not make a second relationship between the same ends. */
+export function sameRelationEndpoints(
+  a: Pick<
+    DatasetRelation,
+    | 'sourceDatasetId'
+    | 'targetDatasetId'
+    | 'sourceColumnId'
+    | 'targetColumnId'
+    | 'matchMode'
+  >,
+  b: Pick<
+    DatasetRelation,
+    | 'sourceDatasetId'
+    | 'targetDatasetId'
+    | 'sourceColumnId'
+    | 'targetColumnId'
+    | 'matchMode'
+  >,
+) {
+  const mode = a.matchMode ?? 'FIELDS';
+  if (mode !== (b.matchMode ?? 'FIELDS')) return false;
+  const end = (dataset: string, column: string) =>
+    dataset + ':' + (mode === 'ROW_LINKS' ? 'records' : column);
+  const left = [
+    end(a.sourceDatasetId, a.sourceColumnId),
+    end(a.targetDatasetId, a.targetColumnId),
+  ].sort();
+  const right = [
+    end(b.sourceDatasetId, b.sourceColumnId),
+    end(b.targetDatasetId, b.targetColumnId),
+  ].sort();
+  return left[0] === right[0] && left[1] === right[1];
+}

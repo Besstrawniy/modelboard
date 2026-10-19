@@ -1,3 +1,11 @@
+import { ImageNode } from './ImageNode';
+import { SessionTools } from './SessionTools';
+import { presenceColor } from '@modelboard/shared';
+import { FilesPanel } from './FilesPanel';
+import { FileImportDialog, type ImportedFilesResult } from './FileImportDialog';
+import { parseImportFiles, type ParsedFiles } from '../lib/fileFormats';
+import { exportCanvasImage } from '../lib/exportCanvasImage';
+import type { StoredFile } from '../lib/api';
 import { canvasInsertionPosition } from '../lib/canvasGeometry';
 import { receiveResourceMessage } from '../lib/resources';
 import {
@@ -51,8 +59,8 @@ import { TextNode } from './TextNode';
 import { ShapeNode } from './ShapeNode';
 import { CommentsPanel } from './CommentsPanel';
 import { DatasetsPanel } from './DatasetsPanel';
-import { CsvImportDialog } from './CsvImportDialog';
-import { parseCsvFile, type ParsedCsv } from '../lib/csv';
+
+
 import { reconcileCanvasNodes, persistedCanvasGeometry, shouldPersistCanvasNodeChange, type CanvasPreview } from '../lib/canvasInteraction';
 import { api } from '../lib/api';
 import { RelationDialog, type PendingRelation } from './RelationDialog';
@@ -86,7 +94,7 @@ type PresenceState = {
 };
 
 type CsvDropState = {
-  parsed: ParsedCsv;
+  parsed: ParsedFiles;
   position: { x: number; y: number };
 };
 
@@ -118,6 +126,7 @@ const nodeTypes: any = {
   text: TextNode,
   shape: ShapeNode,
   device: DeviceNode,
+  image: ImageNode,
   template: TemplateNode,
   relationView: RelationViewNode,
   frame: FrameNode,
@@ -286,6 +295,8 @@ function BoardInner({
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [datasetsOpen, setDatasetsOpen] = useState(false);
   const [csvDrop, setCsvDrop] = useState<CsvDropState | null>(null);
+  const [filesOpen,setFilesOpen]=useState(false);
+  const [fileParsing,setFileParsing]=useState(false);
   const [dropActive, setDropActive] = useState(false);
   const [dropError, setDropError] = useState('');
   const [pendingRelation, setPendingRelation] = useState<PendingRelation | null>(null);
@@ -373,6 +384,8 @@ function BoardInner({
     );
     setWorkspaceTemplates(templates);
   }, [meta.workspaceId, session.token]);
+
+  useEffect(()=>{const refresh=()=>void refreshWorkspaceTemplates().catch(error=>setDropError(error.message));window.addEventListener('modelboard:templates',refresh);return()=>window.removeEventListener('modelboard:templates',refresh);},[refreshWorkspaceTemplates]);
 
   useEffect(() => {
     void refreshWorkspaceTemplates().catch((error) =>
@@ -1050,7 +1063,7 @@ function BoardInner({
       datasetsOpen ||
       devicesOpen ||
       commentsOpen ||
-      csvDrop ||
+      csvDrop || fileParsing ||
       pendingRelation ||
       boardMenuOpen,
     );
@@ -2296,50 +2309,30 @@ function BoardInner({
   }, [provider, rf]);
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    if (readOnly || !event.dataTransfer.types.includes('Files')) return;
+    if (!event.dataTransfer.types.includes('Files')) return;
     event.preventDefault();
+    if(readOnly){event.dataTransfer.dropEffect='none';return;}
     event.dataTransfer.dropEffect = 'copy';
     setDropActive(true);
   }, [readOnly]);
 
-  const handleDrop = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
-    if (readOnly) return;
-
-    event.preventDefault();
-    setDropActive(false);
-    setDropError('');
-
-    const files = Array.from(event.dataTransfer.files);
-    if (files.length !== 1) {
-      setDropError('Drop exactly one CSV file at a time.');
-      return;
-    }
-
-    const position = rf?.screenToFlowPosition({
-      x: event.clientX,
-      y: event.clientY,
-    }) ?? { x: 320, y: 220 };
-
-    try {
-      const parsed = await parseCsvFile(files[0]);
-      setCsvDrop({ parsed, position });
-    } catch (error) {
-      setDropError(error instanceof Error ? error.message : String(error));
-    }
-  }, [readOnly, rf]);
-
-  const importCsv = useCallback(async (input: CreateDatasetInput) => {
-    if (!csvDrop) return;
-
-    const dataset = await api.createDataset(
-      meta.workspaceId,
-      session.token,
-      input,
-    );
-
-    placeDataset(dataset.id, csvDrop.position);
-    setCsvDrop(null);
-  }, [csvDrop, meta.workspaceId, placeDataset, session.token]);
+  const chooseFiles=async(files:File[],position?:{x:number;y:number})=>{
+    if(readOnly||fileParsing||csvDrop)return;setFileParsing(true);setDropError('');
+    try{const parsed=await parseImportFiles(files);setCsvDrop({parsed,position:position??viewportCenter()});setFilesOpen(false);}catch(error){setDropError(error instanceof Error?error.message:String(error));}finally{setFileParsing(false);}
+  };
+  const handleDrop=(event:React.DragEvent<HTMLDivElement>)=>{
+    if(!event.dataTransfer.types.includes('Files'))return;
+    event.preventDefault();setDropActive(false);if(readOnly)return;
+    void chooseFiles(Array.from(event.dataTransfer.files),rf?.screenToFlowPosition({x:event.clientX,y:event.clientY}));
+  };
+  const placeImported=(result:ImportedFilesResult,parsed:ParsedFiles)=>{
+    const start=csvDrop?.position??viewportCenter(),items:Node[]=[];
+    undoManager.stopCapturing();ydoc.transact(()=>{
+      for(const ds of result.datasets){const index=items.length,id=crypto.randomUUID();const node:Node={id,type:'table',position:{x:start.x+(index%3)*660,y:start.y+Math.floor(index/3)*360},style:{width:620,height:300},data:{datasetId:ds.id}};nodesMap.set(id,node);items.push(node);}
+      for(const [index,file] of result.files.entries()){const size=parsed.images[index],width=Math.min(Math.max(size?.width??300,80),480),height=Math.max(40,Math.min(400,width*(size?.height??200)/(size?.width??300)));const order=items.length;const node:Node={id:crypto.randomUUID(),type:'image',position:{x:start.x+(order%3)*660,y:start.y+Math.floor(order/3)*460},style:{width,height},data:{assetId:file.id,name:file.name}};nodesMap.set(node.id,node);items.push(node);}
+    });undoManager.stopCapturing();setCsvDrop(null);setToolMode('select');requestAnimationFrame(()=>void rf?.fitView({nodes:items,padding:.2,maxZoom:1}));
+  };
+  const placeFile=(file:StoredFile)=>{if(readOnly)return;const center=viewportCenter(),id=crypto.randomUUID();undoManager.stopCapturing();nodesMap.set(id,{id,type:'image',position:center,style:{width:320,height:220},data:{assetId:file.id,name:file.name}});undoManager.stopCapturing();};
 
   const navigateToDatasetLocation = useCallback(
     async (
@@ -2681,6 +2674,7 @@ function BoardInner({
           </div>
 
           <div className="presence-strip">
+            <SessionTools provider={provider} connected={synced && status === 'connected'} role={meta.role} userId={session.user.id} nodes={nodes} rf={rf} />
             <button
               className="global-search-trigger"
               onClick={() => setWorkspaceSearchOpen(true)}
@@ -2710,7 +2704,7 @@ function BoardInner({
             setRf(instance);
             setCanvasZoom(instance.getZoom());
           }}
-          onMoveStart={() => { closeContextMenu(); cancelDrawing(); }}
+          onMoveStart={(event) => { closeContextMenu(); cancelDrawing(); if (event) window.dispatchEvent(new Event('modelboard:manual-navigation')); }}
           onMoveEnd={(_, viewport) => setCanvasZoom(viewport.zoom)}
           onNodeContextMenu={(event, node) => openContextMenu(event, node.id)}
           onSelectionContextMenu={(event, selection) => {
@@ -2810,7 +2804,7 @@ function BoardInner({
           </Panel>
 
           <Panel position="center-left" className="toolbar-panel">
-            <div className="toolbar">
+            <div className="toolbar nowheel" tabIndex={0} aria-label="Инструменты доски">
               <button
                 className={toolMode === 'select' ? 'is-active' : ''}
                 title="Выбор (V)"
@@ -2890,6 +2884,7 @@ function BoardInner({
                 onClick={() => { cancelDrawing(); setObjectsOpen((value) => !value); }}>
                 <Layers3 size={19} />
               </button>
+              <button title="Файлы и импорт/экспорт" onClick={()=>setFilesOpen(value=>!value)}><UploadCloud size={19}/></button>
               <button onClick={() => setDatasetsOpen(true)} title="Данные"><Database size={19} /></button>
               <button onClick={() => setDevicesOpen(true)} title="Инфраструктура"><Network size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('sticky')} title="Стикер"><StickyNote size={19} /></button>
@@ -2929,7 +2924,8 @@ function BoardInner({
               <div
                 key={clientId}
                 className="remote-cursor"
-                style={{ transform: `translate(${state.cursor.x}px, ${state.cursor.y}px)` }}
+                data-user-id={state.user?.id}
+                style={{ transform: `translate(${state.cursor.x}px, ${state.cursor.y}px)`, color: presenceColor(state.user?.id ?? String(clientId)), '--cursor-color': presenceColor(state.user?.id ?? String(clientId)) } as React.CSSProperties}
               >
                 <svg width="18" height="24" viewBox="0 0 18 24" aria-hidden="true">
                   <path d="M2 1L16 14H9L6 22L2 1Z" fill="currentColor" stroke="white" strokeWidth="1.5" />
@@ -3141,7 +3137,7 @@ function BoardInner({
           <div className="csv-drop-overlay">
             <div>
               <UploadCloud size={34} />
-              <strong>Drop CSV to create a Dataset</strong>
+              <strong>Перенесите файлы: таблицы, изображения или архив доски</strong>
               <span>The table will be placed here after preview.</span>
             </div>
           </div>
@@ -3163,13 +3159,9 @@ function BoardInner({
           />
         )}
 
-        {csvDrop && (
-          <CsvImportDialog
-            parsed={csvDrop.parsed}
-            onCancel={() => setCsvDrop(null)}
-            onImport={importCsv}
-          />
-        )}
+        {fileParsing&&<div className="canvas-sync-banner" role="status">Чтение файлов и подготовка предпросмотра…</div>}
+        {filesOpen&&<FilesPanel workspaceId={meta.workspaceId} boardId={meta.id} token={session.token} readOnly={readOnly} connected={synced&&status==='connected'&&pendingChanges===0} getState={()=>({nodes:Array.from(nodesMap.values()),edges:Array.from(edgesMap.values()),strokes:Array.from(strokesMap.values()).filter((stroke:any)=>!nodesMap.has(stroke.id))})} onChoose={files=>void chooseFiles(files)} onPlace={placeFile} onImageExport={format=>exportCanvasImage(nodes,meta.name,format)} onClose={()=>setFilesOpen(false)}/>}
+        {csvDrop&&<FileImportDialog parsed={csvDrop.parsed} token={session.token} workspaceId={meta.workspaceId} onCancel={()=>setCsvDrop(null)} onImported={placeImported} onBoardImported={async id=>{setCsvDrop(null);await refreshWorkspaceTemplates();await onSwitchBoard(id);}}/>}
 
         {(!synced || status === 'disconnected') && <div className="canvas-sync-banner" role="status">{status === 'disconnected' ? 'Связь потеряна. Изменения остаются локально до восстановления соединения; не закрывайте вкладку.' : status === 'error' ? 'Не удалось подключиться к совместной доске. Проверьте доступ и перезагрузите страницу.' : 'Загрузка доски и подключение…'}</div>}
         {synced && nodes.length === 0 && <div className="canvas-empty">Добавьте фигуру, текст или устройство слева. V — выбор, H — рука, P — перо, ? — справка.
