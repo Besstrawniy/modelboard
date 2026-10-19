@@ -735,6 +735,7 @@ export function InspectorPanel({
                 </label>
                 <label>
                   Поле статуса
+                  <small className="inspector-muted">Значение этого поля задаёт цвет индикатора на объекте. Например: up — зелёный, down — красный. Можно оставить без статуса.</small>
                   <select
                     aria-label="Поле статуса"
                     disabled={readOnly || busy}

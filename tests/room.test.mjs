@@ -113,3 +113,11 @@ test('presentation ownership, external links and ephemeral call readiness respec
   assert.equal(newRoom().participants.length, 0);
   assert.equal(presenceColor('user-a'), presenceColor('user-a'));
 });
+test('music catalog paths allow encoded audio names and reject traversal and non-audio files', () => {
+  const select = value => run(newRoom(), {action:'music-select',source:{kind:'url',value,title:'Local'}});
+  assert.equal(select('/music/My%20track.mp3').music.source.value, '/music/My%20track.mp3');
+  assert.equal(select('/music/Дождь.ogg').music.source.value, '/music/%D0%94%D0%BE%D0%B6%D0%B4%D1%8C.ogg');
+  for(const value of ['/music/../secrets.mp3','/music/%2e%2e%2fsecret.mp3','/music/%5csecret.mp3','/music/.hidden.mp3','/music/track.svg','//attacker.test/track.mp3','/music/%00track.mp3','/music/%broken.mp3','/music/track.mp3?x=1']) assert.throws(()=>select(value));
+  assert.throws(()=>run(newRoom(),{action:'meeting-url',url:'/music/track.mp3'}));
+  assert.throws(()=>run(newRoom(),{action:'music-select',source:{kind:'url',value:'/music/track.mp3'}},viewer));
+});

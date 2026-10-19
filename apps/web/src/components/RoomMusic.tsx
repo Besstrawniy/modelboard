@@ -1,3 +1,4 @@
+import { Disc3, Play, Pause, Volume2, VolumeX, RotateCcw, Link, SkipBack, SkipForward } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { musicPosition, ROOM_TRACKS, type RoomState } from '@modelboard/shared';
 import { ambientMusic } from '../lib/ambientMusic';
@@ -31,6 +32,23 @@ export function RoomMusic({
       ),
     ),
     [url, setUrl] = useState('');
+  const [playlist, setPlaylist] = useState<Array<{title:string;url:string}>>([]);
+  useEffect(()=>{
+    const controller=new AbortController();
+    void fetch('/music/playlist.json',{signal:controller.signal}).then(response=>response.ok?response.json():[]).then(items=>{
+      if(Array.isArray(items))setPlaylist(items.filter(item=>typeof item?.title==='string'&&typeof item?.url==='string'&&item.url.startsWith('/music/')).slice(0,1000));
+    }).catch(()=>{});
+    return ()=>controller.abort();
+  },[]);
+  const trackIndex=playlist.findIndex(track=>track.url===music.source.value);
+  const stepTrack=(direction:number)=>{
+    if(!playlist.length)return;
+    const nextIndex = trackIndex < 0 ? (direction > 0 ? 0 : playlist.length - 1)
+      : (trackIndex + direction + playlist.length) % playlist.length;
+    const track=playlist[nextIndex];
+    send({action:'music-select',source:{kind:'url',value:track.url,title:track.title.slice(0,120)}});
+    if(music.playing)send({action:'music-play'});
+  };
   useEffect(() => {
     const player = audio.current!;
     if (!listening) return;
@@ -98,11 +116,12 @@ export function RoomMusic({
   return (
     <div className="room-music" hidden={!visible}>
       <audio ref={audio} loop preload="metadata" data-testid="room-audio" />
-      <h4>Общая музыка</h4>
+      <div className="music-now-playing"><div className={`music-disc ${music.playing && listening && ready ? 'is-playing' : ''}`}><Disc3 size={54}/></div><div><h4>Общая музыка</h4>
       <p>
         {music.source.title} · {music.playing ? 'играет' : 'пауза'}
-      </p>
+      </p></div></div>
       <button
+        title={listening ? 'Выключить у меня' : 'Слушать'} aria-label={listening ? 'Выключить у меня' : 'Слушать'}
         disabled={!ready}
         aria-pressed={listening}
         onClick={() => {
@@ -110,7 +129,7 @@ export function RoomMusic({
           setListening((v) => !v);
         }}
       >
-        {listening ? 'Выключить у меня' : 'Слушать'}
+        {listening ? <VolumeX size={18}/> : <Volume2 size={18}/>}
       </button>
       <label>
         Моя громкость{' '}
@@ -132,10 +151,12 @@ export function RoomMusic({
               aria-label="Общий трек"
               disabled={!ready}
               value={
-                music.source.kind === 'builtin' ? music.source.value : 'url'
+                music.source.kind === 'builtin' ? music.source.value : trackIndex>=0?music.source.value:'url'
               }
               onChange={(event) => {
-                if (event.target.value !== 'url')
+                const track=playlist.find(track=>track.url===event.target.value);
+                if(track)send({action:'music-select',source:{kind:'url',value:track.url,title:track.title.slice(0,120)}});
+                else if (event.target.value !== 'url')
                   send({
                     action: 'music-select',
                     source: { kind: 'builtin', value: event.target.value },
@@ -147,6 +168,7 @@ export function RoomMusic({
                   {title}
                 </option>
               ))}
+              {playlist.length>0 && <optgroup label="Моя музыка">{playlist.map(track=><option key={track.url} value={track.url}>{track.title}</option>)}</optgroup>}
               <option value="url" disabled>
                 По ссылке (поле ниже)
               </option>
@@ -170,22 +192,24 @@ export function RoomMusic({
               required
               maxLength={2000}
             />
-            <button disabled={!ready}>Выбрать ссылку</button>
+            <button disabled={!ready} title="Выбрать ссылку" aria-label="Выбрать ссылку"><Link size={16}/></button>
           </form>
-          <div className="room-button-row">
+          <div className="room-button-row music-transport">
+            <button disabled={!ready||!playlist.length} title="Предыдущий трек" aria-label="Предыдущий трек" onClick={()=>stepTrack(-1)}><SkipBack size={18}/></button>
             <button
-              disabled={!ready}
+              title={music.playing ? 'Пауза для всех' : 'Включить для всех'} aria-label={music.playing ? 'Пауза для всех' : 'Включить для всех'} disabled={!ready}
               onClick={() =>
                 send({ action: music.playing ? 'music-pause' : 'music-play' })
               }
             >
-              {music.playing ? 'Пауза для всех' : 'Включить для всех'}
+              {music.playing ? <Pause size={20}/> : <Play size={20}/>}
             </button>
+            <button disabled={!ready||!playlist.length} title="Следующий трек" aria-label="Следующий трек" onClick={()=>stepTrack(1)}><SkipForward size={18}/></button>
             <button
-              disabled={!ready}
+              title="С начала" aria-label="С начала" disabled={!ready}
               onClick={() => send({ action: 'music-restart' })}
             >
-              С начала
+              <RotateCcw size={18}/>
             </button>
           </div>
         </>

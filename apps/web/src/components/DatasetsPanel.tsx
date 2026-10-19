@@ -1,6 +1,7 @@
+import { useBoardActions } from './BoardContext';
 import { DatasetRename } from './DatasetRename';
 import { RelationManager } from './RelationManager';
-import { Database, Plus, Table2, Trash2, X } from 'lucide-react';
+import { Database, Plus, Table2, Trash2, X, Network, Pencil, LayoutPanelTop } from 'lucide-react';
 import type { DatasetMeta } from '@modelboard/shared';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
@@ -18,6 +19,7 @@ export function DatasetsPanel({
   onPlace: (datasetId: string) => void;
   onClose: () => void;
 }) {
+  const { openDatasetSheet } = useBoardActions();
   const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(''),
@@ -72,16 +74,16 @@ export function DatasetsPanel({
 
       <nav className="datasets-panel__tabs">
         <button
-          aria-pressed={tab === 'datasets'}
+          title="Таблицы" aria-label="Таблицы" aria-pressed={tab === 'datasets'}
           onClick={() => setTab('datasets')}
         >
-          Таблицы
+          <Table2 size={18}/>
         </button>
         <button
-          aria-pressed={tab === 'relations'}
+          title="Связи" aria-label="Связи" aria-pressed={tab === 'relations'}
           onClick={() => setTab('relations')}
         >
-          Связи
+          <Network size={18}/>
         </button>
       </nav>
       {error && (
@@ -112,10 +114,11 @@ export function DatasetsPanel({
                 <button
                   disabled={readOnly}
                   onClick={() => onPlace(dataset.id)}
-                  title="Place another view of this dataset on the board"
+                  title="Разместить таблицу на доске" aria-label="Разместить таблицу на доске"
                 >
-                  Place
+                  <LayoutPanelTop size={16}/>
                 </button>
+                <button title="Редактировать таблицу" aria-label="Редактировать таблицу" onClick={() => openDatasetSheet(dataset.id)}><Pencil size={16}/></button>
                 {!readOnly && (
                   <button
                     title="Удалить Dataset"

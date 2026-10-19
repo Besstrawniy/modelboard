@@ -502,6 +502,7 @@ export function DatasetSheet({
     startX: number;
     startWidth: number;
   } | null>(null);
+  const headerDrag = useRef<{kind:'rows'|'columns';id:string}|null>(null);
   const [columnWidths, setColumnWidths] = useState<
     Record<string, number>
   >({});
@@ -1354,6 +1355,34 @@ export function DatasetSheet({
     }catch(error){setClipboardMessage(error instanceof Error?error.message:String(error));}
   };
 
+  const clearHeaderDrop = () => document.querySelectorAll('[data-sheet-drop]').forEach(element => element.removeAttribute('data-sheet-drop'));
+  const dragHeader = (event: React.DragEvent, kind: 'rows'|'columns', id: string) => {
+    event.stopPropagation();
+    if (readOnly || (kind === 'rows' && (sort || secondarySort.length || query || hasColumnFilters))) { event.preventDefault(); return; }
+    headerDrag.current = {kind,id};
+    if (kind === 'columns') selectWholeColumn(id); else selectWholeRow(id);
+    event.dataTransfer.effectAllowed='move';
+    event.dataTransfer.setData('application/x-modelboard-sheet', JSON.stringify({kind,id}));
+  };
+  const overHeader = (event: React.DragEvent, kind:'rows'|'columns') => {
+    if (headerDrag.current?.kind !== kind) return;
+    event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect='move';
+    const rect=event.currentTarget.getBoundingClientRect();
+    const after=kind==='columns'?event.clientX>rect.left+rect.width/2:event.clientY>rect.top+rect.height/2;
+    clearHeaderDrop();event.currentTarget.setAttribute('data-sheet-drop',kind==='columns'?(after?'right':'left'):(after?'bottom':'top'));
+  };
+  const dropHeader = (event: React.DragEvent, kind:'rows'|'columns', targetId:string) => {
+    const source=headerDrag.current;if(!source||source.kind!==kind||!dataset)return;
+    event.preventDefault();event.stopPropagation();
+    const rect=event.currentTarget.getBoundingClientRect();
+    const after=kind==='columns'?event.clientX>rect.left+rect.width/2:event.clientY>rect.top+rect.height/2;
+    const items=kind==='columns'?dataset.columns:dataset.rows;
+    const from=items.findIndex(item=>item.id===source.id),target=items.findIndex(item=>item.id===targetId);
+    const destination=target+(after?1:0)-(from<target+(after?1:0)?1:0);
+    if(from>=0&&target>=0&&source.id!==targetId)reorder(kind,source.id,destination);
+    headerDrag.current=null;clearHeaderDrop();
+  };
+
   const columnWidth = (columnId: string) =>
     Math.max(
       90,
@@ -2132,10 +2161,9 @@ export function DatasetSheet({
           onClick={() =>
             setFiltersOpen((value) => !value)
           }
-          title="Фильтры по колонкам"
+          title="Фильтры по колонкам" aria-label="Фильтры"
         >
           <Filter size={14} />
-          Фильтры
           {hasColumnFilters && <span />}
         </button>
 
@@ -2314,10 +2342,9 @@ export function DatasetSheet({
           className="dataset-sheet__clipboard-button"
           disabled={!selectedCell}
           onClick={() => void copyCells()}
-          title="Копировать выбранную ячейку/диапазон"
+          title="Копировать выбранную ячейку/диапазон" aria-label="Копировать"
         >
           <Copy size={14} />
-          Копировать
         </button>
 
         {!readOnly && (
@@ -2325,21 +2352,19 @@ export function DatasetSheet({
             className="dataset-sheet__clipboard-button"
             disabled={!selectedCell}
             onClick={() => void pasteCells()}
-            title="Вставить из Excel / Google Sheets / clipboard"
+            title="Вставить из Excel / Google Sheets / clipboard" aria-label="Вставить"
           >
             <ClipboardPaste size={14} />
-            Вставить
           </button>
         )}
 
         {!readOnly && (
           <button
-            className="dataset-sheet__add-column"
+            className="dataset-sheet__add-column" title="Добавить колонку справа" aria-label="Добавить колонку"
             onClick={() => {
               setColumnDialog({
                 mode: 'create',
-                afterColumnId:
-                  selectedCell?.columnId,
+                afterColumnId: dataset?.columns.at(-1)?.id,
               });
               setColumnName('');
               setColumnType('TEXT');
@@ -2347,15 +2372,12 @@ export function DatasetSheet({
             }}
           >
             <Plus size={14} />
-            {selectedCell
-              ? 'Вставить колонку справа'
-              : 'Добавить колонку'}
           </button>
         )}
 
         {!readOnly && (
           <button
-            className="dataset-sheet__add-row"
+            className="dataset-sheet__add-row" title="Добавить строку / вставить ниже выбранной" aria-label="Добавить строку"
             disabled={rowAction === 'add'}
             onClick={async () => {
               setRowAction('add');
@@ -2390,9 +2412,7 @@ export function DatasetSheet({
             }}
           >
             <Plus size={14} />
-            {selectedCell
-              ? 'Вставить строку ниже'
-              : 'Добавить строку'}
+
           </button>
         )}
 
@@ -2441,7 +2461,8 @@ export function DatasetSheet({
         ) : dataset.columns.length === 0 ? (
           <div className="dataset-sheet__loading">В Dataset нет колонок.</div>
         ) : (
-          <table className="dataset-sheet__table" role="grid" aria-rowcount={visibleRows.length} aria-colcount={dataset.columns.length}>
+          <table className="dataset-sheet__table" style={{width:54+dataset.columns.filter(column=>!hiddenColumns.includes(column.id)).reduce((total,column)=>total+columnWidth(column.id),0)}} role="grid" aria-rowcount={visibleRows.length} aria-colcount={dataset.columns.length}>
+            <colgroup><col style={{width:54}}/>{dataset.columns.filter(column=>!hiddenColumns.includes(column.id)).map(column=><col key={column.id} style={{width:columnWidth(column.id)}}/>)}</colgroup>
             <thead>
               <tr>
                 <th
@@ -2458,6 +2479,11 @@ export function DatasetSheet({
                   return (
                     <th
                       key={column.id}
+                      draggable={!readOnly}
+                      onDragStart={event=>dragHeader(event,'columns',column.id)}
+                      onDragOver={event=>overHeader(event,'columns')}
+                      onDrop={event=>dropHeader(event,'columns',column.id)}
+                      onDragEnd={()=>{headerDrag.current=null;clearHeaderDrop();}}
                       style={{
                         width: columnWidth(column.id),
                         minWidth: columnWidth(column.id),
@@ -2468,7 +2494,8 @@ export function DatasetSheet({
                     >
                       <button
                         className="dataset-sheet__column-header"
-                        onClick={() => toggleSort(column.id)}
+                        onClick={() => selectWholeColumn(column.id)}
+                        title="Выделить колонку; перетащите заголовок для перемещения"
                       >
                         <span>
                           <strong>
@@ -2573,13 +2600,7 @@ export function DatasetSheet({
                           </small>
                         </span>
 
-                        {activeSort ? (
-                          sort?.direction === 'asc'
-                            ? <ArrowUp size={13} />
-                            : <ArrowDown size={13} />
-                        ) : (
-                          <ArrowUpDown size={13} />
-                        )}
+                        <span role="button" tabIndex={0} title="Сортировать колонку" aria-label={`Сортировать ${column.name}`} onClick={event=>{event.stopPropagation();toggleSort(column.id);}} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();toggleSort(column.id);}}}>{activeSort ? (sort?.direction==='asc'?<ArrowUp size={13}/>:<ArrowDown size={13}/>):<ArrowUpDown size={13}/>}</span>
                       </button>
                       <span
                         className="dataset-sheet__column-resizer"
@@ -2655,6 +2676,11 @@ export function DatasetSheet({
                       top: frozenTopOffset(rowIndex),
                       zIndex: 7,
                     } : undefined}
+                    draggable={!readOnly && !sort && !secondarySort.length && !query && !hasColumnFilters}
+                    onDragStart={event=>dragHeader(event,'rows',row.id)}
+                    onDragOver={event=>overHeader(event,'rows')}
+                    onDrop={event=>dropHeader(event,'rows',row.id)}
+                    onDragEnd={()=>{headerDrag.current=null;clearHeaderDrop();}}
                     onClick={() => selectWholeRow(row.id)}
                     title="Выделить строку"
                   >
@@ -2914,26 +2940,26 @@ export function DatasetSheet({
           }
         >
           <button
+            title="Копировать" aria-label="Копировать"
             onClick={() => {
               void copyCells();
               setCellMenu(null);
             }}
           >
             <Copy size={13} />
-            Копировать
-            <kbd>Ctrl+C</kbd>
+              <kbd>Ctrl+C</kbd>
           </button>
 
           {!readOnly && (
             <button
+              title="Вставить" aria-label="Вставить"
               onClick={() => {
                 void pasteCells();
                 setCellMenu(null);
               }}
             >
               <ClipboardPaste size={13} />
-              Вставить
-              <kbd>Ctrl+V</kbd>
+                <kbd>Ctrl+V</kbd>
             </button>
           )}
 

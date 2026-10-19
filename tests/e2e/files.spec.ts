@@ -172,7 +172,7 @@ test('drop CSV, TSV and multi-sheet XLSX into tables and export formulas and sty
   await page
     .locator('.react-flow__node-table')
     .filter({ hasText: 'Servers' })
-    .getByRole('button', { name: 'Открыть', exact: true })
+    .getByRole('button', { name: 'Открыть таблицу', exact: true })
     .click();
   const sheet = page.locator('.dataset-sheet');
   await expect(sheet.locator('tbody textarea').last()).toHaveValue('25');
@@ -217,7 +217,7 @@ test('images persist and a portable board archive restores bindings, datasets an
   await expect(page.locator('.image-node img')).toBeVisible();
   await page
     .locator('.react-flow__node-table')
-    .getByRole('button', { name: 'Открыть', exact: true })
+    .getByRole('button', { name: 'Открыть таблицу', exact: true })
     .click();
   const sheet = page.locator('.dataset-sheet');
   await sheet

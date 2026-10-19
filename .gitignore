@@ -8,3 +8,8 @@ coverage
 *.tsbuildinfo
 playwright-report/
 test-results/
+
+# Locally supplied audio; preserve only the generated catalog and instructions.
+apps/web/public/music/*
+!apps/web/public/music/playlist.json
+!apps/web/public/music/README.md

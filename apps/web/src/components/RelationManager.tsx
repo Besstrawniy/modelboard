@@ -1,3 +1,4 @@
+import { CheckCheck, Settings2, Network, Trash2, Plus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type {
   DatasetMeta,
@@ -26,7 +27,8 @@ export function RelationManager({ datasets }: { datasets: DatasetMeta[] }) {
   } = useBoardActions();
   const [relations, setRelations] = useState<DatasetRelation[]>([]),
     [draft, setDraft] = useState(empty),
-    [editing, setEditing] = useState('');
+    [editing, setEditing] = useState(''),
+    [editorOpen, setEditorOpen] = useState(false);
   const [source, setSource] = useState<DatasetColumn[]>([]),
     [target, setTarget] = useState<DatasetColumn[]>([]),
     [error, setError] = useState(''),
@@ -80,6 +82,7 @@ export function RelationManager({ datasets }: { datasets: DatasetMeta[] }) {
       else await api.createRelation(workspaceId, token, draft);
       setDraft(empty);
       setEditing('');
+      setEditorOpen(false);
       setReports({});
       await load();
     } catch (err) {
@@ -103,7 +106,7 @@ export function RelationManager({ datasets }: { datasets: DatasetMeta[] }) {
             {relation.cardinality || 'без кардинальности'}
           </small>
           <div className="relation-card__actions">
-            <button
+            <button title="Проверить" aria-label="Проверить"
               onClick={() =>
                 void api
                   .validateRelation(workspaceId, relation.id, token)
@@ -118,28 +121,29 @@ export function RelationManager({ datasets }: { datasets: DatasetMeta[] }) {
                   .catch((err) => setError(err.message))
               }
             >
-              Проверить
+              <CheckCheck size={16}/>
             </button>
             {!readOnly && (
               <>
-                <button
+                <button title="Настроить" aria-label="Настроить"
                   onClick={() => {
                     setDraft({ ...relation, ...(relation.matchMode==='ROW_LINKS'?{links:undefined}:{}) });
                     setEditing(relation.id);
+                    setEditorOpen(true);
                     setError('');
                   }}
                 >
-                  {relation.matchMode==='ROW_LINKS'?'Настроить кардинальность':'Настроить'}
+                  <Settings2 size={16}/>
                 </button>
-                <button
+                <button title="Показать ER" aria-label="Показать ER"
                   onClick={() => {
                     showRelationOnCanvas(relation);
                   }}
                 >
-                  Показать ER
+                  <Network size={16}/>
                 </button>
-                <button onClick={() => setDeleting(relation.id)}>
-                  Удалить связь
+                <button title="Удалить связь" aria-label="Удалить связь" onClick={() => setDeleting(relation.id)}>
+                  <Trash2 size={16}/>
                 </button>
               </>
             )}
@@ -177,8 +181,10 @@ export function RelationManager({ datasets }: { datasets: DatasetMeta[] }) {
           )}
         </article>
       ))}
-      {!readOnly && (
+      {!readOnly && <button title="Новая связь" aria-label="Новая связь" aria-expanded={editorOpen} onClick={()=>{setDraft(empty);setEditing('');setEditorOpen(true);}}><Plus size={17}/></button>}
+      {!readOnly && editorOpen && (
         <div className="relation-editor">
+          <button title="Закрыть настройки связи" aria-label="Закрыть настройки связи" onClick={()=>setEditorOpen(false)}><X size={16}/></button>
           <h4>{editing ? 'Настроить связь' : 'Новая связь'}</h4>{draft.matchMode==='ROW_LINKS'&&<p>Пары записей можно добавлять и удалять через кнопку «Связи таблицы» на таблице.</p>}
           <label>
             Название связи
@@ -317,7 +323,7 @@ export function RelationManager({ datasets }: { datasets: DatasetMeta[] }) {
             Контролировать целостность при записи
           </label>
           <button
-            disabled={busy || !draft.sourceColumnId || !draft.targetColumnId}
+            disabled={busy || (draft.matchMode !== 'ROW_LINKS' && (!draft.sourceColumnId || !draft.targetColumnId))}
             onClick={() => void save()}
           >
             {busy

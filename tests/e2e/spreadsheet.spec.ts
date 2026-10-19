@@ -8,7 +8,7 @@ const sheet=(page:Page)=>page.locator('.dataset-sheet');
 const cell=(page:Page,r:number,c:number)=>sheet(page).locator(`td[data-row-id="${rows[r].id}"][data-column-id="${columns[c].id}"] .dataset-sheet__cell-editor`);
 async function openDataset(page:Page,role='OWNER'){
  await page.addInitScript(id=>localStorage.setItem('modelboard:last-board',id),boardId);await page.goto('/');await page.getByRole('button').filter({hasText:role}).click();
- await page.getByTitle('Данные',{exact:true}).click();const card=page.locator('.dataset-card').filter({hasText:name});await card.getByRole('button',{name:'Place',exact:true}).click();await page.locator('.datasets-panel header button').click();
+ await page.getByTitle('Данные',{exact:true}).click();const card=page.locator('.dataset-card').filter({hasText:name});await card.getByRole('button',{name:'Разместить таблицу на доске',exact:true}).click();await page.locator('.datasets-panel header button').click();
  await page.getByTitle('Открыть таблицу',{exact:true}).first().click();await expect(sheet(page).getByRole('grid')).toBeVisible();
 }
 test.beforeEach(async({request,context,page},testInfo)=>{
@@ -55,7 +55,7 @@ test('reorder, conditional rules, saved views, multiple placements and persisten
  await expect.poll(async()=>Number((await pool.query('SELECT count(*) FROM dataset_sheet_settings WHERE dataset_id=$1',[datasetId])).rows[0].count)).toBe(1);
  await sheet(page).getByTitle('Закрыть (Esc)').click();await page.locator('.react-flow__node-table').first().getByLabel('Представление на Canvas').selectOption({label:'Twos'});
  await expect(page.locator('.react-flow__node-table').first()).toContainText('2 строк');
- await page.getByTitle('Данные',{exact:true}).click();await page.locator('.dataset-card').filter({hasText:name}).getByRole('button',{name:'Place',exact:true}).click();await page.locator('.datasets-panel header button').click();await expect(page.locator('.react-flow__node-table')).toHaveCount(2);
+ await page.getByTitle('Данные',{exact:true}).click();await page.locator('.dataset-card').filter({hasText:name}).getByRole('button',{name:'Разместить таблицу на доске',exact:true}).click();await page.locator('.datasets-panel header button').click();await expect(page.locator('.react-flow__node-table')).toHaveCount(2);
  await page.getByTitle('Открыть таблицу',{exact:true}).last().click();await expect(sheet(page).getByLabel('Представление таблицы').locator('option')).toContainText(['Все данные','Twos']);
 });
 test('large table virtualizes 10000 rows and supports freeze, navigation and filtering',async({page})=>{
@@ -68,7 +68,7 @@ test('large table virtualizes 10000 rows and supports freeze, navigation and fil
  await sheet(page).getByPlaceholder('Поиск по всем колонкам…').fill('Item 10000');await expect(sheet(page).getByRole('grid')).toHaveAttribute('aria-rowcount','1');await expect(cell(page,9999,1)).toHaveValue('42');
 });
 test('structural edits and bulk growth undo restore PostgreSQL state',async({page})=>{
- await cell(page,0,0).click();await sheet(page).getByRole('button',{name:'Вставить строку ниже',exact:true}).click();
+ await cell(page,0,0).click();await sheet(page).getByRole('button',{name:'Добавить строку',exact:true}).click();
  await expect(sheet(page).getByRole('grid')).toHaveAttribute('aria-rowcount','21');
  await sheet(page).getByTitle('Отменить изменение Dataset (Ctrl+Z)').click();await expect(sheet(page).getByRole('grid')).toHaveAttribute('aria-rowcount','20');
  await expect.poll(async()=>Number((await pool.query('SELECT count(*) FROM dataset_rows WHERE dataset_id=$1',[datasetId])).rows[0].count)).toBe(20);
@@ -87,7 +87,7 @@ test('two browser editors share a dataset across boards and Viewer cannot edit',
  const editorContext=await browser.newContext(),viewerContext=await browser.newContext();
  try{
   const editor=await editorContext.newPage();await editor.addInitScript(id=>localStorage.setItem('modelboard:last-board',id),secondBoard);await editor.goto('/');await editor.getByRole('button').filter({hasText:'EDITOR'}).click();
-  await editor.getByTitle('Данные',{exact:true}).click();await editor.locator('.dataset-card').filter({hasText:name}).getByRole('button',{name:'Place',exact:true}).click();await editor.locator('.datasets-panel header button').click();await editor.getByTitle('Открыть таблицу',{exact:true}).click();
+  await editor.getByTitle('Данные',{exact:true}).click();await editor.locator('.dataset-card').filter({hasText:name}).getByRole('button',{name:'Разместить таблицу на доске',exact:true}).click();await editor.locator('.datasets-panel header button').click();await editor.getByTitle('Открыть таблицу',{exact:true}).click();
   await cell(page,0,1).fill('123');await cell(page,0,1).press('Enter');await expect(cell(editor,0,1)).toHaveValue('123');
   await cell(editor,0,2).fill('456');await cell(editor,0,2).press('Enter');await expect(cell(page,0,2)).toHaveValue('456');
   await sheet(page).getByTitle('Отменить изменение Dataset (Ctrl+Z)').click();await expect(cell(editor,0,1)).toHaveValue('10');await expect(cell(page,0,2)).toHaveValue('456');
@@ -99,8 +99,30 @@ test('keyboard ranges, clipboard shortcuts, fill and column structure undo',asyn
  await cell(page,3,0).click();await page.keyboard.press('Control+v');await expect(cell(page,3,0)).toHaveValue('Item 1');await expect(cell(page,4,0)).toHaveValue('Item 2');
  await cell(page,0,1).click();await cell(page,0,1).press('Shift+ArrowDown');await sheet(page).getByRole('button',{name:'Заполнить вниз',exact:true}).click();await expect(cell(page,1,1)).toHaveValue('10');
  await sheet(page).getByTitle('Отменить изменение Dataset (Ctrl+Z)').click();await expect(cell(page,1,1)).toHaveValue('20');
- await sheet(page).getByRole('button',{name:'Вставить колонку справа',exact:true}).click();const dialog=sheet(page).locator('.dataset-sheet__column-dialog');await dialog.getByLabel('Название',{exact:true}).fill('extra');await dialog.getByRole('button',{name:'Создать',exact:true}).click();await expect(sheet(page).getByRole('grid')).toHaveAttribute('aria-colcount','5');
+ await sheet(page).getByRole('button',{name:'Добавить колонку',exact:true}).click();const dialog=sheet(page).locator('.dataset-sheet__column-dialog');await dialog.getByLabel('Название',{exact:true}).fill('extra');await dialog.getByRole('button',{name:'Создать',exact:true}).click();await expect(sheet(page).getByRole('grid')).toHaveAttribute('aria-colcount','5');
  await expect.poll(async()=>Number((await pool.query('SELECT count(*) FROM dataset_columns WHERE dataset_id=$1',[datasetId])).rows[0].count)).toBe(5);
  await sheet(page).getByTitle('Отменить изменение Dataset (Ctrl+Z)').click();await expect(sheet(page).getByRole('grid')).toHaveAttribute('aria-colcount','4');await expect.poll(async()=>Number((await pool.query('SELECT count(*) FROM dataset_columns WHERE dataset_id=$1',[datasetId])).rows[0].count)).toBe(4);
  await sheet(page).getByTitle('Повторить изменение Dataset (Ctrl+Y)').click();await expect(sheet(page).getByRole('grid')).toHaveAttribute('aria-colcount','5');
+});
+test('review fixes: exact resize width, header drag, append and narrow table overflow',async({page})=>{
+ const grid=sheet(page).getByRole('grid');
+ const headers=grid.locator('thead tr').first().locator('th');
+ const first=headers.nth(1),second=headers.nth(2);
+ const before=await first.boundingBox();const grip=first.locator('.dataset-sheet__column-resizer');const handle=await grip.boundingBox();
+ await page.mouse.move(handle!.x+handle!.width/2,handle!.y+handle!.height/2);await page.mouse.down();await page.mouse.move(handle!.x+handle!.width/2+15,handle!.y+handle!.height/2,{steps:3});await page.mouse.up();
+ const after=await first.boundingBox();expect(Math.abs(after!.width-before!.width-15)).toBeLessThan(3);
+ await first.dragTo(second,{targetPosition:{x:170,y:20}});
+ await expect.poll(async()=>(await headers.allTextContents()).join(' ')).toMatch(/price.*name.*qty/);
+ await sheet(page).getByTitle('Отменить изменение Dataset (Ctrl+Z)').click();
+ await sheet(page).getByRole('button',{name:'Добавить колонку',exact:true}).click();
+ const dialog=sheet(page).locator('.dataset-sheet__column-dialog');await dialog.getByLabel('Название',{exact:true}).fill('last_column');await dialog.getByRole('button',{name:'Создать',exact:true}).click();
+ await expect(headers.last()).toContainText('last_column');
+ const viewport=page.locator('.dataset-sheet__viewport');
+ expect(await viewport.evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true);
+ const rowHeaders=grid.locator('tbody tr:not(.sheet-spacer) > th');
+ const target=await rowHeaders.nth(1).boundingBox();
+ await rowHeaders.nth(0).dragTo(rowHeaders.nth(1),{targetPosition:{x:20,y:target!.height-2}});
+ await expect(grid.locator('tbody tr').first().locator('td').first().locator('.dataset-sheet__cell-editor')).toHaveValue('Item 2');
+ await sheet(page).getByTitle('Отменить изменение Dataset (Ctrl+Z)').click();
+ await expect(cell(page,0,0)).toHaveValue('Item 1');
 });

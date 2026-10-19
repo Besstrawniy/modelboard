@@ -1,5 +1,6 @@
 import { relatedRows } from '@modelboard/shared';
 import {
+  ExternalLink,
   ArrowLeftRight,
   Database,
   GitBranchPlus,
@@ -330,7 +331,7 @@ function RelatedRelationSection({
         </p>
       ) : (
         <div className="related-records">
-          {matches.slice(0, 20).map((row) => {
+          {matches.map((row) => {
             const fields = otherDataset
               ? compactRowLabel(row, otherDataset)
               : [];
@@ -342,9 +343,9 @@ function RelatedRelationSection({
                 onDoubleClick={() => openDatasetSheet(otherDataset!.id, row.id)}
               >
                 <button
-                  onClick={() => openDatasetSheet(otherDataset!.id, row.id)}
+                  title="Открыть запись" aria-label="Открыть запись" onClick={() => openDatasetSheet(otherDataset!.id, row.id)}
                 >
-                  Открыть запись
+                  <ExternalLink size={14}/>
                 </button>
                 <div className="related-record__icon">
                   <Database size={13} />
@@ -365,11 +366,7 @@ function RelatedRelationSection({
             );
           })}
 
-          {matches.length > 20 && (
-            <div className="related-records__more">
-              + ещё {matches.length - 20}
-            </div>
-          )}
+
         </div>
       )}
     </article>

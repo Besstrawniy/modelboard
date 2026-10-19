@@ -3,7 +3,7 @@ import {
   AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd,
   AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
   AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween, Layers, Copy,
-  Frame as FrameIcon, Trash2, ChevronDown,
+  Frame as FrameIcon, Trash2, ChevronDown, Group, Ungroup, Link, Unlink,
 } from 'lucide-react';
 import type { CanvasAlignment, CanvasDistribution, CanvasLayerAction } from '../lib/canvasGeometry';
 
@@ -77,8 +77,8 @@ export function CanvasSelectionActions({ count, busy, onAlign, onDistribute, onL
       <span>Выбрано: {count}</span>
       <div className="selection-actions__dropdown">
         <button disabled={busy || count < 2} aria-expanded={open === 'align'} aria-controls={`${id}-align`}
-          onClick={(event) => toggle('align', event.currentTarget)} title="Выравнивание и равные промежутки">
-          <AlignHorizontalJustifyCenter size={14} /> Выровнять <ChevronDown size={12} />
+          onClick={(event) => toggle('align', event.currentTarget)} title="Выравнивание и равные промежутки" aria-label="Выровнять">
+          <AlignHorizontalJustifyCenter size={14} /> <ChevronDown size={12} />
         </button>
         {open === 'align' && (
           <div className="selection-actions__menu" id={`${id}-align`} role="group" aria-label="Выравнивание объектов">
@@ -99,8 +99,8 @@ export function CanvasSelectionActions({ count, busy, onAlign, onDistribute, onL
       </div>
       <div className="selection-actions__dropdown">
         <button disabled={busy} aria-expanded={open === 'layers'} aria-controls={`${id}-layers`}
-          onClick={(event) => toggle('layers', event.currentTarget)} title="Порядок слоёв">
-          <Layers size={14} /> Слои <ChevronDown size={12} />
+          onClick={(event) => toggle('layers', event.currentTarget)} title="Порядок слоёв" aria-label="Слои">
+          <Layers size={14} /> <ChevronDown size={12} />
         </button>
         {open === 'layers' && (
           <div className="selection-actions__menu" id={`${id}-layers`} role="group" aria-label="Порядок слоёв">
@@ -112,13 +112,13 @@ export function CanvasSelectionActions({ count, busy, onAlign, onDistribute, onL
           </div>
         )}
       </div>
-      <button disabled={busy} onClick={onDuplicate} title="Дублировать (Ctrl+D)"><Copy size={14} /> Дублировать</button>
-      <button disabled={busy || count < 2} onClick={onGroup} title="Группа (Ctrl+G)">Группа</button>
-      <button disabled={busy} onClick={onUngroup} title="Разгруппировать (Ctrl+Shift+G)">Разгруппировать</button>
-      <button disabled={busy} onClick={onAttach} title="Прикрепить к окружающему Frame">Прикрепить</button>
-      <button disabled={busy} onClick={onDetach} title="Отсоединить от контейнера">Отсоединить</button>
-      <button disabled={busy} onClick={onFrame} title="Создать Frame вокруг выделения"><FrameIcon size={14} /> Во Frame</button>
-      <button disabled={busy} className="is-danger" onClick={onDelete} title="Удалить выделение"><Trash2 size={14} /> Удалить</button>
+      <button disabled={busy} onClick={onDuplicate} title="Дублировать (Ctrl+D)" aria-label="Дублировать"><Copy size={14} /></button>
+      <button disabled={busy || count < 2} onClick={onGroup} title="Группа (Ctrl+G)" aria-label="Группа"><Group size={16}/></button>
+      <button disabled={busy} onClick={onUngroup} title="Разгруппировать (Ctrl+Shift+G)" aria-label="Разгруппировать"><Ungroup size={16}/></button>
+      <button disabled={busy} onClick={onAttach} title="Прикрепить к окружающему Frame" aria-label="Прикрепить"><Link size={16}/></button>
+      <button disabled={busy} onClick={onDetach} title="Отсоединить от контейнера" aria-label="Отсоединить"><Unlink size={16}/></button>
+      <button disabled={busy} onClick={onFrame} title="Создать Frame вокруг выделения" aria-label="Во Frame"><FrameIcon size={14} /></button>
+      <button disabled={busy} className="is-danger" onClick={onDelete} title="Удалить выделение" aria-label="Удалить"><Trash2 size={14} /></button>
     </div>
   );
 }

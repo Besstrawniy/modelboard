@@ -1,7 +1,8 @@
+import { CanvasHandles } from './CanvasHandles';
 import { BoundData } from './BoundData';
 import { CanvasInlineText } from './CanvasInlineText';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
 import type {
   DeviceKind,
   DeviceNodeData,
@@ -113,7 +114,7 @@ export function DeviceNode({ id, data, selected }: NodeProps<any>) {
 
 
   return (
-    <div className={`device-node ${selected ? 'is-selected' : ''} ${binding ? 'is-bound' : ''}`}>
+    <div className={`device-node ${selected ? 'is-selected' : ''} ${binding ? 'is-bound' : ''}`}><CanvasHandles />
       {!readOnly && (
         <CanvasNodeResizer
           minWidth={170}
@@ -122,7 +123,7 @@ export function DeviceNode({ id, data, selected }: NodeProps<any>) {
         />
       )}
 
-      <Handle type="target" position={Position.Left} isConnectable={!readOnly} />
+
 
       <div className="device-node__glyph">
         <DeviceGlyph kind={kind} size={46} />
@@ -141,7 +142,7 @@ export function DeviceNode({ id, data, selected }: NodeProps<any>) {
         )}
       </div>
 
-      <Handle type="source" position={Position.Right} isConnectable={!readOnly} />
+
     </div>
   );
 }

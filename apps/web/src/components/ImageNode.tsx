@@ -1,5 +1,6 @@
+import { CanvasHandles } from './CanvasHandles';
 import { useEffect, useState } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
 import { useBoardActions } from './BoardContext';
 import { api } from '../lib/api';
@@ -29,17 +30,12 @@ export function ImageNode({ data, selected }: NodeProps<any>) {
     };
   }, [data.assetId, sessionToken]);
   return (
-    <div className="image-node">
+    <div className="image-node"><CanvasHandles />
       <CanvasNodeResizer
         minWidth={60}
         minHeight={40}
         isVisible={selected}
         keepAspectRatio
-      />
-      <Handle
-        type="target"
-        position={Position.Left}
-        isConnectable={!readOnly}
       />
       {url ? (
         <img
@@ -50,11 +46,6 @@ export function ImageNode({ data, selected }: NodeProps<any>) {
       ) : (
         <span>{error || 'Загрузка изображения…'}</span>
       )}
-      <Handle
-        type="source"
-        position={Position.Right}
-        isConnectable={!readOnly}
-      />
     </div>
   );
 }

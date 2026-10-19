@@ -12,7 +12,10 @@ export function CanvasInlineText({ id, field = 'text', value, placeholder = '', 
   const cancelled = useRef(false);
   const startValue = useRef(value);
   useEffect(() => { if (editing) { input.current?.focus(); input.current?.select(); } }, [editing]);
+  const active = useRef(false);
   const finish = () => {
+    if (!active.current) return;
+    active.current = false;
     if (!cancelled.current && draft !== startValue.current) updateNodeData(id, { [field]: draft });
     setEditing(false);
   };
@@ -21,13 +24,13 @@ export function CanvasInlineText({ id, field = 'text', value, placeholder = '', 
     onChange={(event) => setDraft(event.target.value)} onBlur={finish}
     onKeyDown={(event) => {
       event.stopPropagation();
-      if (event.key === 'Escape') { event.preventDefault(); cancelled.current = true; setEditing(false); }
+      if (event.key === 'Escape') { event.preventDefault(); cancelled.current = true; active.current = false; setEditing(false); }
       else if (event.key === 'Enter' && (!multiline || event.ctrlKey || event.metaKey)) { event.preventDefault(); finish(); }
     }} />;
   return <div className={`canvas-inline-text ${className}`} tabIndex={readOnly ? undefined : 0}
     title={readOnly ? undefined : 'Двойной клик или Enter — редактировать; Esc — отменить'}
-    onDoubleClick={(event) => { if (readOnly) return; event.stopPropagation(); cancelled.current = false; startValue.current = value; setDraft(value); setEditing(true); }}
-    onKeyDown={(event) => { if (!readOnly && event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); cancelled.current = false; startValue.current = value; setDraft(value); setEditing(true); } }}>
+    onDoubleClick={(event) => { if (readOnly) return; event.stopPropagation(); active.current = true; cancelled.current = false; startValue.current = value; setDraft(value); setEditing(true); }}
+    onKeyDown={(event) => { if (!readOnly && event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); active.current = true; cancelled.current = false; startValue.current = value; setDraft(value); setEditing(true); } }}>
     {value || placeholder || '\u00a0'}
   </div>;
 }

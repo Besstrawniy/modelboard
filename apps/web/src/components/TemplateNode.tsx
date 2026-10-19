@@ -1,9 +1,8 @@
+import { CanvasHandles } from './CanvasHandles';
 import { BoundData } from './BoundData';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
 import {
-  Handle,
-  Position,
-  type NodeProps,
+    type NodeProps,
 } from '@xyflow/react';
 import type {
   ObjectBindingRecord,
@@ -39,7 +38,7 @@ export function TemplateNode({ data, selected }: NodeProps<any>) {
   );
 
   return (
-    <div className={`template-node ${selected ? 'is-selected' : ''} ${binding ? 'is-bound' : ''}`}>
+    <div className={`template-node ${selected ? 'is-selected' : ''} ${binding ? 'is-bound' : ''}`}><CanvasHandles />
       {!readOnly && (
         <CanvasNodeResizer
           minWidth={90}
@@ -48,7 +47,7 @@ export function TemplateNode({ data, selected }: NodeProps<any>) {
         />
       )}
 
-      <Handle type="target" position={Position.Left} isConnectable={!readOnly} />
+
 
       <div className="template-node__visual">
         {source ? (
@@ -69,7 +68,7 @@ export function TemplateNode({ data, selected }: NodeProps<any>) {
         {binding?<BoundData binding={binding}/>:<strong>{title}</strong>}
       </div>
 
-      <Handle type="source" position={Position.Right} isConnectable={!readOnly} />
+
     </div>
   );
 }

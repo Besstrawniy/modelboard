@@ -1,3 +1,4 @@
+import { TextCursorInput, Check, X } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '../lib/api';
 export function DatasetRename({
@@ -48,25 +49,25 @@ export function DatasetRename({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
           />
-          <button disabled={busy}>Сохранить имя</button>
+          <button disabled={busy} title="Сохранить имя" aria-label="Сохранить имя"><Check size={15}/></button>
           <button
-            type="button"
+            title="Отмена" aria-label="Отмена" type="button"
             disabled={busy}
             onClick={() => setEditing(false)}
           >
-            Отмена
+            <X size={15}/>
           </button>
           {error && <span role="alert">{error}</span>}
         </form>
       ) : (
         <button
-          title="Редактировать имя Dataset"
+          title="Редактировать имя Dataset" aria-label="Редактировать имя Dataset"
           onClick={() => {
             setDraft(name);
             setEditing(true);
           }}
         >
-          Переименовать
+          <TextCursorInput size={15}/>
         </button>
       )}
     </span>

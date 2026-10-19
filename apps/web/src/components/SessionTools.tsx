@@ -1,3 +1,4 @@
+import { Users, Music, Timer, Phone, Vote, Presentation, Play, Pause, RotateCcw, Save, Check, Hand, LogOut, Square, ChevronLeft, ChevronRight, UserRound, Radio, Eye, EyeOff, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
@@ -12,6 +13,7 @@ import { useBoardRoom } from '../lib/useBoardRoom';
 import { canvasNodeSize } from '../lib/canvasGeometry';
 import { RoomMusic } from './RoomMusic';
 
+const tabIcons={music:Music,timer:Timer,poll:Vote,presentation:Presentation,call:Phone};
 const tabs = {
   music: 'Музыка',
   timer: 'Таймер',
@@ -186,11 +188,12 @@ export function SessionTools({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        Совместно
+        <Users size={17}/>
         {state.timer.endsAt !== null && (
           <span className="session-timer-badge">{timerText}</span>
         )}
       </button>
+      {(['music','timer','call'] as const).map(id=>{const Icon=tabIcons[id];return <button key={id} className="session-trigger" title={`Открыть: ${tabs[id]}`} aria-label={`Открыть: ${tabs[id]}`} onClick={()=>{setTab(id);setOpen(true);}}><Icon size={17}/></button>;})}
       {createPortal(
         <>
           <aside
@@ -206,17 +209,17 @@ export function SessionTools({
                 aria-label="Закрыть совместную работу"
                 onClick={() => setOpen(false)}
               >
-                ×
+                <X size={18}/>
               </button>
             </header>
             <nav aria-label="Разделы совместной работы">
               {Object.entries(tabs).map(([id, title]) => (
                 <button
                   key={id}
-                  aria-pressed={tab === id}
+                  title={title} aria-label={title} aria-pressed={tab === id}
                   onClick={() => setTab(id as keyof typeof tabs)}
                 >
-                  {title}
+                  {(() => { const Icon=tabIcons[id as keyof typeof tabIcons]; return <Icon size={18}/>; })()}
                 </button>
               ))}
             </nav>
@@ -271,11 +274,11 @@ export function SessionTools({
                             required
                           />
                         </label>
-                        <button disabled={!ready}>Запустить таймер</button>
+                        <button disabled={!ready} title="Запустить таймер" aria-label="Запустить таймер"><Play size={17}/></button>
                       </form>
                       <div className="room-button-row">
                         <button
-                          disabled={!ready || remaining === 0}
+                          title={state.timer.endsAt === null ? 'Продолжить таймер' : 'Пауза таймера'} aria-label={state.timer.endsAt === null ? 'Продолжить таймер' : 'Пауза таймера'} disabled={!ready || remaining === 0}
                           onClick={() =>
                             send({
                               action:
@@ -285,16 +288,12 @@ export function SessionTools({
                             })
                           }
                         >
-                          {state.timer.endsAt === null
-                            ? 'Продолжить таймер'
-                            : 'Пауза таймера'}
+                          {state.timer.endsAt === null ? <Play size={17}/> : <Pause size={17}/>}
                         </button>
                         <button
                           disabled={!ready}
                           onClick={() => send({ action: 'timer-reset' })}
-                        >
-                          Сбросить таймер
-                        </button>
+                         title="Сбросить таймер" aria-label="Сбросить таймер"><RotateCcw size={17}/></button>
                       </div>
                     </>
                   )}
@@ -348,9 +347,7 @@ export function SessionTools({
                               pollId: state.poll!.id,
                             })
                           }
-                        >
-                          Завершить голосование
-                        </button>
+                         title="Завершить голосование" aria-label="Завершить голосование"><Square size={17}/></button>
                       )}
                     </>
                   ) : (
@@ -393,7 +390,7 @@ export function SessionTools({
                       <small>
                         От 2 до 6 разных вариантов. Результат виден всем.
                       </small>
-                      <button disabled={!ready}>Начать голосование</button>
+                      <button disabled={!ready} title="Начать голосование" aria-label="Начать голосование"><Vote size={17}/></button>
                     </form>
                   )}
                 </section>
@@ -410,9 +407,7 @@ export function SessionTools({
                     <button
                       disabled={!ready}
                       onClick={() => send({ action: 'presentation-claim' })}
-                    >
-                      Стать ведущим
-                    </button>
+                     title="Стать ведущим" aria-label="Стать ведущим"><Presentation size={17}/></button>
                   )}
                   {role === 'OWNER' && state.presenter && !isPresenter && (
                     <button
@@ -420,14 +415,12 @@ export function SessionTools({
                       onClick={() =>
                         send({ action: 'presentation-claim', takeover: true })
                       }
-                    >
-                      Взять управление показом
-                    </button>
+                     title="Взять управление показом" aria-label="Взять управление показом"><UserRound size={17}/></button>
                   )}
                   {state.presenter && !isPresenter && (
                     <button
                       disabled={!ready}
-                      aria-pressed={following}
+                      title={following?'Перестать следовать':'Следовать за ведущим'} aria-label={following?'Перестать следовать':'Следовать за ведущим'} aria-pressed={following}
                       onClick={() => {
                         if (following) {
                           stopFollowing();
@@ -437,9 +430,7 @@ export function SessionTools({
                         setFollowing(true);
                       }}
                     >
-                      {following
-                        ? 'Перестать следовать'
-                        : 'Следовать за ведущим'}
+                      {following?<EyeOff size={17}/>:<Eye size={17}/>}
                     </button>
                   )}
                   {following && (
@@ -452,9 +443,7 @@ export function SessionTools({
                     <button
                       disabled={!ready}
                       onClick={() => send({ action: 'presentation-stop' })}
-                    >
-                      Завершить показ
-                    </button>
+                     title="Завершить показ" aria-label="Завершить показ"><Square size={17}/></button>
                   )}
                   {isPresenter && (
                     <>
@@ -466,17 +455,13 @@ export function SessionTools({
                         <button
                           disabled={frameIndex <= 0}
                           onClick={() => void showFrame(frames[frameIndex - 1])}
-                        >
-                          Предыдущий Frame
-                        </button>
+                         title="Предыдущий Frame" aria-label="Предыдущий Frame"><ChevronLeft size={17}/></button>
                         <button
                           disabled={
                             !frames.length || frameIndex >= frames.length - 1
                           }
                           onClick={() => void showFrame(frames[frameIndex + 1])}
-                        >
-                          Следующий Frame
-                        </button>
+                         title="Следующий Frame" aria-label="Следующий Frame"><ChevronRight size={17}/></button>
                       </div>
                       {frames.map((frame, index) => (
                         <button
@@ -525,7 +510,7 @@ export function SessionTools({
                           placeholder="https://…"
                         />
                       </label>
-                      <button disabled={!ready}>Сохранить ссылку</button>
+                      <button disabled={!ready} title="Сохранить ссылку" aria-label="Сохранить ссылку"><Save size={17}/></button>
                     </form>
                   )}
                   {state.meetingUrl && (
@@ -539,18 +524,18 @@ export function SessionTools({
                     </a>
                   )}
                   <div className="room-button-row">
-                    <button
+                    <button title={self?'Выйти из комнаты':'Готов к созвону'} aria-label={self?'Выйти из комнаты':'Готов к созвону'}
                       disabled={!ready}
                       onClick={() =>
                         send({ action: self ? 'call-leave' : 'call-join' })
                       }
                     >
-                      {self ? 'Выйти из комнаты' : 'Готов к созвону'}
+                      {self ? <LogOut size={17}/> : <Phone size={17}/>}
                     </button>
                     {self && (
                       <button
                         disabled={!ready}
-                        aria-pressed={self.handRaised}
+                        title={self.handRaised?'Опустить руку':'Поднять руку'} aria-label={self.handRaised?'Опустить руку':'Поднять руку'} aria-pressed={self.handRaised}
                         onClick={() =>
                           send({
                             action: 'call-hand',
@@ -558,7 +543,7 @@ export function SessionTools({
                           })
                         }
                       >
-                        {self.handRaised ? 'Опустить руку' : 'Поднять руку'}
+                        <Hand size={17}/>
                       </button>
                     )}
                   </div>

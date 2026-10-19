@@ -1,3 +1,4 @@
+import { ExternalLink } from 'lucide-react';
 import { useStore } from '@xyflow/react';
 import type { CSSProperties } from 'react';
 import { DatasetConnections } from './DatasetConnections';
@@ -25,11 +26,13 @@ export function TableNode({ id,data,selected }:NodeProps<any>) {
  const formats=new Map(dataset.formats.map(format=>[formulaKey(format.rowId,format.columnId),format]));
  const formulas=new Map(dataset.formulas.map(formula=>[formulaKey(formula.rowId,formula.columnId),formula]));
  return <div style={{'--data-view-max-height':`${limit}px`} as CSSProperties} className={`table-node ${selected?'is-selected':''}`}>
-  <Handle id="table:target" type="target" position={Position.Left} isConnectable={!readOnly} title="Связать записи таблиц" />
-  <Handle id="table:source" type="source" position={Position.Right} isConnectable={!readOnly} title="Связать записи таблиц" />
+  <Handle id="table:target" type="target" position={Position.Left} isConnectable={!readOnly} className="canvas-port" title="Связать записи таблиц" />
+  <Handle id="table:source" type="source" position={Position.Right} isConnectable={!readOnly} className="canvas-port" title="Связать записи таблиц" />
+  <Handle id="table:top" type="source" position={Position.Top} isConnectable={!readOnly} className="canvas-port"/>
+  <Handle id="table:bottom" type="target" position={Position.Bottom} isConnectable={!readOnly} className="canvas-port"/>
   <CanvasNodeResizer minWidth={360} minHeight={180} isVisible={selected}/>
   <div className="table-node__title"><span className="table-node__kind">DATASET</span><strong>{view.view?.labelOverride||dataset.name}</strong><DatasetConnections dataset={dataset}/><DatasetRename id={dataset.id} name={dataset.name} token={sessionToken} readOnly={readOnly}/><span className="dataset-status">{pendingChanges?'saving':status}</span>
-    <button className="nodrag" title="Открыть таблицу" onClick={()=>openDatasetSheet(dataset.id)}>Открыть</button>
+    <button className="nodrag" title="Открыть таблицу" onClick={()=>openDatasetSheet(dataset.id)} aria-label="Открыть таблицу"><ExternalLink size={15}/></button>
   </div>
   {storageError&&<div className="sheet-storage-error" role="alert">{storageError}</div>}
   <div className="table-view-controls nodrag nowheel">

@@ -1,3 +1,4 @@
+import { Network, ExternalLink, Unlink, Link, X } from 'lucide-react';
 import { datasetRecordLabel as rowName } from '../lib/datasetRecordLabel';
 import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
@@ -85,22 +86,22 @@ function ConnectionRecords({
           ? `Связь записей · ${(relation.links ?? []).length} пар · id/fk не нужны`
           : `Совпадение значений: ${dataset.name}.${left} ↔ ${other?.name}.${right}`}
       </p>
-      <button
+      <button title="Открыть связанную таблицу" aria-label="Открыть связанную таблицу"
         onClick={() => {
           onNavigate();
           openDatasetSheet(otherId);
         }}
       >
-        Открыть связанную таблицу
+        <ExternalLink size={16}/>
       </button>
       {!readOnly && (
-        <button
+        <button title="Показать связь на доске" aria-label="Показать связь на доске"
           onClick={() => {
             onNavigate();
             showRelationOnCanvas(relation);
           }}
         >
-          Показать связь на доске
+          <Network size={16}/>
         </button>
       )}
       <label>
@@ -121,7 +122,7 @@ function ConnectionRecords({
       {row && (
         <>
           <p>Связанных записей: {matches.length}</p>
-          {other &&
+          <div className="connection-records-list">{other &&
             matches.map((r) => (
               <div key={r.id}>
                 <button
@@ -134,14 +135,14 @@ function ConnectionRecords({
                 </button>
                 {!readOnly && relation.matchMode === 'ROW_LINKS' && (
                   <button
-                    disabled={busy}
+                    title="Убрать пару" aria-label="Убрать пару" disabled={busy}
                     onClick={() => void update(row.id, r.id, true)}
                   >
-                    Убрать пару
+                    <Unlink size={14}/>
                   </button>
                 )}
               </div>
-            ))}
+            ))}</div>
           {!readOnly && relation.matchMode === 'ROW_LINKS' && (
             <>
               <label>
@@ -207,8 +208,8 @@ export function DatasetConnections({
   }, [open, workspaceId, sessionToken]);
   return (
     <>
-      <button className="nodrag" onClick={() => setOpen(true)}>
-        Связи таблицы
+      <button className="nodrag" title="Связи таблицы" aria-label="Связи таблицы" onClick={() => setOpen(true)}>
+        <Network size={15}/>
       </button>
       {open &&
         createPortal(
@@ -226,13 +227,13 @@ export function DatasetConnections({
             >
               <header>
                 <h3>Связи: {dataset.name}</h3>
-                <button
+                <button title="Закрыть связи" aria-label="Закрыть связи"
                   onClick={() => {
                     setOpen(false);
                     setCreate(false);
                   }}
                 >
-                  Закрыть связи
+                  <X size={18}/>
                 </button>
               </header>
               <p>

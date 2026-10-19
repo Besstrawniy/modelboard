@@ -1,3 +1,4 @@
+import { CanvasEdgeProperties } from './CanvasEdgeProperties';
 import { ImageNode } from './ImageNode';
 import { SessionTools } from './SessionTools';
 import { presenceColor } from '@modelboard/shared';
@@ -14,6 +15,7 @@ import {
   applyNodeChanges,
   Background,
   BackgroundVariant,
+  ConnectionMode,
   MarkerType,
   MiniMap,
   Panel,
@@ -103,7 +105,7 @@ type BoardClipboard = {
   edges: Edge[];
 };
 
-type ToolMode = 'select' | 'hand' | 'pen' | 'eraser' | 'shape' | 'text' | 'connector';
+type ToolMode = 'select' | 'hand' | 'pen' | 'eraser' | 'shape' | 'sticky' | 'text' | 'connector';
 
 type DrawingGesture = {
   pointerId: number;
@@ -311,6 +313,22 @@ function BoardInner({
   const insertionPointRef = useRef<{ x: number; y: number } | null>(null);
   const connectorStartRef = useRef<string | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>('select');
+  const [shapeKind, setShapeKind] = useState('rectangle');
+  const [shapeMenu, setShapeMenu] = useState(false);
+  const placementPreview = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!shapeMenu) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest('.shape-picker')) setShapeMenu(false);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setShapeMenu(false); };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [shapeMenu]);
   const [spacePressed, setSpacePressed] = useState(false);
   const [canvasHelpOpen, setCanvasHelpOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
@@ -454,7 +472,7 @@ function BoardInner({
       const stored = new Map(Array.from(nodesMap.values()).map((node: Node) => [node.id,node]));
       for (const stroke of strokesMap.values()) if (!stored.has(stroke.id) && stroke.points.length) stored.set(stroke.id,strokeCanvasNode(stroke));
       setNodes((current) => reconcileCanvasNodes(
-        Array.from(stored.values()).map((node: Node) => ({ ...node, style: { ...node.style, '--canvas-rotation': `${Number(node.data.rotation ?? 0)}deg`, '--canvas-fill': node.data.fill, '--canvas-stroke': typeof node.data.stroke === 'string' ? node.data.stroke : undefined, '--canvas-color': node.data.color, '--canvas-font-size': node.data.fontSize ? `${node.data.fontSize}px` : undefined, opacity: Number(node.data.opacity ?? 100) / 100 } })) as Node[], current, previewsRef.current,
+        Array.from(stored.values()).map((node: Node) => ({ ...node, style: { ...node.style, '--canvas-rotation': `${Number(node.data.rotation ?? 0)}deg`, '--canvas-fill': node.data.fill, '--canvas-stroke': typeof node.data.stroke === 'string' ? node.data.stroke : undefined, '--canvas-color': node.data.color, '--canvas-font-size': node.data.fontSize ? `${node.data.fontSize}px` : undefined, '--canvas-font-family': node.data.fontFamily, '--canvas-stroke-width': `${Number(node.data.strokeWidth ?? 2)}px`, '--canvas-stroke-style': node.data.strokeDash === 'dashed' ? 'dashed' : 'solid', opacity: Number(node.data.opacity ?? 100) / 100 } })) as Node[], current, previewsRef.current,
       ));
     };
     const syncEdges = () => setEdges((current) => { const selected = new Set(current.filter((edge) => edge.selected).map((edge) => edge.id)); return Array.from(edgesMap.values()).map((edge: Edge) => ({...edge,selected:selected.has(edge.id)})); });
@@ -1402,8 +1420,10 @@ function BoardInner({
     const targetNode = nodesMap.get(connection.target) as Node | undefined;
     const sourceDatasetId = ((sourceNode?.data as any)?.datasetId ?? (sourceNode?.data as any)?.binding?.datasetId) as string | undefined;
     const targetDatasetId = ((targetNode?.data as any)?.datasetId ?? (targetNode?.data as any)?.binding?.datasetId) as string | undefined;
-    const sourceColumnId = connection.sourceHandle?.startsWith('source:') ? connection.sourceHandle.slice(7) : '';
-    const targetColumnId = connection.targetHandle?.startsWith('target:') ? connection.targetHandle.slice(7) : '';
+    // Loose mode permits starting at either side of a column. The endpoint
+    // prefix describes its position, not the direction of the new relation.
+    const sourceColumnId = connection.sourceHandle?.match(/^(?:source|target):(.+)$/)?.[1] ?? '';
+    const targetColumnId = connection.targetHandle?.match(/^(?:source|target):(.+)$/)?.[1] ?? '';
 
     if (
       sourceDatasetId && targetDatasetId
@@ -1472,12 +1492,16 @@ function BoardInner({
     ydoc.transact(() => {
       const data = { ...current.data, ...patch };
       let updated: Node = { ...current,data };
+      if (current.type === 'shape' && patch.shapeKind === 'circle') {
+        const size = Math.max(nodeSize(current,'width',150),nodeSize(current,'height',150));
+        updated={...updated,width:size,height:size,measured:undefined,style:{...updated.style,width:size,height:size}};
+      }
       if (['text','sticky'].includes(current.type ?? '') && (data.autoSize ?? current.type === 'text')) {
         const fontSize=Number(data.fontSize??(current.type==='text'?22:16));
         const width=nodeSize(current,'width',240);
         const context=document.createElement('canvas').getContext('2d');
         if(context) {
-          context.font=`${fontSize}px Inter, sans-serif`;
+          context.font=`${fontSize}px ${String(data.fontFamily ?? "Inter, sans-serif")}`;
           const lines=String(data.text??'').split('\n').reduce((count,line)=>count+Math.max(1,Math.ceil(context.measureText(line).width/Math.max(40,width-28))),0);
           const height=Math.max(current.type==='sticky'?120:40,Math.ceil(lines*fontSize*1.45+28));
           updated={...updated,height,measured:undefined,style:{...updated.style,height}};
@@ -2038,15 +2062,15 @@ function BoardInner({
         type,
         position: { x: center.x - 120, y: center.y - 80 },
         style: { width: 240, height: 160 },
-        data: { text: 'Новая заметка' },
+        data: { text: 'Новая заметка', fontFamily: 'Segoe Print, Comic Sans MS, cursive' },
       };
     } else if (type === 'shape') {
       node = {
         id,
         type,
-        position: { x: center.x - 110, y: center.y - 55 },
-        style: { width: 220, height: 110 },
-        data: { text: 'Объект' },
+        position: { x: center.x - (shapeKind === 'circle' ? 75 : 110), y: center.y - (shapeKind === 'circle' ? 75 : 55) },
+        style: { width: shapeKind === 'circle' ? 150 : 220, height: shapeKind === 'circle' ? 150 : 110 },
+        data: { text: 'Объект', shapeKind },
       };
     } else if (type === 'frame') {
       node = {
@@ -2070,7 +2094,7 @@ function BoardInner({
       node = {
         id,
         type,
-        position: { x: center.x - 80, y: center.y - 20 },
+        position: { x: center.x - 120, y: center.y - 30 },
         style: { width: 240, height: 60 },
         data: { text: 'Текст', autoSize: true },
       };
@@ -2083,7 +2107,7 @@ function BoardInner({
     setSelectedNodeIds([id]);
     setSelectedNodeId(id);
     setToolMode('select');
-  }, [nodesMap, readOnly, viewportCenter, undoManager, setNodes]);
+  }, [nodesMap, readOnly, viewportCenter, undoManager, setNodes, shapeKind]);
 
   const addDevice = useCallback((kind: DeviceKind) => {
     if (readOnly) return;
@@ -2303,6 +2327,11 @@ function BoardInner({
   }, [handleFrameDrag, nodesMap, undoManager, ydoc]);
 
   const onPointerMove = useCallback((event: React.PointerEvent) => {
+    if (placementPreview.current) {
+      const preview = placementPreview.current;
+      preview.style.transform = `translate(${event.clientX}px, ${event.clientY}px) translate(-50%, -50%)`;
+      preview.style.visibility = (event.target as HTMLElement).closest('.react-flow__pane') ? 'visible' : 'hidden';
+    }
     if (!provider || !rf) return;
     const point = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false });
     provider.awareness?.setLocalStateField('cursor', point);
@@ -2460,7 +2489,7 @@ function BoardInner({
           if (active instanceof HTMLElement && active.matches('input, textarea, select, [contenteditable="true"]')) active.blur();
         }}
         onPointerMove={onPointerMove}
-        onPointerLeave={() => provider?.awareness?.setLocalStateField('cursor', null)}
+        onPointerLeave={() => { if (placementPreview.current) placementPreview.current.style.visibility = 'hidden'; provider?.awareness?.setLocalStateField('cursor', null); }}
         onDragEnter={handleDragOver}
         onDragOver={handleDragOver}
         onDragLeave={() => setDropActive(false)}
@@ -2714,6 +2743,7 @@ function BoardInner({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          connectionMode={ConnectionMode.Loose}
           onNodeDragStart={handleFrameDragStart}
           onNodeDrag={handleFrameDrag}
           onNodeDragStop={handleFrameDragStop}
@@ -2724,8 +2754,8 @@ function BoardInner({
           }}
           onSelectionChange={handleSelectionChange}
           onPaneClick={(event) => {
-            if ((effectiveToolMode === 'shape' || effectiveToolMode === 'text') && !readOnly && rf) {
-              insertionPointRef.current = rf.screenToFlowPosition({ x:event.clientX, y:event.clientY });
+            if ((effectiveToolMode === 'shape' || effectiveToolMode === 'text' || effectiveToolMode === 'sticky') && !readOnly && rf) {
+              insertionPointRef.current = rf.screenToFlowPosition({ x:event.clientX, y:event.clientY }, {snapToGrid:false});
               addNode(effectiveToolMode);
             } else if (effectiveToolMode === 'select') clearSelection();
           }}
@@ -2887,9 +2917,13 @@ function BoardInner({
               <button title="Файлы и импорт/экспорт" onClick={()=>setFilesOpen(value=>!value)}><UploadCloud size={19}/></button>
               <button onClick={() => setDatasetsOpen(true)} title="Данные"><Database size={19} /></button>
               <button onClick={() => setDevicesOpen(true)} title="Инфраструктура"><Network size={19} /></button>
-              <button disabled={readOnly} onClick={() => addNode('sticky')} title="Стикер"><StickyNote size={19} /></button>
+              <button disabled={readOnly} className={toolMode === 'sticky' ? 'is-active' : ''} onClick={() => activateTool('sticky')} title="Стикер"><StickyNote size={19} /></button>
 <button className={toolMode === 'text' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('text')} title="Текст"><Type size={19} /></button>
+<div className="shape-picker">
 <button className={toolMode === 'shape' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('shape')} title="Фигура"><Shapes size={19} /></button>
+<button disabled={readOnly} title="Выбрать фигуру" aria-label="Выбрать фигуру" aria-expanded={shapeMenu} onClick={() => setShapeMenu(value => !value)}><ChevronDown size={12}/></button>
+{shapeMenu && <div className="shape-picker__menu" role="group" aria-label="Фигуры">{[['rectangle','Прямоугольник'],['triangle','Треугольник'],['circle','Круг'],['ellipse','Эллипс'],['diamond','Ромб']].map(([kind,label]) => <button key={kind} title={label} aria-label={label} aria-pressed={shapeKind === kind} onClick={() => { setShapeKind(kind); setShapeMenu(false); activateTool('shape'); }}><span className={`shape-swatch shape-swatch--${kind}`} /></button>)}</div>}
+</div>
               <button className={toolMode === 'connector' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('connector')} title="Коннектор (C)"><Network size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('frame')} title="Frame / секция"><FrameIcon size={19} /></button>
               <div className="toolbar-separator" />
@@ -2897,6 +2931,7 @@ function BoardInner({
             </div>
           </Panel>
 
+          {!readOnly && ['shape','sticky','text'].includes(effectiveToolMode) && <div ref={placementPreview} className={`placement-preview placement-preview--${effectiveToolMode} placement-preview--${shapeKind}`} aria-hidden="true" style={{ width: (effectiveToolMode === 'shape' ? (shapeKind === 'circle' ? 150 : 220) : 240) * canvasZoom, height: (effectiveToolMode === 'sticky' ? 160 : effectiveToolMode === 'text' ? 60 : shapeKind === 'circle' ? 150 : 110) * canvasZoom }}>{effectiveToolMode === 'sticky' ? 'Заметка' : effectiveToolMode === 'text' ? 'Текст' : ''}</div>}
           <ViewportPortal>
             <svg className="canvas-guides" aria-hidden="true">{guides.map((guide) => <line key={guide.axis} stroke="#e75bae" strokeWidth={1 / canvasZoom}
               x1={guide.axis === 'x' ? guide.value : -100000} x2={guide.axis === 'x' ? guide.value : 100000}
@@ -3190,16 +3225,7 @@ function BoardInner({
           />
         )}
 
-        {!readOnly && edges.some((edge) => edge.selected) && <div className="canvas-properties" aria-label="Оформление коннектора">
-          {edges.filter((edge) => edge.selected).slice(0,1).map((edge) => {
-            const change = (patch: Partial<Edge>) => { const current=edgesMap.get(edge.id); if (!current) return; undoManager.stopCapturing(); edgesMap.set(edge.id,{...current,...patch}); undoManager.stopCapturing(); };
-            return <div key={edge.id}>
-              <label>Подпись <input aria-label="Подпись коннектора" defaultValue={typeof edge.label === 'string' ? edge.label : ''} onBlur={(event) => change({label:event.target.value})} /></label>
-              <label>Линия <select aria-label="Маршрут коннектора" value={edge.type ?? 'smoothstep'} onChange={(event) => change({type:event.target.value})}><option value="smoothstep">С изгибом</option><option value="straight">Прямая</option><option value="default">Кривая</option></select></label>
-              <label>Стрелка <input aria-label="Стрелка коннектора" type="checkbox" checked={Boolean(edge.markerEnd)} onChange={(event) => change({markerEnd:event.target.checked ? {type:MarkerType.ArrowClosed} : undefined})} /></label>
-            </div>;
-          })}
-        </div>}
+        {!readOnly && edges.filter(edge=>edge.selected).slice(0,1).map(edge=><CanvasEdgeProperties key={edge.id} edge={edge} onChange={patch=>{const current=edgesMap.get(edge.id);if(!current)return;undoManager.stopCapturing();edgesMap.set(edge.id,{...current,...patch});undoManager.stopCapturing();}}/>)}
         {selectedNode && (
           <InspectorPanel
             node={selectedNode}

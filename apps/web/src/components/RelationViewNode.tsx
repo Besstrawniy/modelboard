@@ -1,10 +1,11 @@
+import { CanvasHandles } from './CanvasHandles';
 import { useStore } from '@xyflow/react';
 import type { CSSProperties } from 'react';
 import { relatedRows } from '@modelboard/shared';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
 import { ExternalLink, Link2 } from 'lucide-react';
 import type { DatasetRow, RelationViewNodeData } from '@modelboard/shared';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
@@ -126,7 +127,7 @@ export function RelationViewNode({ id, data, selected }: NodeProps<any>) {
     <div
       style={{ '--data-view-max-height': `${limit}px` } as CSSProperties}
       className={`relation-view-node ${selected ? 'is-selected' : ''}`}
-    >
+    ><CanvasHandles />
       {!readOnly && (
         <CanvasNodeResizer
           minWidth={300}
@@ -135,11 +136,7 @@ export function RelationViewNode({ id, data, selected }: NodeProps<any>) {
         />
       )}
 
-      <Handle
-        type="target"
-        position={Position.Left}
-        isConnectable={!readOnly}
-      />
+
 
       <header className="relation-view-node__header">
         <div>
@@ -221,11 +218,7 @@ export function RelationViewNode({ id, data, selected }: NodeProps<any>) {
         )}
       </div>
 
-      <Handle
-        type="source"
-        position={Position.Right}
-        isConnectable={!readOnly}
-      />
+
     </div>
   );
 }

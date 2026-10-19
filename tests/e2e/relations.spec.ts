@@ -252,6 +252,8 @@ test('relation manager creates FK, validates, draws ER, edits labels and deletes
   await page.getByTitle('Данные', { exact: true }).click();
   await page.getByRole('button', { name: 'Связи', exact: true }).click();
   const manager = page.getByRole('region', { name: 'Управление связями' });
+  await expect(manager.getByLabel('Название связи', { exact: true })).toHaveCount(0);
+  await manager.getByRole('button', { name: 'Новая связь', exact: true }).click();
   await manager.getByLabel('Название связи', { exact: true }).fill('VM owner');
   await manager.getByLabel('Исходный Dataset').selectOption(vms.id);
   await manager.getByLabel('Исходное поле').selectOption(vms.columns[1].id);
@@ -338,7 +340,7 @@ test('Dataset deletion removes live views, detaches objects and survives board U
   await dormant
     .locator('.dataset-card')
     .filter({ hasText: servers.name })
-    .getByRole('button', { name: 'Place', exact: true })
+    .getByRole('button', { name: 'Разместить таблицу на доске', exact: true })
     .click();
   await dormant.close();
   await expect
@@ -356,7 +358,7 @@ test('Dataset deletion removes live views, detaches objects and survives board U
 
   await page.getByTitle('Данные', { exact: true }).click();
   const card = page.locator('.dataset-card').filter({ hasText: servers.name });
-  await card.getByRole('button', { name: 'Place', exact: true }).click();
+  await card.getByRole('button', { name: 'Разместить таблицу на доске', exact: true }).click();
   await expect(page.locator('.react-flow__node-table')).toHaveCount(1);
   await card.getByTitle('Удалить Dataset', { exact: true }).click();
   await expect(
@@ -511,7 +513,7 @@ test('FK rejects API orphan inserts and realtime orphan edits, then recovers aft
   await page
     .locator('.dataset-card')
     .filter({ hasText: vms.name })
-    .getByRole('button', { name: 'Place', exact: true })
+    .getByRole('button', { name: 'Разместить таблицу на доске', exact: true })
     .click();
   await page.locator('.datasets-panel header button').click();
   await page.getByTitle('Открыть таблицу', { exact: true }).click();
@@ -540,7 +542,7 @@ test('creating a bound infrastructure object from a row prefers hostname and sta
   await page
     .locator('.dataset-card')
     .filter({ hasText: servers.name })
-    .getByRole('button', { name: 'Place', exact: true })
+    .getByRole('button', { name: 'Разместить таблицу на доске', exact: true })
     .click();
   await page.locator('.datasets-panel header button').click();
   await page.getByTitle('Открыть таблицу', { exact: true }).click();
@@ -715,7 +717,7 @@ test('table relationships link records without keys, append atomically, navigate
   await page
     .locator('.dataset-card')
     .filter({ hasText: servers.name })
-    .getByRole('button', { name: 'Place', exact: true })
+    .getByRole('button', { name: 'Разместить таблицу на доске', exact: true })
     .click();
   await page.locator('.datasets-panel header button').click();
   const table = page.locator('.react-flow__node-table');
@@ -813,10 +815,10 @@ test('rename dataset synchronizes views and deleted columns restore original ide
 }) => {
   await page.getByTitle('Данные', { exact: true }).click();
   const card = page.locator('.dataset-card').filter({ hasText: servers.name });
-  await card.getByRole('button', { name: 'Place', exact: true }).click();
+  await card.getByRole('button', { name: 'Разместить таблицу на доске', exact: true }).click();
   await page.locator('.datasets-panel header button').click();
   const table = page.locator('.react-flow__node-table');
-  await table.getByRole('button', { name: 'Открыть', exact: true }).click();
+  await table.getByRole('button', { name: 'Открыть таблицу', exact: true }).click();
   const sheet = page.locator('.dataset-sheet');
   await sheet.getByTitle('Редактировать имя Dataset').click();
   await sheet
@@ -857,7 +859,7 @@ test('rename dataset synchronizes views and deleted columns restore original ide
   await page.getByRole('button').filter({ hasText: 'OWNER' }).click();
   await expect(page.locator('.connection-status')).toHaveText('connected');
   await expect(table).toContainText('Переименованные серверы');
-  await table.getByRole('button', { name: 'Открыть', exact: true }).click();
+  await table.getByRole('button', { name: 'Открыть таблицу', exact: true }).click();
   await sheet.locator('.sheet-deleted-columns summary').click();
   await sheet
     .getByRole('button', { name: 'Восстановить «unused»', exact: true })

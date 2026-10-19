@@ -79,6 +79,16 @@ export function roomUrl(value: unknown) {
     throw new Error('Укажите HTTPS-ссылку без логина и пароля');
   return url.href;
 }
+/** Only a single audio filename inside the deliberately public music folder. */
+export function roomMusicUrl(value: unknown) {
+  if (typeof value === 'string' && value.startsWith('/music/')) {
+    let filename: string;
+    try { filename = decodeURIComponent(value.slice(7)); } catch { throw new Error('Некорректное имя трека'); }
+    if (!filename || filename.startsWith('.') || /[\\/\x00-\x1f?#]/.test(filename) || !/\.(mp3|ogg|wav|m4a|aac|flac|opus)$/i.test(filename)) throw new Error('Некорректное имя трека');
+    return `/music/${encodeURIComponent(filename)}`;
+  }
+  return roomUrl(value);
+}
 function text(value: unknown, max: number) {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > max)
     throw new Error(`Текст: от 1 до ${max} символов`);
@@ -138,7 +148,7 @@ export function applyRoomCommand(
         state.music = {
           source: {
             kind: 'url',
-            value: roomUrl(source.value),
+            value: roomMusicUrl(source.value),
             title: text(source.title || 'Общий трек', 120),
           },
           playing: false,
