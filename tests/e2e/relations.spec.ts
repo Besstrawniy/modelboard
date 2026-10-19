@@ -734,6 +734,12 @@ test('table relationships link records without keys, append atomically, navigate
     name: 'Создать связь данных',
     exact: true,
   });
+  await dialog.getByRole('button', { name: 'Закрыть создание связи' }).focus();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Настроить новую связь' })).toBeFocused();
+  await panel.getByRole('button', { name: 'Настроить новую связь' }).click();
   await dialog
     .getByLabel('Запись слева', { exact: true })
     .selectOption(servers.rows[0].id);

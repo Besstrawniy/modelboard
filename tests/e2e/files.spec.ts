@@ -630,10 +630,10 @@ test('cancelled import writes nothing and snapshots export as PNG and SVG', asyn
       type: 'text/csv',
     },
   ]);
-  await page
-    .getByRole('dialog', { name: 'Импорт файлов' })
-    .getByRole('button', { name: 'Отмена', exact: true })
-    .click();
+  const importDialog = page.getByRole('dialog', { name: 'Импорт файлов' });
+  await expect(importDialog.getByRole('button', { name: 'Отмена', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(importDialog).toHaveCount(0);
   expect(
     Number(
       (

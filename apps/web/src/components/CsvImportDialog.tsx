@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../lib/useDialogFocus';
 import { FileSpreadsheet, Upload, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { CreateDatasetInput } from '@modelboard/shared';
@@ -27,6 +28,7 @@ export function CsvImportDialog({
     [parsed, firstRowIsHeader],
   );
 
+  const dialog = useDialogFocus({ onClose: () => { if (!busy) onCancel(); } });
   const submit = async () => {
     if (!name.trim()) return;
 
@@ -43,7 +45,7 @@ export function CsvImportDialog({
 
   return (
     <div className="modal-backdrop">
-      <section className="csv-dialog" role="dialog" aria-modal="true">
+      <section {...dialog} className="csv-dialog" role="dialog" aria-modal="true" aria-label="Импорт CSV">
         <header className="csv-dialog__header">
           <div>
             <span className="csv-dialog__icon"><FileSpreadsheet size={20} /></span>
@@ -52,7 +54,7 @@ export function CsvImportDialog({
               <small>{parsed.fileName}</small>
             </div>
           </div>
-          <button className="icon-button" onClick={onCancel} disabled={busy}>
+          <button className="icon-button" aria-label="Отменить импорт" onClick={onCancel} disabled={busy}>
             <X size={18} />
           </button>
         </header>

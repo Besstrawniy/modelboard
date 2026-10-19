@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../lib/useDialogFocus';
 import { useMemo, useState } from 'react';
 import { api, type StoredFile } from '../lib/api';
 import { buildImportedSheet, type ParsedFiles } from '../lib/fileFormats';
@@ -40,6 +41,7 @@ export function FileImportDialog({
       }),
     [parsed, header],
   );
+  const dialog = useDialogFocus({ onClose: () => { if (!busy) onCancel(); } });
   const submit = async () => {
     setError('');
     setBusy(true);
@@ -75,7 +77,7 @@ export function FileImportDialog({
   return (
     <div className="file-modal-backdrop" onKeyDown={(e) => e.stopPropagation()}>
       <section
-        className="file-dialog"
+        {...dialog} className="file-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Импорт файлов"

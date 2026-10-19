@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../lib/useDialogFocus';
 import { sameRelationEndpoints } from '@modelboard/shared';
 import { datasetRecordLabel as label } from '../lib/datasetRecordLabel';
 import { api } from '../lib/api';
@@ -103,6 +104,7 @@ export function RelationDialog({
         matchMode: 'FIELDS',
       }),
     );
+  const dialog = useDialogFocus({ onClose: () => { if (!busy) onCancel(); } });
   const submit = async () => {
     setBusy(true);
     setError('');
@@ -145,7 +147,7 @@ export function RelationDialog({
   return (
     <div className="modal-backdrop">
       <section
-        className="relation-dialog"
+        {...dialog} className="relation-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Создать связь данных"
@@ -154,7 +156,7 @@ export function RelationDialog({
           <div>
             <Link2 size={18} /> Создать связь данных
           </div>
-          <button className="icon-button" disabled={busy} onClick={onCancel}>
+          <button className="icon-button" aria-label="Закрыть создание связи" disabled={busy} onClick={onCancel}>
             <X size={18} />
           </button>
         </header>

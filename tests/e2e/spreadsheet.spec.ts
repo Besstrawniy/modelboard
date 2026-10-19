@@ -126,3 +126,21 @@ test('review fixes: exact resize width, header drag, append and narrow table ove
  await sheet(page).getByTitle('Отменить изменение Dataset (Ctrl+Z)').click();
  await expect(cell(page,0,0)).toHaveValue('Item 1');
 });
+
+test('nested column dialog traps focus and Escape preserves the sheet', async ({ page }) => {
+ const add=sheet(page).getByRole('button',{name:'Добавить колонку',exact:true});
+ await add.click();
+ const modal=page.getByRole('dialog',{name:'Настройка колонки',exact:true});
+ await expect(modal).toBeVisible();
+ await modal.getByLabel('Название',{exact:true}).fill('cancelled column');
+ const create=modal.getByRole('button',{name:'Создать',exact:true});
+ await create.focus(); await page.keyboard.press('Tab');
+ await expect(modal.locator('button').first()).toBeFocused();
+ await page.keyboard.press('Shift+Tab'); await expect(create).toBeFocused();
+ await modal.getByLabel('Название',{exact:true}).focus();
+ await page.keyboard.press('Escape'); await expect(modal).toHaveCount(0);
+ await expect(sheet(page)).toBeVisible(); await expect(add).toBeFocused();
+ await expect(sheet(page).getByRole('grid')).toHaveAttribute('aria-colcount','4');
+ await page.keyboard.press('Escape'); await expect(sheet(page)).toHaveCount(0);
+ await expect(page.getByTitle('Открыть таблицу',{exact:true}).first()).toBeFocused();
+});

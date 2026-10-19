@@ -3870,3 +3870,12 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 .table-node { overflow: visible; }
 .table-node__title { border-radius: 11px 11px 0 0; }
 .dataset-sheet__table th, .dataset-sheet__table td { min-width: 0; }
+
+/* Keep keyboard focus visible in dialogs and compact toolbars. */
+[role="dialog"] :is(button, input, select, textarea, a[href], [tabindex]):focus-visible,
+.topbar button:focus-visible,
+.toolbar-panel button:focus-visible,
+.canvas-navigation button:focus-visible {
+  outline: 2px solid #5865da;
+  outline-offset: 2px;
+}

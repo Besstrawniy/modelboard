@@ -197,3 +197,30 @@ test('review fixes: shape palette, ghost placement, sticky draft and connector s
   await page.mouse.up();
   await expect(page.locator('.react-flow__edge-path')).toHaveCount(2);
 });
+
+test('dialog keyboard focus stays inside and returns to its opener', async ({ page }) => {
+  const helpButton = page.getByTitle('Управление Canvas (?)', { exact: true });
+  await helpButton.click();
+  const help = page.getByRole('dialog', { name: 'Управление Canvas', exact: true });
+  const close = help.getByRole('button', { name: 'Закрыть справку', exact: true });
+  const done = help.getByRole('button', { name: 'Понятно', exact: true });
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab'); await expect(done).toBeFocused();
+  await page.keyboard.press('Tab'); await expect(close).toBeFocused();
+  await helpButton.evaluate(element => element.focus());
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Escape'); await expect(help).toHaveCount(0);
+  await expect(helpButton).toBeFocused();
+  const searchButton = page.getByTitle('Поиск по Workspace (Ctrl+K)', { exact: true });
+  await searchButton.click();
+  const search = page.getByRole('dialog', { name: 'Поиск по Workspace', exact: true });
+  const query = search.getByRole('textbox', { name: 'Поисковый запрос' });
+  await expect(query).toBeFocused();
+  await query.fill('Canvas acceptance');
+  await expect(search.locator('.workspace-search__results button').first()).toBeVisible();
+  await search.getByRole('button', { name: 'Закрыть поиск' }).focus();
+  await page.keyboard.press('Enter'); await expect(search).toHaveCount(0);
+  await expect(searchButton).toBeFocused();
+  await page.keyboard.press('Control+k'); await expect(query).toBeFocused();
+  await page.keyboard.press('Escape'); await expect(searchButton).toBeFocused();
+});

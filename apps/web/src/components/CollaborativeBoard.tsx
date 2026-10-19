@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../lib/useDialogFocus';
 import { CanvasEdgeProperties } from './CanvasEdgeProperties';
 import { reconcileCanvasPresence, type CanvasPresence } from '../lib/canvasPresence';
 import { ImageNode } from './ImageNode';
@@ -335,6 +336,7 @@ function BoardInner({
   }, [shapeMenu]);
   const [spacePressed, setSpacePressed] = useState(false);
   const [canvasHelpOpen, setCanvasHelpOpen] = useState(false);
+  const helpDialog = useDialogFocus({ open: canvasHelpOpen, onClose: () => setCanvasHelpOpen(false) });
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number; kind: 'pane' | 'selection'; flowPosition: { x: number; y: number };
   } | null>(null);
@@ -3069,6 +3071,7 @@ function BoardInner({
             }}
           >
             <section
+              {...helpDialog}
               className="canvas-help"
               role="dialog"
               aria-modal="true"

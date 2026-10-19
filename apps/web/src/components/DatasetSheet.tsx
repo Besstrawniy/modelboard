@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../lib/useDialogFocus';
 import { DatasetExport } from './DatasetExport';
 import { DatasetConnections } from './DatasetConnections';
 import { DatasetRename } from './DatasetRename';
@@ -515,23 +516,14 @@ export function DatasetSheet({
     columnId: string;
   } | null>(null);
 
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+  const dialog = useDialogFocus({ containerRef: sheetRef, onClose: () => {
+    if (columnDialog) { setColumnDialog(null); return; }
+    if (cellMenu) { setCellMenu(null); return; }
+    onClose();
+  } });
 
-      event.stopPropagation();
-
-      if (cellMenu) {
-        setCellMenu(null);
-        return;
-      }
-
-      onClose();
-    };
-
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [cellMenu, onClose]);
+  const deleteModal = useDialogFocus({ open: Boolean(deleteColumnTarget), onClose: () => { if (!columnBusy) setDeleteColumnTarget(null); } });
+  const columnModal = useDialogFocus({ open: Boolean(columnDialog), onClose: () => { if (!columnBusy) setColumnDialog(null); } });
 
   useEffect(() => {
     if (!cellMenu) return;
@@ -1582,9 +1574,10 @@ export function DatasetSheet({
 
   useEffect(() => {
     const onDatasetKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('[role="dialog"]') !== sheetRef.current) return;
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
-      const target = event.target as HTMLElement | null;
       const cellNavigation = target?.classList.contains('dataset-sheet__cell-editor') && target.dataset.editing !== 'true';
       const typing = !cellNavigation && (
         target?.tagName === 'INPUT' ||
@@ -1749,18 +1742,20 @@ export function DatasetSheet({
     });
   };
 
+  const conversionModal = useDialogFocus({ open: Boolean(convertColumnTarget && conversionPreview), onClose: () => { if (!columnBusy) setConvertColumnTarget(null); } });
+
   return (
     <div
       className={`dataset-sheet ${draggingRange ? 'is-drag-selecting' : ''}`}
       role="dialog" aria-modal="true" aria-label="Редактор таблицы"
-      ref={sheetRef}
+      {...dialog}
       onMouseDown={() => {
         if (cellMenu) setCellMenu(null);
       }}
     >
       {columnDialog && (
         <div className="dataset-sheet__dialog-backdrop">
-          <section className="dataset-sheet__column-dialog">
+          <section {...columnModal} className="dataset-sheet__column-dialog" role="dialog" aria-modal="true" aria-label="Настройка колонки">
             <header>
               <strong>
                 {columnDialog.mode === 'create'
@@ -1779,7 +1774,6 @@ export function DatasetSheet({
               <label>
                 Название
                 <input
-                  autoFocus
                   maxLength={120}
                   value={columnName}
                   onChange={(event) =>
@@ -1880,7 +1874,7 @@ export function DatasetSheet({
       )}
       {convertColumnTarget && conversionPreview && (
         <div className="dataset-sheet__dialog-backdrop">
-          <section className="dataset-sheet__column-dialog dataset-sheet__column-dialog--wide">
+          <section {...conversionModal} className="dataset-sheet__column-dialog dataset-sheet__column-dialog--wide" role="dialog" aria-modal="true" aria-label="Изменить тип колонки">
             <header>
               <strong>Изменить тип колонки</strong>
               <button
@@ -2008,7 +2002,7 @@ export function DatasetSheet({
 
       {deleteColumnTarget && (
         <div className="dataset-sheet__dialog-backdrop">
-          <section className="dataset-sheet__column-dialog">
+          <section {...deleteModal} className="dataset-sheet__column-dialog" role="dialog" aria-modal="true" aria-label="Удалить колонку">
             <header>
               <strong>Удалить колонку</strong>
               <button

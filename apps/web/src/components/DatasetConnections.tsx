@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../lib/useDialogFocus';
 import { Network, ExternalLink, Unlink, Link, X } from 'lucide-react';
 import { datasetRecordLabel as rowName } from '../lib/datasetRecordLabel';
 import { createPortal } from 'react-dom';
@@ -190,6 +191,7 @@ export function DatasetConnections({
     [target, setTarget] = useState(''),
     [create, setCreate] = useState(false),
     [error, setError] = useState('');
+  const dialog = useDialogFocus({ open, onClose: () => { setOpen(false); setCreate(false); } });
   const load = () =>
     api
       .relations(workspaceId, sessionToken)
@@ -220,6 +222,7 @@ export function DatasetConnections({
             onKeyDown={(e) => e.stopPropagation()}
           >
             <section
+              {...dialog}
               className="dataset-connections"
               role="dialog"
               aria-modal="true"

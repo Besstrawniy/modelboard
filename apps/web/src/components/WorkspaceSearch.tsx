@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../lib/useDialogFocus';
 import {
   Database,
   LayoutDashboard,
@@ -37,9 +38,7 @@ export function WorkspaceSearch({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  const dialog = useDialogFocus({ onClose });
 
   useEffect(() => {
     const normalized = queryText.trim();
@@ -134,14 +133,15 @@ export function WorkspaceSearch({
       }}
     >
       <section
+        {...dialog}
         className="workspace-search"
+        aria-label="Поиск по Workspace"
         role="dialog"
         aria-modal="true"
         onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            onClose();
-          } else if (event.key === 'ArrowDown') {
+          dialog.onKeyDown(event);
+          if (event.defaultPrevented || event.target !== inputRef.current) return;
+          if (event.key === 'ArrowDown') {
             event.preventDefault();
             setSelectedIndex((value) =>
               Math.min(results.length - 1, value + 1),
@@ -162,13 +162,14 @@ export function WorkspaceSearch({
           <input
             ref={inputRef}
             value={queryText}
+            aria-label="Поисковый запрос"
             placeholder="Найти Board, Dataset, сервер, VM…"
             onChange={(event) =>
               setQueryText(event.target.value)
             }
           />
           {busy && <span className="workspace-search__busy">поиск…</span>}
-          <button className="icon-button" onClick={onClose}>
+          <button className="icon-button" aria-label="Закрыть поиск" onClick={onClose}>
             <X size={17} />
           </button>
         </header>
