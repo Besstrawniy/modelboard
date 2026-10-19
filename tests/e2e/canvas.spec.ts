@@ -169,6 +169,9 @@ test('marquee, Shift resize, rotation handle and keyboard tool escape',async({pa
  // Close the data-binding inspector to leave the resize handle unobstructed.
  await page.locator('.inspector-panel > header button').click();
  const original=await nodes.nth(0).boundingBox();const handle=await nodes.nth(0).locator('.react-flow__resize-control.bottom.right.handle').boundingBox();
+ const hit = await page.evaluate(({x,y})=>document.elementFromPoint(x,y)?.outerHTML,{x:handle!.x+handle!.width/2,y:handle!.y+handle!.height/2});
+ await test.info().attach('resize-hit-target',{body:JSON.stringify({original,handle,hit}),contentType:'application/json'});
+ expect(hit).toContain('react-flow__resize-control');
  await page.keyboard.down('Shift');await page.mouse.move(handle!.x+handle!.width/2,handle!.y+handle!.height/2);await page.mouse.down();await page.mouse.move(handle!.x+100,handle!.y+70,{steps:10});await page.mouse.up();await page.keyboard.up('Shift');
  await expect.poll(async()=>(await nodes.nth(0).boundingBox())!.width).toBeGreaterThan(original!.width+10);
  const resized=await nodes.nth(0).boundingBox();expect(resized!.width/resized!.height).toBeCloseTo(original!.width/original!.height,1);

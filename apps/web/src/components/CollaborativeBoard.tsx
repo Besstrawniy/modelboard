@@ -1,4 +1,5 @@
 import { CanvasEdgeProperties } from './CanvasEdgeProperties';
+import { reconcileCanvasPresence, type CanvasPresence } from '../lib/canvasPresence';
 import { ImageNode } from './ImageNode';
 import { SessionTools } from './SessionTools';
 import { presenceColor } from '@modelboard/shared';
@@ -89,11 +90,6 @@ import {
   alignCanvasNodes, distributeCanvasNodes, reorderCanvasLayers,
   canvasNodeSize, type CanvasAlignment, type CanvasDistribution, type CanvasLayerAction,
 } from '../lib/canvasGeometry';
-
-type PresenceState = {
-  user?: { id: string; name: string; role: string };
-  cursor?: { x: number; y: number } | null;
-};
 
 type CsvDropState = {
   parsed: ParsedFiles;
@@ -292,7 +288,7 @@ function BoardInner({
   const [status, setStatus] = useState('connecting');
   const [synced, setSynced] = useState(false);
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
-  const [presence, setPresence] = useState<Array<[number, PresenceState]>>([]);
+  const [presence, setPresence] = useState<CanvasPresence>([]);
   const [rf, setRf] = useState<ReactFlowInstance | null>(null);
   const initialViewReady = useRef(false);
   useEffect(() => {
@@ -462,10 +458,7 @@ function BoardInner({
       },
       onStateless: ({payload})=>{const message=receiveResourceMessage(payload);if(message?.kind==='dataset-deleted')setSheetTarget(current=>current?.datasetId===message.datasetId?null:current);},
       onAwarenessChange: ({ states }) => {
-        const remote = (Array.from(states.entries()) as Array<[number, PresenceState]>).filter(([clientId])=>clientId!==ydoc.clientID);
-        // Local cursor movement changes awareness on every pointer event. It does
-        // not change anything drawn here, so keep the canvas render unchanged.
-        setPresence(current=>current.length===remote.length&&current.every(([id,state],index)=>id===remote[index][0]&&state===remote[index][1])?current:remote);
+        setPresence(current => reconcileCanvasPresence(current, states, ydoc.clientID));
       },
     });
 
