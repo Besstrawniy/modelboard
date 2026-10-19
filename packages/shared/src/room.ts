@@ -173,7 +173,7 @@ export function applyRoomCommand(
       state.music.anchor = now;
       break;
     case 'timer-start': {
-      const duration = number(command.durationMs, 5000, 4 * 60 * 60 * 1000);
+      const duration = number(command.durationMs, 1000, 4 * 60 * 60 * 1000);
       state.timer = {
         durationMs: duration,
         remainingMs: duration,

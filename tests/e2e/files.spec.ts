@@ -176,10 +176,9 @@ test('drop CSV, TSV and multi-sheet XLSX into tables and export formulas and sty
     .click();
   const sheet = page.locator('.dataset-sheet');
   await expect(sheet.locator('tbody textarea').last()).toHaveValue('25');
+  await sheet.getByRole('button',{name:'Экспорт таблицы',exact:true}).click();
   const download = page.waitForEvent('download');
-  await sheet
-    .getByRole('button', { name: 'Экспорт таблицы', exact: true })
-    .click();
+  await sheet.getByRole('button',{name:'Скачать файл',exact:true}).click();
   const file = await download,
     path = info.outputPath('export.xlsx');
   await file.saveAs(path);

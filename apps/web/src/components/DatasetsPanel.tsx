@@ -108,9 +108,10 @@ export function DatasetsPanel({
                   <Table2 size={17} />
                 </div>
                 <div className="dataset-card__meta">
-                  <strong>{dataset.name}</strong><DatasetRename id={dataset.id} name={dataset.name} token={token} readOnly={readOnly} onSaved={()=>void load()}/>
+                  <strong>{dataset.name}</strong>
                   <small>{dataset.kind}</small>
                 </div>
+                <DatasetRename id={dataset.id} name={dataset.name} token={token} readOnly={readOnly} onSaved={()=>void load()}/>
                 <button
                   disabled={readOnly}
                   onClick={() => onPlace(dataset.id)}

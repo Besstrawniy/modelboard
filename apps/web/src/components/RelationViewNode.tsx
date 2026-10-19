@@ -15,24 +15,11 @@ function rowFields(
   row: DatasetRow,
   columns: Array<{ id: string; name: string }>,
 ) {
-  return columns
-    .slice(0, 4)
-    .map((column) => ({
-      id: column.id,
-      name: column.name,
-      value: row.values[column.id],
-    }))
-    .filter(
-      (field) =>
-        field.value !== null &&
-        field.value !== undefined &&
-        String(field.value) !== '',
-    )
-    .slice(0, 3);
+  return columns.map(column=>({id:column.id,name:column.name,value:row.values[column.id]??'—'}));
 }
 
 export function RelationViewNode({ id, data, selected }: NodeProps<any>) {
-  const { readOnly, sessionToken, workspaceId, openDatasetSheet } =
+  const { readOnly, sessionToken, workspaceId, openDatasetSheet, updateNodeData } =
     useBoardActions();
 
   const limit = useStore(
@@ -169,6 +156,7 @@ export function RelationViewNode({ id, data, selected }: NodeProps<any>) {
         </span>
       </div>
 
+      {selected&&!readOnly&&otherDataset&&<details className="relation-columns nodrag nowheel"><summary>Поля списка</summary>{otherDataset.columns.map(column=><label key={column.id}><input aria-label={`Показывать ${column.name}`} type="checkbox" checked={(node.visibleColumnIds??otherDataset.columns.slice(0,3).map(c=>c.id)).includes(column.id)} onChange={event=>{const ids=node.visibleColumnIds??otherDataset.columns.slice(0,3).map(c=>c.id);updateNodeData(id,{visibleColumnIds:event.target.checked?[...ids,column.id]:ids.filter(item=>item!==column.id)});}}/>{column.name}</label>)}</details>}
       <div className="relation-view-node__summary">
         Найдено связанных строк: <strong>{matches.length}</strong>
       </div>
@@ -185,18 +173,18 @@ export function RelationViewNode({ id, data, selected }: NodeProps<any>) {
         ) : (
           matches.slice(first, last).map((row) => {
             const fields = otherDataset
-              ? rowFields(row, otherDataset.columns)
+              ? rowFields(row, node.visibleColumnIds?otherDataset.columns.filter(column=>node.visibleColumnIds!.includes(column.id)):otherDataset.columns.slice(0,3))
               : [];
 
             return (
               <button
-                className="relation-view-node__row nodrag"
+                className="relation-view-node__row nodrag" style={{minWidth:Math.max(280,fields.length*85+30)}}
                 key={row.id}
                 onClick={() =>
                   otherDataset && openDatasetSheet(otherDataset.id, row.id)
                 }
               >
-                <div>
+                <div style={{gridTemplateColumns:`repeat(${Math.max(1,fields.length)},minmax(65px,1fr))`}}>
                   {fields.map((field) => (
                     <span key={field.id}>
                       <small>{field.name}</small>

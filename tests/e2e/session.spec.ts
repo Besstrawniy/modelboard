@@ -247,7 +247,9 @@ test('named cursors, shared music with individual listening, timer, reactions an
     await expect(page.locator('.room-music')).toContainText('играет');
     await section(page, 'Таймер');
     await section(viewer, 'Таймер');
-    await page.getByLabel('Длительность таймера в минутах').fill('1');
+    await expect(page.locator('.timer-editor input')).toHaveCount(4);
+    await expect(page.locator('.timer-editor').locator('..').getByRole('button',{name:'Запустить таймер',exact:true})).toHaveCount(1);
+    await page.getByLabel('Единицы минут',{exact:true}).fill('1');
     await page
       .getByRole('button', { name: 'Запустить таймер', exact: true })
       .click();

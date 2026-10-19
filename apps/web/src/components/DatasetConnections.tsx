@@ -126,7 +126,7 @@ function ConnectionRecords({
           <div className="connection-records-list">{other &&
             matches.map((r) => (
               <div key={r.id}>
-                <button
+                <button className="connection-record-link"
                   onClick={() => {
                     onNavigate();
                     openDatasetSheet(other.id, r.id);
@@ -211,7 +211,7 @@ export function DatasetConnections({
   return (
     <>
       <button className="nodrag" title="Связи таблицы" aria-label="Связи таблицы" onClick={() => setOpen(true)}>
-        <Network size={15}/>
+        <Link size={15}/>
       </button>
       {open &&
         createPortal(

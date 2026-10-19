@@ -334,7 +334,7 @@ export function InspectorPanel({
 
 
       <div className="inspector-panel__body">
-      {!readOnly && <CanvasProperties node={node} onChange={patch=>onUpdateNodeData(node.id,patch)} />}
+      {!readOnly && <CanvasProperties key={node.id} node={node} onChange={patch=>onUpdateNodeData(node.id,patch)} />}
         <section className="inspector-section">
           <h3>Объект</h3>
           <label>

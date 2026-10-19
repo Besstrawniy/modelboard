@@ -1,3 +1,6 @@
+import { TextFormatControls } from './TextFormatControls';
+import { ColorControl } from './ColorControl';
+import { formulaSuggestions, formulaReferences, formulaReferenceStyle } from '../lib/formulaEditing';
 import { useDialogFocus } from '../lib/useDialogFocus';
 import { DatasetExport } from './DatasetExport';
 import { DatasetConnections } from './DatasetConnections';
@@ -74,6 +77,9 @@ type AutofillDrag = {
   sourceStart: number;
   sourceEnd: number;
   targetEnd: number;
+  sourceStartColumn:number;
+  sourceEndColumn:number;
+  targetColumn:number;
 };
 
 function compareValues(a: DatasetCellValue, b: DatasetCellValue) {
@@ -261,12 +267,15 @@ export function SheetCell({
   const original=useRef('');
   const cancelled=useRef(false);
 
+  useEffect(()=>{if(editDraft===null)original.current=formulaText??(raw===null||raw===undefined?'':String(raw));},[raw,formulaText,editDraft]);
+
   if (column.dataType === 'BOOLEAN' && !formulaActive) {
     return (
       <select
         className="dataset-sheet__cell-editor"
         style={{
-          color: format?.color || undefined, textDecoration: format?.underline ? 'underline' : undefined, whiteSpace: format?.wrap ? 'pre-wrap' : undefined,
+          fontFamily:format?.fontFamily||undefined,fontSize:format?.fontSize?`${format.fontSize}px`:undefined,
+        color: format?.color || undefined, textDecoration: format?.underline ? 'underline' : undefined, whiteSpace: format?.wrap ? 'pre-wrap' : undefined,
         fontWeight: format?.bold ? 700 : undefined,
           fontStyle: format?.italic ? 'italic' : undefined,
           textAlign:
@@ -322,6 +331,7 @@ export function SheetCell({
       data-editing={editDraft !== null}
       className="dataset-sheet__cell-editor"
       style={{
+        fontFamily:format?.fontFamily||undefined,fontSize:format?.fontSize?`${format.fontSize}px`:undefined,
         color: format?.color || undefined, textDecoration: format?.underline ? 'underline' : undefined, whiteSpace: format?.wrap ? 'pre-wrap' : undefined,
         fontWeight: format?.bold ? 700 : undefined,
         fontStyle: format?.italic ? 'italic' : undefined,
@@ -338,7 +348,7 @@ export function SheetCell({
       }}
       readOnly={readOnly}
       aria-invalid={Boolean(editError)}
-      title={editError}
+      title={editError||(raw==='#CYCLE!'?'Циклическая ссылка: формула зависит от собственной ячейки':'')}
       value={
         editDraft !== null
           ? editDraft
@@ -356,9 +366,10 @@ export function SheetCell({
         catch(error){setEditError(error instanceof Error?error.message:String(error));}
       }}
       onKeyDown={(event) => {
-        if(event.shiftKey && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();onNavigate?.(({ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'} as const)[event.key as 'ArrowUp'],true);return;}
+        if(editDraft===null && event.shiftKey && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();onNavigate?.(({ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'} as const)[event.key as 'ArrowUp'],true);return;}
+        if(editDraft===null&&!readOnly&&event.key.length===1&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();setEditDraft(event.key);setEditError('');return;}
         if(event.key==='F2'){event.preventDefault();if(!readOnly)setEditDraft(original.current);return;}
-        if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelled.current=true;setEditDraft(null);setEditError('');event.currentTarget.blur();return;}
+        if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelled.current=true;setEditDraft(null);setEditError('');return;}
 
         if (event.key === 'Enter' || event.key === 'Tab') {
           event.preventDefault();
@@ -375,7 +386,7 @@ export function SheetCell({
           return;
         }
 
-        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        if (editDraft===null && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
           event.preventDefault();
           onNavigate?.(
             event.key === 'ArrowUp' ? 'up' : 'down',
@@ -384,7 +395,7 @@ export function SheetCell({
         }
 
         if (
-          event.key === 'ArrowLeft' &&
+          editDraft===null && event.key === 'ArrowLeft' &&
           event.currentTarget.selectionStart === 0 &&
           event.currentTarget.selectionEnd === 0
         ) {
@@ -394,7 +405,7 @@ export function SheetCell({
         }
 
         if (
-          event.key === 'ArrowRight' &&
+          editDraft===null && event.key === 'ArrowRight' &&
           event.currentTarget.selectionStart ===
             event.currentTarget.value.length &&
           event.currentTarget.selectionEnd ===
@@ -434,7 +445,6 @@ export function DatasetSheet({
     redo,
     setCell,
     setFormula,
-    clearFormula,
     applyCellBatch,
     applyFormatBatch,
     addColumn,
@@ -457,6 +467,13 @@ export function DatasetSheet({
   const [scrollTop,setScrollTop]=useState(0);
   const clipboardRef=useRef<{text:string;cut:boolean;cells:Array<Array<{rowId:string;columnId:string;value:DatasetCellValue;expression?:string;format?:DatasetCellFormat}>>}|null>(null);
   const [query, setQuery] = useState('');
+  const [findOpen,setFindOpen]=useState(false);
+  const [findText,setFindText]=useState('');
+  const [findRegex,setFindRegex]=useState(false);
+  const [findIndex,setFindIndex]=useState(0);
+  const findInputRef=useRef<HTMLInputElement>(null);
+  const [formulaEditing,setFormulaEditing]=useState(false);
+  const formulaTarget=useRef<{rowId:string;columnId:string}|null>(null);
   const [sort, setSort] = useState<SortState>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [columnFilters, setColumnFilters] =
@@ -518,6 +535,8 @@ export function DatasetSheet({
 
   const dialog = useDialogFocus({ containerRef: sheetRef, onClose: () => {
     if (columnDialog) { setColumnDialog(null); return; }
+    if (findOpen) { setFindOpen(false); return; }
+    if (clipboardRef.current?.cut) { clipboardRef.current=null;setClipboardMessage('');return; }
     if (cellMenu) { setCellMenu(null); return; }
     onClose();
   } });
@@ -758,7 +777,7 @@ export function DatasetSheet({
       : undefined;
 
   useEffect(() => {
-    if(document.activeElement?.closest('.dataset-sheet__formula-input-wrap'))return;
+    if(document.activeElement?.closest('.dataset-sheet__formula-input-wrap') && formulaTarget.current?.rowId===selectedCell?.rowId && formulaTarget.current?.columnId===selectedCell?.columnId)return;
     if (!selectedCell || !selectedColumn || !selectedRow) {
       setFormulaInput('');
       setFormulaError('');
@@ -799,6 +818,9 @@ export function DatasetSheet({
     setFormulaError('');
 
     try {
+      const target=formulaTarget.current??selectedCell;
+      const targetColumn=dataset?.columns.find(c=>c.id===target.columnId);
+      if(!targetColumn)return;
       const trimmed = formulaInput.trim();
 
       if (trimmed.startsWith('=')) {
@@ -808,20 +830,12 @@ export function DatasetSheet({
           dataset?.rows ?? [],
         );
         setFormula(
-          selectedCell.rowId,
-          selectedCell.columnId,
+          target.rowId,
+          target.columnId,
           canonical,
         );
       } else {
-        clearFormula(
-          selectedCell.rowId,
-          selectedCell.columnId,
-        );
-        setCell(
-          selectedCell.rowId,
-          selectedCell.columnId,
-          normalizeInput(trimmed, selectedColumn),
-        );
+        setCell(target.rowId,target.columnId,normalizeInput(formulaInput,targetColumn));
       }
     } catch (error) {
       setFormulaError(
@@ -906,121 +920,30 @@ export function DatasetSheet({
   };
 
   const applyAutofill = (drag: AutofillDrag) => {
-    if (
-      !dataset ||
-      drag.targetEnd <= drag.sourceEnd
-    ) {
-      return;
+    if(!dataset)return;
+    const horizontal=drag.targetColumn>drag.sourceEndColumn;
+    const writes:any[]=[];
+    const height=drag.sourceEnd-drag.sourceStart+1,width=drag.sourceEndColumn-drag.sourceStartColumn+1;
+    for(let r=drag.sourceStart;r<=drag.targetEnd;r++)for(let c=drag.sourceStartColumn;c<=drag.targetColumn;c++){
+      if(r<=drag.sourceEnd&&c<=drag.sourceEndColumn)continue;
+      const sourceR=drag.sourceStart+(r-drag.sourceStart)%height,sourceC=drag.sourceStartColumn+(c-drag.sourceStartColumn)%width;
+      const sourceRow=visibleRows[sourceR],sourceColumn=dataset.columns[sourceC],row=visibleRows[r],column=dataset.columns[c];
+      if(!sourceRow||!sourceColumn||!row||!column)continue;
+      const expression=formulaByCell.get(formulaKey(sourceRow.id,sourceColumn.id))?.expression;
+      const format=formatByCell.get(formulaKey(sourceRow.id,sourceColumn.id))??null;
+      if(expression){writes.push({rowId:row.id,columnId:column.id,formulaExpression:translateFormulaForCopy(expression,sourceRow.id,sourceColumn.id,row.id,column.id,dataset.rows,dataset.columns),format});continue;}
+      const series=horizontal?dataset.columns.slice(drag.sourceStartColumn,drag.sourceEndColumn+1).map(col=>sourceRow.values[col.id]):visibleRows.slice(drag.sourceStart,drag.sourceEnd+1).map(item=>item.values[sourceColumn.id]);
+      const numeric=series.length>=2&&series.every(value=>typeof value==='number'&&Number.isFinite(value));
+      const step=numeric?Number(series[1])-Number(series[0]):0;
+      const arithmetic=numeric&&series.slice(2).every((v,i)=>Math.abs(Number(v)-Number(series[i+1])-step)<1e-9);
+      const offset=horizontal?c-drag.sourceEndColumn:r-drag.sourceEnd;
+      const value=arithmetic?Number(series.at(-1))+step*offset:sourceRow.values[sourceColumn.id]??null;
+      const typed=value===null?null:parseSheetInput(String(value),column);
+      writes.push({rowId:row.id,columnId:column.id,value:typed,formulaExpression:null,format});
     }
-
-    const sourceRows = visibleRows.slice(
-      drag.sourceStart,
-      drag.sourceEnd + 1,
-    );
-    const targetRows = visibleRows.slice(
-      drag.sourceEnd + 1,
-      drag.targetEnd + 1,
-    );
-
-    if (
-      sourceRows.length === 0 ||
-      targetRows.length === 0
-    ) {
-      return;
-    }
-
-    const source = sourceRows.map((row) => ({
-      rowId: row.id,
-      value: row.values[drag.columnId] ?? null,
-      formula: formulaByCell.get(
-        formulaKey(row.id, drag.columnId),
-      ),
-    }));
-
-    const numeric =
-      source.length >= 2 &&
-      source.every(
-        (item) =>
-          !item.formula &&
-          typeof item.value === 'number' &&
-          Number.isFinite(item.value),
-      );
-
-    let arithmetic = false;
-    let step = 0;
-
-    if (numeric) {
-      const values = source.map(
-        (item) => item.value as number,
-      );
-      step = values[1] - values[0];
-      arithmetic = values
-        .slice(2)
-        .every(
-          (value, index) =>
-            Math.abs(
-              value - values[index + 1] - step,
-            ) < 1e-9,
-        );
-    }
-
-    const writes = targetRows.map((row, index) => {
-      if (numeric && arithmetic) {
-        const last =
-          source[source.length - 1].value as number;
-        return {
-          rowId: row.id,
-          columnId: drag.columnId,
-          value: last + step * (index + 1),
-          formulaExpression: null,
-        };
-      }
-
-      const template = source[index % source.length];
-
-      if (template.formula) {
-        return {
-          rowId: row.id,
-          columnId: drag.columnId,
-          formulaExpression:
-            translateFormulaForCopy(
-              template.formula.expression,
-              template.rowId,
-              drag.columnId,
-              row.id,
-              drag.columnId,
-              dataset.rows,
-              dataset.columns,
-            ),
-        };
-      }
-
-      return {
-        rowId: row.id,
-        columnId: drag.columnId,
-        value: template.value,
-        formulaExpression: null,
-      };
-    });
-
-    applyCellBatch(writes);
-
-    const targetRow =
-      dataset.rows[drag.targetEnd];
-
-    if (targetRow) {
-      setSelectionRange({
-        startRowId:
-          dataset.rows[drag.sourceStart].id,
-        endRowId: targetRow.id,
-        startColumnId: drag.columnId,
-        endColumnId: drag.columnId,
-      });
-      setSelectedCell({
-        rowId: targetRow.id,
-        columnId: drag.columnId,
-      });
-    }
+    if(!writes.length)return;
+    try{applyCellBatch(writes);setSelectionRange({startRowId:visibleRows[drag.sourceStart].id,endRowId:visibleRows[drag.targetEnd].id,startColumnId:dataset.columns[drag.sourceStartColumn].id,endColumnId:dataset.columns[drag.targetColumn].id});}
+    catch(error){setRowError((error as Error).message);}
   };
 
   const beginAutofill = (
@@ -1029,8 +952,6 @@ export function DatasetSheet({
     if (
       readOnly ||
       !selectionBounds ||
-      selectionBounds.startColumn !==
-        selectionBounds.endColumn ||
       query ||
       sort ||
       hasColumnFilters
@@ -1050,6 +971,7 @@ export function DatasetSheet({
       sourceStart: selectionBounds.startRow,
       sourceEnd: selectionBounds.endRow,
       targetEnd: selectionBounds.endRow,
+      sourceStartColumn:selectionBounds.startColumn,sourceEndColumn:selectionBounds.endColumn,targetColumn:selectionBounds.endColumn,
     });
   };
 
@@ -1066,33 +988,11 @@ export function DatasetSheet({
       'td[data-row-id][data-column-id]',
     ) as HTMLTableCellElement | null;
 
-    if (
-      !cell ||
-      cell.dataset.columnId !==
-        autofillDrag.columnId
-    ) {
-      return;
-    }
-
-    const rowId = cell.dataset.rowId;
-    if (!rowId) return;
-
-    const index = rowIndexById.get(rowId);
-    if (
-      index === undefined ||
-      index < autofillDrag.sourceEnd
-    ) {
-      return;
-    }
-
-    setAutofillDrag((current) =>
-      current
-        ? {
-            ...current,
-            targetEnd: index,
-          }
-        : current,
-    );
+    if(!cell)return;
+    const row=rowIndexById.get(cell.dataset.rowId??''),column=dataset?.columns.findIndex(item=>item.id===cell.dataset.columnId)??-1;
+    if(row===undefined||column<0)return;
+    const down=Math.max(0,row-autofillDrag.sourceEnd),right=Math.max(0,column-autofillDrag.sourceEndColumn);
+    setAutofillDrag(current=>current?{...current,targetEnd:right>down?current.sourceEnd:Math.max(current.sourceEnd,row),targetColumn:right>down?Math.max(current.sourceEndColumn,column):current.sourceEndColumn}:current);
   };
 
   const finishAutofill = (
@@ -1100,7 +1000,7 @@ export function DatasetSheet({
   ) => {
     if (!autofillDrag) return;
 
-    applyAutofill(autofillDrag);
+    try{applyAutofill(autofillDrag);}catch(error){setRowError((error as Error).message);}
     setAutofillDrag(null);
 
     if (
@@ -1338,6 +1238,10 @@ export function DatasetSheet({
         writes.push(write);
       }
       if(moves.size)for(const formula of dataset.formulas){const key=formulaKey(formula.rowId,formula.columnId);if(moves.has(key)||targetKeys.has(key))continue;const expression=retargetFormula(formula.expression,moves);if(expression!==formula.expression)writes.push({rowId:formula.rowId,columnId:formula.columnId,formulaExpression:expression});}
+      const currentRows=new Map(dataset.rows.map(row=>[row.id,row]));
+      const finalWrites=new Map(writes.map(write=>[formulaKey(write.rowId,write.columnId),write]));
+      const occupied=[...targetKeys].filter(key=>{const write=finalWrites.get(key);const value=currentRows.get(write.rowId)?.values[write.columnId];return value!==null&&value!==undefined&&value!==''||formulaByCell.has(key);}).length;
+      if(occupied && !window.confirm(`В области вставки уже есть данные (${occupied} ячеек). Заменить их?`))return;
       const created=newRows.length?await prepareRows(newRows):[];
       applyCellBatch(writes,created);
       if(internal?.cut&&!valuesOnly)clipboardRef.current=null;
@@ -1576,6 +1480,7 @@ export function DatasetSheet({
     const onDatasetKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest('[role="dialog"]') !== sheetRef.current) return;
+      if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='f'){event.preventDefault();setFindOpen(true);requestAnimationFrame(()=>{findInputRef.current?.focus();findInputRef.current?.select();});return;}
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
       const cellNavigation = target?.classList.contains('dataset-sheet__cell-editor') && target.dataset.editing !== 'true';
@@ -1712,17 +1617,6 @@ export function DatasetSheet({
     setCurrentView(view?.id??'');setQuery(view?.query??'');setColumnFilters(view?.filters??{});setSort(view?.sort[0]??null);setSecondarySort(view?.sort.slice(1)??[]);
     setHiddenColumns(view?.hiddenColumns??[]);setColumnWidths(view?.columnWidths??{});setFrozenRows(view?.frozenRows??0);setFrozenColumns(view?.frozenColumns??0);if(viewportRef.current)viewportRef.current.scrollTop=0;
   };
-  const fillSelection=(direction:'down'|'right')=>{
-    if(!dataset||!selectionBounds||readOnly)return;
-    const writes:any[]=[];
-    for(let r=selectionBounds.startRow;r<=selectionBounds.endRow;r++)for(let c=selectionBounds.startColumn;c<=selectionBounds.endColumn;c++){
-      const sourceRow=visibleRows[direction==='down'?selectionBounds.startRow:r],sourceColumn=dataset.columns[direction==='right'?selectionBounds.startColumn:c];
-      const targetRow=visibleRows[r],targetColumn=dataset.columns[c];if(!sourceRow||!targetRow)continue;
-      const formula=formulaByCell.get(formulaKey(sourceRow.id,sourceColumn.id));
-      writes.push({rowId:targetRow.id,columnId:targetColumn.id,...(formula?{formulaExpression:translateFormulaForCopy(formula.expression,sourceRow.id,sourceColumn.id,targetRow.id,targetColumn.id,dataset.rows,dataset.columns)}:{value:sourceRow.values[sourceColumn.id]??null,formulaExpression:null})});
-    }
-    applyCellBatch(writes);
-  };
   const selectionStats=useMemo(()=>{
     if(!dataset||!selectionBounds)return null;
     return sheetSelectionSummary(visibleRows.slice(selectionBounds.startRow,selectionBounds.endRow+1).flatMap(row=>dataset.columns.slice(selectionBounds.startColumn,selectionBounds.endColumn+1).map(column=>row.values[column.id]??null)));
@@ -1740,6 +1634,26 @@ export function DatasetSheet({
 
       return null;
     });
+  };
+
+  const activeReferences=useMemo(()=>formulaEditing?formulaReferences(formulaInput,dataset?.rows.length??0,dataset?.columns.length??0):[],[formulaEditing,formulaInput,dataset?.rows.length,dataset?.columns.length]);
+  const findResults=useMemo(()=>{
+    const cells:Array<{rowId:string;columnId:string}>=[];
+    if(!findOpen||!dataset||!findText)return {cells,error:''};
+    let match:(text:string)=>boolean;
+    try{const regex=findRegex?new RegExp(findText,'i'):null;match=text=>regex?regex.test(text):text.toLocaleLowerCase().includes(findText.toLocaleLowerCase());}
+    catch{return {cells,error:'Некорректное регулярное выражение'};}
+    for(const row of visibleRows)for(const column of dataset.columns){if(hiddenColumns.includes(column.id))continue;if(match(String(row.values[column.id]??'')))cells.push({rowId:row.id,columnId:column.id});}
+    return {cells,error:''};
+  },[dataset,visibleRows,findOpen,findText,findRegex,hiddenColumns]);
+  const canonicalRowIndexes=useMemo(()=>new Map((dataset?.rows??[]).map((row,index)=>[row.id,index])),[dataset?.rows]);
+  const findCellKeys=useMemo(()=>new Set(findResults.cells.map(cell=>formulaKey(cell.rowId,cell.columnId))),[findResults]);
+  const cutCellKeys=new Set(clipboardRef.current?.cut?clipboardRef.current.cells.flat().map(cell=>formulaKey(cell.rowId,cell.columnId)):[]);
+  const goToFind=(direction:number)=>{
+    if(!findResults.cells.length)return;
+    const index=(findIndex+direction+findResults.cells.length)%findResults.cells.length;
+    setFindIndex(index);const cell=findResults.cells[index];setSelectedCell(cell);setSelectionRange({startRowId:cell.rowId,endRowId:cell.rowId,startColumnId:cell.columnId,endColumnId:cell.columnId});
+    const row=visibleRows.findIndex(item=>item.id===cell.rowId);if(viewportRef.current)viewportRef.current.scrollTop=Math.max(0,(row-3)*ROW_HEIGHT);
   };
 
   const conversionModal = useDialogFocus({ open: Boolean(convertColumnTarget && conversionPreview), onClose: () => { if (!columnBusy) setConvertColumnTarget(null); } });
@@ -2071,14 +1985,14 @@ export function DatasetSheet({
             <Database size={18} />
           </span>
           <div>
-            <strong>{dataset?.name ?? 'Dataset'}</strong><>{dataset&&<DatasetConnections dataset={dataset}/>}</><DatasetRename id={datasetId} name={dataset?.name??''} token={token} readOnly={readOnly}/>
+            <strong>{dataset?.name ?? 'Dataset'}</strong><DatasetRename id={datasetId} name={dataset?.name??''} token={token} readOnly={readOnly}/>
             <small>
               {dataset?.kind ?? '—'} · {pendingChanges?'saving':status}
             </small>
           </div>
         </div>
 
-        <>{dataset&&<DatasetExport dataset={dataset}/>}</>
+
         <div className="dataset-sheet__stats">
           <span>{dataset?.rows.length ?? 0} строк</span>
           <span>{dataset?.columns.length ?? 0} колонок</span>
@@ -2095,60 +2009,9 @@ export function DatasetSheet({
       </header>
 
       {!readOnly && deletedColumns.length>0 && <details className="sheet-deleted-columns"><summary>Удалённые колонки ({deletedColumns.length}) — восстановить</summary><p>Восстанавливаются исходный ID поля, значения существующих строк, формулы и оформление. Последнее действие также можно отменить через Ctrl+Z.</p>{deletedColumns.map(column=><button key={column.id} onClick={()=>restoreColumn(column.id)}>Восстановить «{column.name}»</button>)}</details>}
-      <div className="dataset-sheet__formula-bar">
-        <div className="dataset-sheet__formula-cell">
-          {selectedCell && selectedColumn && selectedRow
-            ? `${selectedAddress} · ${selectedColumn.name} · строка ${selectedRow.ordinal + 1}`
-            : 'Ячейка не выбрана'}
-        </div>
-
-        <div className="dataset-sheet__formula-input-wrap">
-          <Sigma size={15} />
-          <input
-            value={formulaInput}
-            disabled={!selectedCell || readOnly}
-            placeholder="Формула: =B2*C2, =SUM(B2:B10) или =[price]*[quantity]"
-            onChange={(event) =>
-              setFormulaInput(event.target.value)
-            }
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                commitFormulaBar();
-              }
-            }}
-          />
-          {!readOnly && selectedCell && (
-            <button
-              onClick={commitFormulaBar}
-              title="Применить (Enter)"
-            >
-              <Check size={14} />
-            </button>
-          )}
-        </div>
-
-        {formulaError ? (
-          <div className="dataset-sheet__formula-error">
-            {formulaError}
-          </div>
-        ) : (
-          <div className="dataset-sheet__formula-hint">
-            Shift-клик расширяет выделение до прямоугольного диапазона.
-            Для одной колонки маркер в углу включает autofill.
-          </div>
-        )}
-      </div>
 
       <div className="dataset-sheet__toolbar">
-        <label className="dataset-sheet__search">
-          <Search size={15} />
-          <input
-            value={query}
-            placeholder="Поиск по всем колонкам…"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
+        <button title="Найти в таблице (Ctrl+F)" aria-label="Найти в таблице" onClick={()=>{setFindOpen(true);requestAnimationFrame(()=>findInputRef.current?.focus());}}><Search size={15}/></button>
 
         <button
           className={`dataset-sheet__filter-toggle ${filtersOpen ? 'is-active' : ''}`}
@@ -2216,30 +2079,8 @@ export function DatasetSheet({
             >
               +.0
             </button>
-            <button
-              className={selectedFormat?.bold ? 'is-active' : ''}
-              onClick={() =>
-                formatCellsInSelection({
-                  bold: !selectedFormat?.bold,
-                })
-              }
-              title="Жирный"
-            >
-              <BoldIcon size={14} />
-            </button>
-
-            <button
-              className={selectedFormat?.italic ? 'is-active' : ''}
-              onClick={() =>
-                formatCellsInSelection({
-                  italic: !selectedFormat?.italic,
-                })
-              }
-              title="Курсив"
-            >
-              <ItalicIcon size={14} />
-            </button>
-
+            <TextFormatControls key={`${selectedCell?.rowId}:${selectedCell?.columnId}`} value={selectedFormat??{}} onChange={formatCellsInSelection} colorLabel="Цвет текста ячеек" onPreviewColor={color=>sheetRef.current?.querySelectorAll<HTMLElement>('td.is-range-selected .dataset-sheet__cell-editor,td.is-selected-cell .dataset-sheet__cell-editor').forEach(element=>element.style.color=color)}/>
+            <button title="Перенос текста" aria-label="Перенос текста" aria-pressed={Boolean(selectedFormat?.wrap)} onClick={()=>formatCellsInSelection({wrap:!selectedFormat?.wrap})}>↵</button>
             <button
               className={selectedFormat?.align === 'LEFT' ? 'is-active' : ''}
               onClick={() =>
@@ -2276,29 +2117,12 @@ export function DatasetSheet({
               <AlignRight size={14} />
             </button>
 
-            <label
-              className="dataset-sheet__background-picker"
-              title="Цвет фона"
-            >
-              <PaintBucket size={13} />
-              <input
-                type="color"
-                value={
-                  selectedFormat?.background ??
-                  '#ffffff'
-                }
-                onChange={(event) =>
-                  formatCellsInSelection({
-                    background:
-                      event.target.value,
-                  })
-                }
-              />
-            </label>
+            <ColorControl key={`background:${selectedCell?.rowId}:${selectedCell?.columnId}`} label="Цвет фона" value={selectedFormat?.background??'#ffffff'} onChange={background=>formatCellsInSelection({background})} onPreview={color=>sheetRef.current?.querySelectorAll<HTMLElement>('td.is-range-selected .dataset-sheet__cell-editor,td.is-selected-cell .dataset-sheet__cell-editor').forEach(element=>element.style.backgroundColor=color)}><PaintBucket size={14}/></ColorControl>
 
             <button
               onClick={() =>
                 formatCellsInSelection({
+                  fontFamily:null,fontSize:null,color:null,underline:false,wrap:false,
                   bold: false,
                   italic: false,
                   align: null,
@@ -2352,7 +2176,7 @@ export function DatasetSheet({
           </button>
         )}
 
-        {!readOnly && (
+        <details className="sheet-command-menu"><summary>Структура</summary><div className="sheet-command-menu__body" onClick={event=>{if((event.target as Element).closest('button'))event.currentTarget.closest('details')?.removeAttribute('open');}}>        {!readOnly && (
           <button
             className="dataset-sheet__add-column" title="Добавить колонку справа" aria-label="Добавить колонку"
             onClick={() => {
@@ -2365,7 +2189,7 @@ export function DatasetSheet({
               setColumnError('');
             }}
           >
-            <Plus size={14} />
+            <Plus size={14} /> Добавить колонку
           </button>
         )}
 
@@ -2405,8 +2229,7 @@ export function DatasetSheet({
               }
             }}
           >
-            <Plus size={14} />
-
+            <Plus size={14} /> Добавить строку
           </button>
         )}
 
@@ -2435,18 +2258,72 @@ export function DatasetSheet({
             </>
           )}
         </div>
+<p>Закрепление оставляет верхние строки и левые колонки видимыми при прокрутке.</p></div></details>
+        {dataset&&<DatasetExport dataset={dataset}/>}
         <div className="dataset-sheet__page-info">
           Показано {pageRows.length} из {visibleRows.length}
         </div>
       </div>
 
-      {dataset&&<SpreadsheetTools dataset={dataset} readOnly={readOnly} rowId={selectedCell?.rowId} columnId={selectedCell?.columnId}
-        onReorder={reorder} currentView={currentView} onApplyView={applyView} onSaveView={(name)=>{const id=currentView||crypto.randomUUID();saveView({id,name,query,filters:columnFilters,sort:[...(sort?[sort]:[]),...secondarySort],hiddenColumns,columnWidths,frozenRows,frozenColumns});setCurrentView(id);}}
+      <details className="sheet-options"><summary>Данные и сохранённые виды</summary><p>Вид сохраняет фильтры, порядок сортировки, скрытые колонки и закрепление, чтобы быстро возвращаться к нужной выборке.</p><label>Фильтр строк<input aria-label="Фильтр строк" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Оставить строки с текстом…"/></label>      {dataset&&<SpreadsheetTools dataset={dataset} readOnly={readOnly} rowId={selectedCell?.rowId} columnId={selectedCell?.columnId}
+        currentView={currentView} onApplyView={applyView} onSaveView={(name)=>{const id=currentView||crypto.randomUUID();saveView({id,name,query,filters:columnFilters,sort:[...(sort?[sort]:[]),...secondarySort],hiddenColumns,columnWidths,frozenRows,frozenColumns});setCurrentView(id);}}
         onDeleteView={(id)=>{deleteView(id);setCurrentView('');}} onSaveRule={saveRule} onDeleteRule={deleteRule}
         onHide={(id)=>{if(dataset.columns.length-hiddenColumns.length>1)setHiddenColumns(list=>[...new Set([...list,id])]);}} onShowAll={()=>setHiddenColumns([])}
-        onFill={fillSelection} onCut={()=>void copyCells(true)} onPasteValues={()=>void pasteCells(true)} onFormat={formatCellsInSelection}
         onMultiSort={(columnId,direction)=>setSecondarySort(list=>[...list.filter(item=>item.columnId!==columnId),{columnId,direction}])}/ >}
-      {dataset&&<div className="sheet-summary" role="status">{selectionStats ? <>Заполнено: {selectionStats.count} · Чисел: {selectionStats.numbers} · Сумма: {selectionStats.sum} · Среднее: {selectionStats.average??'—'}</> : 'Выделите ячейки для расчёта суммы и среднего'}{pendingChanges>0?' · Сохранение…':''}</div>}
+</details>
+
+      {findOpen&&<div className="sheet-find" role="search" aria-label="Поиск в таблице"><Search size={15}/><input ref={findInputRef} aria-label="Найти в таблице" value={findText} maxLength={200} onChange={e=>{setFindText(e.target.value);setFindIndex(0);}} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();goToFind(event.shiftKey?-1:1);}if(event.key==='Escape'){event.preventDefault();event.stopPropagation();setFindOpen(false);}}}/><label><input type="checkbox" aria-label="Регулярное выражение" checked={findRegex} onChange={e=>setFindRegex(e.target.checked)}/>.*</label><span role="status">{findResults.error||`${findResults.cells.length?findIndex%findResults.cells.length+1:0} / ${findResults.cells.length}`}</span><button aria-label="Предыдущее совпадение" onClick={()=>goToFind(-1)}>↑</button><button aria-label="Следующее совпадение" onClick={()=>goToFind(1)}>↓</button><button aria-label="Закрыть поиск в таблице" onClick={()=>setFindOpen(false)}><X size={14}/></button></div>}
+      <div className="dataset-sheet__formula-bar">
+        <div className="dataset-sheet__formula-cell">
+          {selectedCell && selectedColumn && selectedRow
+            ? `${selectedAddress} · ${selectedColumn.name} · строка ${selectedRow.ordinal + 1}`
+            : 'Ячейка не выбрана'}
+        </div>
+
+        <div className="dataset-sheet__formula-input-wrap">
+          <Sigma size={15} />
+          <input
+            aria-label="Формула или значение ячейки"
+            value={formulaInput}
+            onFocus={()=>{formulaTarget.current=selectedCell;setFormulaEditing(true);}}
+            onBlur={()=>setFormulaEditing(false)}
+            disabled={!selectedCell || readOnly}
+            placeholder="Формула: =B2*C2, =SUM(B2:B10) или =[price]*[quantity]"
+            onChange={(event) =>
+              setFormulaInput(event.target.value)
+            }
+            onKeyDown={(event) => {
+              if(event.key==='Tab'&&formulaSuggestions(formulaInput).length){event.preventDefault();const name=formulaSuggestions(formulaInput)[0][0];setFormulaInput(text=>text.replace(/[A-Z]+$/i,`${name}(`));return;}
+              if(event.key==='Escape'){event.preventDefault();event.stopPropagation();setFormulaEditing(false);event.currentTarget.blur();return;}
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                commitFormulaBar();
+              }
+            }}
+          />
+          {formulaEditing&&formulaSuggestions(formulaInput).length>0&&<div className="formula-suggestions" role="listbox" aria-label="Подсказки формул">{formulaSuggestions(formulaInput).map(([name,example,description])=><button key={name} role="option" aria-selected="false" onMouseDown={event=>event.preventDefault()} onClick={()=>setFormulaInput(text=>text.replace(/[A-Z]+$/i,`${name}(`))}><strong>{name}</strong><span>{description}</span><small>={example}</small></button>)}</div>}
+          {!readOnly && selectedCell && (
+            <button
+              onClick={commitFormulaBar}
+              title="Применить (Enter)"
+            >
+              <Check size={14} />
+            </button>
+          )}
+        </div>
+
+        {formulaError ? (
+          <div className="dataset-sheet__formula-error">
+            {formulaError}
+          </div>
+        ) : (
+          <div className="dataset-sheet__formula-hint">
+            Shift-клик расширяет выделение до прямоугольного диапазона.
+            Для одной колонки маркер в углу включает autofill.
+          </div>
+        )}
+      </div>
+
       <div className="dataset-sheet__viewport" ref={viewportRef} onScroll={(event)=>setScrollTop(event.currentTarget.scrollTop)}>
         {!dataset || !synced ? (
           <div className="dataset-sheet__loading">
@@ -2755,18 +2632,13 @@ export function DatasetSheet({
                         selectionBounds!.startColumn &&
                       columnIndex <=
                         selectionBounds!.endColumn;
-                    const fillPreview =
-                      autofillDrag?.columnId === column.id &&
-                      rowIndex > autofillDrag.sourceEnd &&
-                      rowIndex <= autofillDrag.targetEnd;
+                    const fillPreview = Boolean(autofillDrag)&&rowIndex>=autofillDrag!.sourceStart&&rowIndex<=autofillDrag!.targetEnd&&columnIndex>=autofillDrag!.sourceStartColumn&&columnIndex<=autofillDrag!.targetColumn&&(rowIndex>autofillDrag!.sourceEnd||columnIndex>autofillDrag!.sourceEndColumn);
                     const fillHandle =
                       !readOnly &&
                       !query &&
                       !sort &&
                       !hasColumnFilters &&
                       Boolean(selectionBounds) &&
-                      selectionBounds!.startColumn ===
-                        selectionBounds!.endColumn &&
                       columnIndex ===
                         selectionBounds!.endColumn &&
                       rowIndex ===
@@ -2781,6 +2653,7 @@ export function DatasetSheet({
                           minWidth: columnWidth(column.id),
                           maxWidth: columnWidth(column.id),
                           ...frozenCellStyle(columnIndex, rowIndex),
+                          ...formulaReferenceStyle(activeReferences,canonicalRowIndexes.get(row.id)??-1,columnIndex),
                         }}
                         data-column-id={column.id}
                         role="gridcell" aria-colindex={columnIndex+1} aria-rowindex={rowIndex+1}
@@ -2791,6 +2664,8 @@ export function DatasetSheet({
                           inRange ? 'is-range-selected' : '',
                           fillPreview ? 'is-fill-preview' : '',
                           formula ? 'has-formula' : '',
+                          findCellKeys.has(key)?'is-search-match':'',
+                          cutCellKeys.has(key)?'is-cut-cell':'',
                         ].filter(Boolean).join(' ')}
                         onMouseDown={(event) =>
                           selectCell(
@@ -2885,7 +2760,7 @@ export function DatasetSheet({
                         {fillHandle && (
                           <span
                             className="dataset-sheet__fill-handle"
-                            title="Потянуть вниз для автозаполнения"
+                            title="Потянуть вниз или вправо для автозаполнения"
                             onPointerDown={beginAutofill}
                             onPointerMove={moveAutofill}
                             onPointerUp={finishAutofill}
@@ -3092,30 +2967,7 @@ export function DatasetSheet({
         </div>
       )}
 
-      <footer className="dataset-sheet__footer">
-        <div>
-          Страница {safePage + 1} из {totalPages}
-        </div>
-
-        <div className="dataset-sheet__pagination">
-          <button
-            disabled={safePage <= 0}
-            onClick={() => setPage((value) => Math.max(0, value - 1))}
-          >
-            <ChevronLeft size={15} />
-            Назад
-          </button>
-          <button
-            disabled={safePage >= totalPages - 1}
-            onClick={() =>
-              setPage((value) => Math.min(totalPages - 1, value + 1))
-            }
-          >
-            Далее
-            <ChevronRight size={15} />
-          </button>
-        </div>
-      </footer>
+      {dataset&&<div className="sheet-summary" role="status"><DatasetConnections dataset={dataset}/>{selectionStats ? <>Заполнено: {selectionStats.count} · Чисел: {selectionStats.numbers} · Сумма: {selectionStats.sum} · Среднее: {selectionStats.average??'—'}</> : 'Выделите ячейки для расчёта суммы и среднего'}{pendingChanges>0?' · Сохранение…':''}</div>}
     </div>
   );
 }

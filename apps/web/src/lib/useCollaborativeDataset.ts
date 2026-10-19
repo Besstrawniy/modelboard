@@ -350,7 +350,7 @@ export function useCollaborativeDataset(
             Boolean(next.italic) ||
             Boolean(next.align) ||
             Boolean(next.background) ||
-            Boolean(next.numberFormat) || Boolean(next.color) || Boolean(next.wrap) || Boolean(next.underline) ||
+            Boolean(next.fontFamily) || Boolean(next.fontSize) || Boolean(next.numberFormat) || Boolean(next.color) || Boolean(next.wrap) || Boolean(next.underline) ||
             next.decimalPlaces !== undefined;
 
           if (meaningful) {

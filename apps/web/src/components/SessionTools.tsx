@@ -41,7 +41,8 @@ export function SessionTools({
   const [open, setOpen] = useState(false),
     [tab, setTab] = useState<keyof typeof tabs>('music'),
     [now, setNow] = useState(Date.now()),
-    [minutes, setMinutes] = useState('5'),
+    [timerDigits,setTimerDigits]=useState(['0','5','0','0']),
+    [timerDirty,setTimerDirty]=useState(false),
     [question, setQuestion] = useState(''),
     [options, setOptions] = useState('Да\nНет'),
     [meetingUrl, setMeetingUrl] = useState(''),
@@ -162,6 +163,10 @@ export function SessionTools({
     return () =>
       window.removeEventListener('modelboard:manual-navigation', stopFollowing);
   }, [following, stopFollowing]);
+  useEffect(()=>{const total=Math.min(5999,Math.floor(state.timer.durationMs/1000));setTimerDigits(`${String(Math.floor(total/60)).padStart(2,'0')}${String(total%60).padStart(2,'0')}`.split(''));setTimerDirty(false);},[state.timer.durationMs]);
+  const draftDuration=(Number(timerDigits[0])*600+Number(timerDigits[1])*60+Number(timerDigits[2])*10+Number(timerDigits[3]))*1000;
+  const timerAction=timerDirty?'timer-start':state.timer.endsAt!==null?'timer-pause':remaining>0&&remaining<state.timer.durationMs?'timer-resume':'timer-start';
+  const timerLabel=timerAction==='timer-pause'?'Пауза таймера':timerAction==='timer-resume'?'Продолжить таймер':'Запустить таймер';
   const showFrame = async (frame: Node) => {
     if (!rf || !isPresenter || !ready) return;
     frameRef.current = frame.id;
@@ -252,48 +257,10 @@ export function SessionTools({
                   </p>
                   {canControl && (
                     <>
-                      <form
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          send({
-                            action: 'timer-start',
-                            durationMs: Number(minutes) * 60000,
-                          });
-                        }}
-                      >
-                        <label>
-                          Минуты{' '}
-                          <input
-                            aria-label="Длительность таймера в минутах"
-                            type="number"
-                            min=".1"
-                            max="240"
-                            step=".1"
-                            value={minutes}
-                            onChange={(event) => setMinutes(event.target.value)}
-                            required
-                          />
-                        </label>
-                        <button disabled={!ready} title="Запустить таймер" aria-label="Запустить таймер"><Play size={17}/></button>
-                      </form>
+                      <div className="timer-editor" role="group" aria-label="Длительность таймера ММ:СС">{timerDigits.map((digit,index)=><span key={index}>{index===2&&<b>:</b>}<input aria-label={['Десятки минут','Единицы минут','Десятки секунд','Единицы секунд'][index]} type="number" min={0} max={index===2?5:9} step={1} value={digit} onChange={event=>{const value=event.target.value;setTimerDigits(current=>current.map((item,i)=>i===index?value===''?'':String(Math.max(0,Math.min(index===2?5:9,Math.trunc(Number(value)||0)))):item));setTimerDirty(true);}} onBlur={()=>setTimerDigits(current=>current.map(item=>item||'0'))}/></span>)}</div>
                       <div className="room-button-row">
-                        <button
-                          title={state.timer.endsAt === null ? 'Продолжить таймер' : 'Пауза таймера'} aria-label={state.timer.endsAt === null ? 'Продолжить таймер' : 'Пауза таймера'} disabled={!ready || remaining === 0}
-                          onClick={() =>
-                            send({
-                              action:
-                                state.timer.endsAt === null
-                                  ? 'timer-resume'
-                                  : 'timer-pause',
-                            })
-                          }
-                        >
-                          {state.timer.endsAt === null ? <Play size={17}/> : <Pause size={17}/>}
-                        </button>
-                        <button
-                          disabled={!ready}
-                          onClick={() => send({ action: 'timer-reset' })}
-                         title="Сбросить таймер" aria-label="Сбросить таймер"><RotateCcw size={17}/></button>
+                        <button title={timerLabel} aria-label={timerLabel} disabled={!ready||(timerAction==='timer-start'&&draftDuration<1000)} onClick={()=>{if(timerAction==='timer-start')send({action:timerAction,durationMs:draftDuration});else send({action:timerAction});setTimerDirty(false);}}>{timerAction==='timer-pause'?<Pause size={17}/>:<Play size={17}/>}</button>
+                        <button title="Сбросить таймер" aria-label="Сбросить таймер" disabled={!ready} onClick={()=>send({action:'timer-reset'})}><RotateCcw size={17}/></button>
                       </div>
                     </>
                   )}

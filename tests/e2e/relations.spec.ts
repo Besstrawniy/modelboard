@@ -669,11 +669,15 @@ test('Relation View navigates to matching rows and recalculates membership after
   const relation = await response.json();
   await addServer(page);
   await bindServer(page);
+  await inspector(page).locator('.relation-columns > summary').click();
+  await inspector(page).getByLabel('Показывать id',{exact:true}).uncheck();
+  await inspector(page).getByLabel('Показывать host_id',{exact:true}).uncheck();
   await inspector(page)
     .getByRole('button', { name: 'Добавить Relation View', exact: true })
     .click();
   const view = page.locator('.relation-view-node');
   await expect(view.locator('.relation-view-node__row')).toHaveCount(2);
+  await expect(view.locator('.relation-view-node__row').first().locator('small')).toHaveText(['name']);
   await inspector(page).locator('header button').click();
   await page.keyboard.press('Control+0');
   await view

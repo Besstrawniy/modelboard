@@ -1,3 +1,4 @@
+import { datasetRecordLabel } from '../lib/datasetRecordLabel';
 import { relatedRows } from '@modelboard/shared';
 import {
   ExternalLink,
@@ -62,6 +63,7 @@ function RelatedRelationSection({
   const [materializeMessage, setMaterializeMessage] = useState('');
   const [visualTemplateKey, setVisualTemplateKey] = useState('');
   const [relationViewBusy, setRelationViewBusy] = useState(false);
+  const [visibleColumnIds,setVisibleColumnIds]=useState<string[]|null>(null);
 
   const currentIsSource = relation.sourceDatasetId === currentDataset.id;
   const otherDatasetId = currentIsSource
@@ -206,6 +208,7 @@ function RelatedRelationSection({
 
       {!readOnly && (
         <div className="related-relation__view-action">
+          {otherDataset&&<details className="relation-columns"><summary>Поля Relation View</summary>{otherDataset.columns.map((column,index)=><label key={column.id}><input type="checkbox" aria-label={`Показывать ${column.name}`} checked={(visibleColumnIds??otherDataset.columns.slice(0,3).map(c=>c.id)).includes(column.id)} onChange={event=>setVisibleColumnIds(current=>{const ids=current??otherDataset.columns.slice(0,3).map(c=>c.id);return event.target.checked?[...ids,column.id]:ids.filter(id=>id!==column.id);})}/>{column.name}</label>)}</details>}
           <button
             disabled={relationViewBusy}
             onClick={async () => {
@@ -217,6 +220,7 @@ function RelatedRelationSection({
                   relation,
                   dataset: currentDataset,
                   row: currentRow,
+                  visibleColumnIds:visibleColumnIds??otherDataset?.columns.slice(0,3).map(c=>c.id),
                 });
                 setMaterializeMessage(
                   created
@@ -331,40 +335,8 @@ function RelatedRelationSection({
         </p>
       ) : (
         <div className="related-records">
-          {matches.map((row) => {
-            const fields = otherDataset
-              ? compactRowLabel(row, otherDataset)
-              : [];
+          {matches.map(row=><button className="related-record related-record--link" key={row.id} title="Открыть запись" onClick={()=>openDatasetSheet(otherDataset!.id,row.id)}>{datasetRecordLabel(row,otherDataset!)}<ExternalLink size={13}/></button>)}
 
-            return (
-              <div
-                className="related-record"
-                key={row.id}
-                onDoubleClick={() => openDatasetSheet(otherDataset!.id, row.id)}
-              >
-                <button
-                  title="Открыть запись" aria-label="Открыть запись" onClick={() => openDatasetSheet(otherDataset!.id, row.id)}
-                >
-                  <ExternalLink size={14}/>
-                </button>
-                <div className="related-record__icon">
-                  <Database size={13} />
-                </div>
-                <div className="related-record__content">
-                  {fields.length ? (
-                    fields.map(({ name, value }) => (
-                      <div key={name}>
-                        <small>{name}</small>
-                        <strong>{String(value)}</strong>
-                      </div>
-                    ))
-                  ) : (
-                    <strong>{row.id}</strong>
-                  )}
-                </div>
-              </div>
-            );
-          })}
 
 
         </div>

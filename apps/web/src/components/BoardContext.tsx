@@ -9,6 +9,7 @@ import type {
 import { createContext, useContext } from 'react';
 
 export type CreateRelationViewInput = {
+  visibleColumnIds?:string[];
   parentNodeId: string;
   relation: DatasetRelation;
   dataset: DatasetSnapshot;

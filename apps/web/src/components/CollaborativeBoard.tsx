@@ -320,16 +320,23 @@ function BoardInner({
   const [toolMode, setToolMode] = useState<ToolMode>('select');
   const [shapeKind, setShapeKind] = useState('rectangle');
   const [shapeMenu, setShapeMenu] = useState(false);
+  const [shapeMenuPosition,setShapeMenuPosition]=useState({left:80,top:300});
   const placementPreview = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!shapeMenu) return;
+    const position=()=>{const rect=document.querySelector('.shape-picker')?.getBoundingClientRect();if(rect)setShapeMenuPosition({left:Math.min(rect.right+8,window.innerWidth-240),top:Math.min(rect.top,window.innerHeight-62)});};
+    position();
+    window.addEventListener('resize',position);
+    document.addEventListener('scroll',position,true);
     const dismiss = (event: PointerEvent) => {
-      if (!(event.target instanceof Element) || !event.target.closest('.shape-picker')) setShapeMenu(false);
+      if (!(event.target instanceof Element) || !event.target.closest('.shape-picker,.shape-picker__menu')) setShapeMenu(false);
     };
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setShapeMenu(false); };
     document.addEventListener('pointerdown', dismiss);
     document.addEventListener('keydown', escape);
     return () => {
+      window.removeEventListener('resize',position);
+      document.removeEventListener('scroll',position,true);
       document.removeEventListener('pointerdown', dismiss);
       document.removeEventListener('keydown', escape);
     };
@@ -475,7 +482,7 @@ function BoardInner({
       const stored = new Map(Array.from(nodesMap.values()).map((node: Node) => [node.id,node]));
       for (const stroke of strokesMap.values()) if (!stored.has(stroke.id) && stroke.points.length) stored.set(stroke.id,strokeCanvasNode(stroke));
       setNodes((current) => reconcileCanvasNodes(
-        Array.from(stored.values()).map((node: Node) => ({ ...node, style: { ...node.style, '--canvas-rotation': `${Number(node.data.rotation ?? 0)}deg`, '--canvas-fill': node.data.fill, '--canvas-stroke': typeof node.data.stroke === 'string' ? node.data.stroke : undefined, '--canvas-color': node.data.color, '--canvas-font-size': node.data.fontSize ? `${node.data.fontSize}px` : undefined, '--canvas-font-family': node.data.fontFamily, '--canvas-stroke-width': `${Number(node.data.strokeWidth ?? 2)}px`, '--canvas-stroke-style': node.data.strokeDash === 'dashed' ? 'dashed' : 'solid', opacity: Number(node.data.opacity ?? 100) / 100 } })) as Node[], current, previewsRef.current,
+        Array.from(stored.values()).map((node: Node) => ({ ...node, style: { ...node.style, '--canvas-rotation': `${Number(node.data.rotation ?? 0)}deg`, '--canvas-fill': node.data.fill, '--canvas-stroke': typeof node.data.stroke === 'string' ? node.data.stroke : undefined, '--canvas-color': node.data.color, '--canvas-font-size': node.data.fontSize ? `${node.data.fontSize}px` : undefined, '--canvas-font-family': node.data.fontFamily, '--canvas-font-weight': node.data.bold ? 700 : undefined, '--canvas-font-style': node.data.italic ? 'italic' : undefined, '--canvas-text-decoration': node.data.underline ? 'underline' : undefined, '--canvas-stroke-width': `${Number(node.data.strokeWidth ?? 2)}px`, '--canvas-stroke-style': node.data.strokeDash === 'dashed' ? 'dashed' : 'solid', opacity: Number(node.data.opacity ?? 100) / 100 } })) as Node[], current, previewsRef.current,
       ));
     };
     const syncEdges = () => setEdges((current) => { const selected = new Set(current.filter((edge) => edge.selected).map((edge) => edge.id)); return Array.from(edgesMap.values()).map((edge: Edge) => ({...edge,selected:selected.has(edge.id)})); });
@@ -1504,7 +1511,7 @@ function BoardInner({
         const width=nodeSize(current,'width',240);
         const context=document.createElement('canvas').getContext('2d');
         if(context) {
-          context.font=`${fontSize}px ${String(data.fontFamily ?? "Inter, sans-serif")}`;
+          context.font=`${data.italic ? 'italic ' : ''}${data.bold ? 'bold ' : ''}${fontSize}px ${String(data.fontFamily ?? "Inter, sans-serif")}`;
           const lines=String(data.text??'').split('\n').reduce((count,line)=>count+Math.max(1,Math.ceil(context.measureText(line).width/Math.max(40,width-28))),0);
           const height=Math.max(current.type==='sticky'?120:40,Math.ceil(lines*fontSize*1.45+28));
           updated={...updated,height,measured:undefined,style:{...updated.style,height}};
@@ -1862,11 +1869,13 @@ function BoardInner({
     relation,
     dataset,
     row,
+    visibleColumnIds,
   }: {
     parentNodeId: string;
     relation: DatasetRelation;
     dataset: DatasetSnapshot;
     row: DatasetRow;
+    visibleColumnIds?:string[];
   }) => {
     if (readOnly) return false;
 
@@ -1874,7 +1883,8 @@ function BoardInner({
     if (!parent) return false;
 
     const nodeId = `relation-view:${parentNodeId}:${relation.id}`;
-    if (nodesMap.has(nodeId)) return false;
+    const existing=nodesMap.get(nodeId) as Node|undefined;
+    if(existing){if(visibleColumnIds)nodesMap.set(nodeId,{...existing,data:{...existing.data,visibleColumnIds}});return false;}
 
     const binding = await api.upsertObjectBinding(
       meta.id,
@@ -1904,6 +1914,7 @@ function BoardInner({
       },
       data: {
         relationId: relation.id,
+        visibleColumnIds,
         parentNodeId,
         binding,
       },
@@ -2063,8 +2074,8 @@ function BoardInner({
       node = {
         id,
         type,
-        position: { x: center.x - 120, y: center.y - 80 },
-        style: { width: 240, height: 160 },
+        position: { x: center.x - 120, y: center.y - 120 },
+        style: { width: 240, height: 240 },
         data: { text: 'Новая заметка', fontFamily: 'Segoe Print, Comic Sans MS, cursive' },
       };
     } else if (type === 'shape') {
@@ -2449,9 +2460,8 @@ function BoardInner({
     ? nodes.find((node) => node.id === selectedNodeId) ?? null
     : null;
 
-  const handleSelectionChange = useCallback(() => {
-    // React Flow can report the previous render after a programmatic selection.
-    const ids = nodesRef.current.filter((node) => node.selected).map((node) => node.id);
+  const handleSelectionChange = useCallback(({nodes:selection}: {nodes:Node[]}) => {
+    const ids = selection.map((node) => node.id);
     setSelectedNodeIds((current) => current.length === ids.length && current.every((id, i) => id === ids[i]) ? current : ids);
     setSelectedNodeId(ids.length === 1 ? ids[0] : null);
   }, []);
@@ -2916,9 +2926,9 @@ function BoardInner({
               <button disabled={readOnly} className={toolMode === 'sticky' ? 'is-active' : ''} onClick={() => activateTool('sticky')} title="Стикер"><StickyNote size={19} /></button>
 <button className={toolMode === 'text' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('text')} title="Текст"><Type size={19} /></button>
 <div className="shape-picker">
-<button className={toolMode === 'shape' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('shape')} title="Фигура"><Shapes size={19} /></button>
-<button disabled={readOnly} title="Выбрать фигуру" aria-label="Выбрать фигуру" aria-expanded={shapeMenu} onClick={() => setShapeMenu(value => !value)}><ChevronDown size={12}/></button>
-{shapeMenu && <div className="shape-picker__menu" role="group" aria-label="Фигуры">{[['rectangle','Прямоугольник'],['triangle','Треугольник'],['circle','Круг'],['ellipse','Эллипс'],['diamond','Ромб']].map(([kind,label]) => <button key={kind} title={label} aria-label={label} aria-pressed={shapeKind === kind} onClick={() => { setShapeKind(kind); setShapeMenu(false); activateTool('shape'); }}><span className={`shape-swatch shape-swatch--${kind}`} /></button>)}</div>}
+<button className={toolMode === 'shape' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('shape')} title="Фигура" onDoubleClick={()=>setShapeMenu(true)} onContextMenu={event=>{event.preventDefault();event.stopPropagation();setShapeMenu(true);}}><Shapes size={19} /></button>
+<button disabled={readOnly} className="shape-picker__arrow" title="Выбрать фигуру" aria-label="Выбрать фигуру" aria-expanded={shapeMenu} onClick={(event) => {event.stopPropagation();setShapeMenu(value => !value);}}><ChevronDown size={12}/></button>
+
 </div>
               <button className={toolMode === 'connector' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('connector')} title="Коннектор (C)"><Network size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('frame')} title="Frame / секция"><FrameIcon size={19} /></button>
@@ -2927,7 +2937,8 @@ function BoardInner({
             </div>
           </Panel>
 
-          {!readOnly && ['shape','sticky','text'].includes(effectiveToolMode) && <div ref={placementPreview} className={`placement-preview placement-preview--${effectiveToolMode} placement-preview--${shapeKind}`} aria-hidden="true" style={{ width: (effectiveToolMode === 'shape' ? (shapeKind === 'circle' ? 150 : 220) : 240) * canvasZoom, height: (effectiveToolMode === 'sticky' ? 160 : effectiveToolMode === 'text' ? 60 : shapeKind === 'circle' ? 150 : 110) * canvasZoom }}>{effectiveToolMode === 'sticky' ? 'Заметка' : effectiveToolMode === 'text' ? 'Текст' : ''}</div>}
+          {shapeMenu && <div className="shape-picker__menu" style={{position:'fixed',...shapeMenuPosition}} role="group" aria-label="Фигуры">{[['rectangle','Прямоугольник'],['triangle','Треугольник'],['circle','Круг'],['ellipse','Эллипс'],['diamond','Ромб']].map(([kind,label]) => <button key={kind} title={label} aria-label={label} aria-pressed={shapeKind === kind} onClick={() => { setShapeKind(kind); setShapeMenu(false); activateTool('shape'); }}><span className={`shape-swatch shape-swatch--${kind}`} /></button>)}</div>}
+          {!readOnly && ['shape','sticky','text'].includes(effectiveToolMode) && <div ref={placementPreview} className={`placement-preview placement-preview--${effectiveToolMode} placement-preview--${shapeKind}`} aria-hidden="true" style={{ fontSize:effectiveToolMode==='sticky'?16*canvasZoom:undefined,padding:effectiveToolMode==='sticky'?20*canvasZoom:undefined, width: (effectiveToolMode === 'shape' ? (shapeKind === 'circle' ? 150 : 220) : 240) * canvasZoom, height: (effectiveToolMode === 'sticky' ? 240 : effectiveToolMode === 'text' ? 60 : shapeKind === 'circle' ? 150 : 110) * canvasZoom }}>{effectiveToolMode === 'sticky' ? 'Новая заметка' : effectiveToolMode === 'text' ? 'Текст' : ''}</div>}
           <ViewportPortal>
             <svg className="canvas-guides" aria-hidden="true">{guides.map((guide) => <line key={guide.axis} stroke="#e75bae" strokeWidth={1 / canvasZoom}
               x1={guide.axis === 'x' ? guide.value : -100000} x2={guide.axis === 'x' ? guide.value : 100000}

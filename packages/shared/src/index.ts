@@ -118,6 +118,8 @@ export type DatasetCellFormat = {
   decimalPlaces?: number | null;
   color?: string | null;
   underline?: boolean;
+  fontFamily?: string | null;
+  fontSize?: number | null;
   wrap?: boolean;
 };
 
@@ -286,6 +288,7 @@ export type TemplateNodeData = {
 };
 
 export type RelationViewNodeData = {
+  visibleColumnIds?: string[];
   relationId: string;
   parentNodeId?: string;
   binding: ObjectBindingRecord;

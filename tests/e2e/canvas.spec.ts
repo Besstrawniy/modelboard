@@ -224,3 +224,32 @@ test('dialog keyboard focus stays inside and returns to its opener', async ({ pa
   await page.keyboard.press('Control+k'); await expect(query).toBeFocused();
   await page.keyboard.press('Escape'); await expect(searchButton).toBeFocused();
 });
+
+test('square sticky, complete text controls, smooth color preview and first-click selection', async ({ page }, info) => {
+ await page.getByTitle('Стикер',{exact:true}).click();
+ await page.mouse.move(520,350);
+ const ghost=page.locator('.placement-preview--sticky');
+ await expect(ghost).toBeVisible();const ghostBox=await ghost.boundingBox();expect(Math.abs(ghostBox!.width-ghostBox!.height)).toBeLessThan(1);
+ await page.locator('.react-flow__pane').click({position:{x:550,y:350}});
+ const sticky=page.locator('.react-flow__node-sticky');const box=await sticky.boundingBox();expect(Math.abs(box!.width-box!.height)).toBeLessThan(1);
+ const text=sticky.locator('.canvas-inline-text');await text.dblclick();const editor=sticky.locator('textarea');
+ await expect.poll(async()=>(await editor.boundingBox())!.height).toBeGreaterThan(150);
+ await editor.fill('Строка 1\nСтрока 2\nСтрока 3\nСтрока 4');await editor.press('Control+Enter');
+ const inspector=page.locator('.inspector-panel');
+ await inspector.getByRole('button',{name:'Жирный',exact:true}).click();await inspector.getByRole('button',{name:'Курсив',exact:true}).click();await inspector.getByRole('button',{name:'Подчёркнутый',exact:true}).click();
+ await expect(text).toHaveCSS('font-weight','700');await expect(text).toHaveCSS('font-style','italic');await expect(text).toHaveCSS('text-decoration-line','underline');
+ await inspector.getByLabel('Заливка',{exact:true}).evaluate((input:HTMLInputElement)=>{for(let i=0;i<20;i++){input.value=`#aa00${i.toString(16).padStart(2,'0')}`;input.dispatchEvent(new Event('input',{bubbles:true}));}});
+ await expect(sticky.locator('.sticky-node')).toHaveCSS('background-color','rgb(170, 0, 19)');
+ await inspector.getByLabel('Заливка',{exact:true}).dispatchEvent('change');
+ await page.locator('.react-flow__pane').click({position:{x:100,y:100}});await page.keyboard.press('Control+z');
+ await expect(sticky.locator('.sticky-node')).toHaveCSS('background-color','rgb(255, 241, 168)');
+ const lower=await sticky.boundingBox();await sticky.click({position:{x:lower!.width/2,y:lower!.height-30}});await expect(inspector.getByLabel('Шрифт',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Подогнать высоту под текст',exact:true}).click();
+ await page.getByTitle('Фигура',{exact:true}).click({button:'right'});await expect(page.getByRole('group',{name:'Фигуры',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Треугольник',exact:true}).click();await page.locator('.react-flow__pane').click({position:{x:850,y:550}});await expect(page.locator('.shape-node--triangle')).toBeVisible();
+ await page.screenshot({path:info.outputPath('canvas-controls.png')});
+ await page.getByTitle('Инфраструктура',{exact:true}).click();await page.getByRole('button',{name:'Сервер',exact:true}).click();
+ const server=page.locator('.react-flow__node-device').last();
+ await page.locator('.react-flow__pane').click({position:{x:100,y:100}});await server.locator('.device-node__kind').click();
+ await expect(server).toHaveClass(/selected/);await expect(inspector).toContainText('Сервер');
+});

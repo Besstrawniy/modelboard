@@ -157,6 +157,11 @@ export function buildImportedSheet(
         };
         if (cell.font?.bold) format.bold = true;
         if (cell.font?.italic) format.italic = true;
+        if (cell.font?.underline) format.underline = true;
+        if (cell.font?.name) format.fontFamily = cell.font.name;
+        if (cell.font?.size) format.fontSize = Math.max(8,Math.min(96,cell.font.size));
+        if (cell.font?.color?.argb) format.color = '#'+cell.font.color.argb.slice(-6);
+        if (cell.alignment?.wrapText) format.wrap = true;
         if (['left', 'center', 'right'].includes(cell.alignment?.horizontal))
           format.align = cell.alignment.horizontal.toUpperCase();
         const color = cell.fill?.fgColor?.argb;
@@ -530,8 +535,9 @@ export async function exportDatasetFile(
       ci = colIndex.get(f.columnId);
     if (!ri || !ci) continue;
     const cell = ws.getCell(ri, ci);
-    cell.font = { bold: Boolean(f.bold), italic: Boolean(f.italic) };
-    if (f.align) cell.alignment = { horizontal: f.align.toLowerCase() as any };
+    cell.font = { bold: Boolean(f.bold), italic: Boolean(f.italic), underline:Boolean(f.underline), name:f.fontFamily?.split(',')[0], size:f.fontSize??undefined, color:f.color?{argb:'FF'+f.color.slice(1)}:undefined };
+    cell.alignment={wrapText:Boolean(f.wrap)};
+    if (f.align) cell.alignment = { ...cell.alignment, horizontal: f.align.toLowerCase() as any };
     if (f.background && /^#[\da-f]{6}$/i.test(f.background))
       cell.fill = {
         type: 'pattern',

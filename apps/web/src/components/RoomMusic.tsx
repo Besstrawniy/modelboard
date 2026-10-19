@@ -120,7 +120,7 @@ export function RoomMusic({
       <p>
         {music.source.title} · {music.playing ? 'играет' : 'пауза'}
       </p></div></div>
-      <button
+      <div className="music-volume">      <button
         title={listening ? 'Выключить у меня' : 'Слушать'} aria-label={listening ? 'Выключить у меня' : 'Слушать'}
         disabled={!ready}
         aria-pressed={listening}
@@ -143,6 +143,7 @@ export function RoomMusic({
           onChange={(event) => setVolume(Number(event.target.value))}
         />
       </label>
+      </div>
       {canControl && (
         <>
           <label>

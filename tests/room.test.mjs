@@ -121,3 +121,9 @@ test('music catalog paths allow encoded audio names and reject traversal and non
   assert.throws(()=>run(newRoom(),{action:'meeting-url',url:'/music/track.mp3'}));
   assert.throws(()=>run(newRoom(),{action:'music-select',source:{kind:'url',value:'/music/track.mp3'}},viewer));
 });
+
+test('timer supports whole seconds from the four-digit editor',()=>{
+ const state=run(newRoom(),{action:'timer-start',durationMs:1000});
+ assert.equal(timerRemaining(state.timer,1500),500);
+ assert.throws(()=>run(state,{action:'timer-start',durationMs:999}));
+});

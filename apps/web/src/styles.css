@@ -3879,3 +3879,86 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
   outline: 2px solid #5865da;
   outline-offset: 2px;
 }
+
+/* Shared text controls keep the same order on the canvas and in sheets. */
+.canvas-properties.compact-properties { display:flex; flex-direction:column; align-items:stretch; }
+.property-row,.text-format-controls { display:flex; align-items:center; gap:4px; flex-wrap:nowrap; min-width:0; }
+.text-format-controls select { flex:1; min-width:65px; max-width:145px; }
+.text-format-controls input[type=number] { width:45px; }
+.text-format-controls button { flex:0 0 28px; }
+.color-control { position:relative; display:inline-flex!important; flex:0 0 28px; flex-direction:column!important; justify-content:center; align-items:center; width:28px; height:29px; border:1px solid #dce0e6; border-radius:5px; cursor:pointer; margin:0!important; padding:3px!important; }
+.color-control__symbol { font:600 17px Georgia,serif; line-height:17px; display:flex; }
+.color-control__sample { height:3px; width:19px; margin-top:2px; border-radius:1px; }
+.color-control input[type=color] { position:absolute; inset:0; width:100%!important; height:100%!important; opacity:0; cursor:pointer; padding:0; }
+.color-control:focus-within { outline:2px solid #5865da; outline-offset:1px; }
+.canvas-inline-text,.canvas-inline-editor { font-weight:var(--canvas-font-weight,inherit); font-style:var(--canvas-font-style,inherit); text-decoration:var(--canvas-text-decoration,inherit); }
+.sticky-node { height:100%; min-height:0; display:flex; flex-direction:column; }
+.sticky-node .canvas-inline-text,.sticky-node .canvas-inline-editor { flex:1; min-height:0; height:100%; max-height:100%; overflow:auto; line-height:1.45; }
+.sticky-node .canvas-inline-editor { padding:0; border:0; background:transparent; }
+.placement-preview--sticky { display:block; padding:20px; opacity:.5; background:#fff1a8; color:#344054; border:0; border-radius:2px 2px 10px 2px; font-family:'Segoe Print','Comic Sans MS',cursive; font-size:16px; box-shadow:1px 10px 18px #44381019; }
+.placement-preview--sticky::after { content:''; position:absolute; right:0; bottom:0; width:17px; height:17px; background:linear-gradient(135deg,#0000000b 50%,#ffffff80 51%); border-radius:0 0 9px 0; }
+.shape-picker { width:44px; }
+.shape-picker > button:first-child { width:44px; }
+.shape-picker > .shape-picker__arrow { position:absolute; right:0; bottom:0; height:18px; width:18px; min-height:0; border:0; background:transparent; padding:0; }
+.shape-picker__menu { z-index:70; }
+.toolbar-panel { bottom:76px!important; max-height:calc(100% - 148px); }
+.dataset-card { display:flex!important; flex-wrap:nowrap!important; gap:6px!important; align-items:center; }
+.dataset-card__meta { flex:1; min-width:0; }
+.dataset-card > button,.dataset-card > .dataset-rename { flex:0 0 30px; width:30px; grid-column:auto!important; }
+.dataset-card__meta strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dataset-sheet__topbar { padding:9px 16px; min-height:58px; }
+.dataset-sheet__identity > div { display:flex; flex-wrap:wrap; align-items:center; column-gap:7px; }
+.dataset-sheet__identity small { flex-basis:100%; min-height:16px; }
+.dataset-sheet__identity .dataset-rename { display:inline-flex; }
+.dataset-sheet__toolbar { gap:6px; padding:7px 12px; align-items:center; }
+.dataset-sheet__format-group { gap:4px; margin:0; padding:0; min-width:0; flex-wrap:wrap; }
+.dataset-sheet__format-group .text-format-controls { flex:0 0 auto; }
+.dataset-sheet__format-group .text-format-controls select { width:125px; }
+.dataset-sheet__format-group .text-format-controls input { width:45px; }
+.dataset-sheet__formula-bar { padding:6px 12px; min-height:40px; flex-shrink:0; }
+.dataset-sheet__formula-hint { display:none; }
+.dataset-sheet__formula-input-wrap { position:relative; }
+.formula-suggestions { position:absolute; top:100%; left:0; min-width:300px; z-index:50; padding:5px; background:white; border:1px solid #d8deea; box-shadow:0 8px 24px #18243426; border-radius:6px; }
+.formula-suggestions button { display:grid; grid-template-columns:80px 1fr; text-align:left; padding:6px; width:100%; border:0; background:white; }
+.formula-suggestions button:hover { background:#eef0ff; }
+.formula-suggestions small { grid-column:1/-1; color:#7b8292; }
+.sheet-summary { display:flex; gap:8px; align-items:center; min-height:30px; padding:3px 12px; }
+.sheet-summary button { display:inline-flex; border:0; background:transparent; padding:3px; }
+.sheet-find { display:flex; align-items:center; gap:7px; padding:6px 12px; border-bottom:1px solid #e3e7ef; }
+.sheet-find input:not([type=checkbox]) { width:240px; padding:5px; border:1px solid #dce0e6; border-radius:4px; }
+.sheet-find label { display:flex; align-items:center; }
+.dataset-sheet td.is-search-match { background:#fff4c4; }
+.dataset-sheet td.is-cut-cell { outline:1px dashed #16a085; outline-offset:-2px; }
+.sheet-command-menu,.dataset-export { position:relative; }
+.sheet-command-menu summary,.sheet-options summary { list-style:none; cursor:pointer; font-size:11px; padding:6px 8px; color:#4e596c; }
+.sheet-command-menu summary::after,.sheet-options summary::after { content:' ▾'; }
+.sheet-command-menu__body,.dataset-export__menu { position:absolute; top:100%; right:0; z-index:45; display:flex; flex-direction:column; min-width:230px; padding:8px; background:white; border:1px solid #dce0e6; border-radius:7px; box-shadow:0 8px 24px #18243426; gap:5px; }
+.sheet-command-menu__body p,.sheet-options p { font-size:11px; color:#7b8292; margin:6px; }
+.sheet-command-menu__body .dataset-sheet__freeze-buttons { flex-wrap:wrap; }
+.sheet-options { padding:0 12px; border-bottom:1px solid #e3e7ef; background:#fafbfe; }
+.sheet-options > label { font-size:11px; display:flex; align-items:center; gap:8px; padding:4px; }
+.sheet-options .spreadsheet-tools { border:0; padding:5px; }
+.dataset-export { margin-left:auto; display:inline-flex; }
+.dataset-export > button { min-width:29px; width:29px; padding:4px; }
+@media(max-width:900px){ .dataset-sheet__format-group { flex-basis:100%; } .dataset-sheet__formula-cell { max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } }
+.related-record--link,.connection-record-link { display:flex!important; justify-content:space-between; align-items:center; width:100%; text-align:left; font-size:12px; font-weight:400; padding:7px 4px!important; border:0!important; border-bottom:1px solid #eef0f4!important; border-radius:0!important; background:transparent!important; color:#414d60; }
+.related-record--link:hover,.connection-record-link:hover { background:#eef0ff!important; }
+.related-record--link svg { flex-shrink:0; margin-left:7px; }
+.relation-columns { padding:4px 8px; font-size:11px; }
+.relation-columns summary { cursor:pointer; color:#606b80; }
+.relation-columns label { display:flex; align-items:center; gap:6px; margin:4px 0; }
+.relation-columns input[type=checkbox] { width:14px; height:14px; }
+.related-relation__view-action { flex-direction:column; align-items:stretch; }
+.music-volume { display:flex; align-items:center; gap:10px; }
+.music-volume > label { flex:1; margin:0!important; }
+.music-volume > button { flex-shrink:0; }
+.timer-editor { display:flex; justify-content:center; align-items:center; gap:3px; padding:8px 0 12px; }
+.timer-editor span { display:flex; align-items:center; gap:5px; }
+.timer-editor input[type=number] { width:42px!important; height:42px; text-align:center; font:600 22px ui-monospace,monospace; padding:3px!important; border:1px solid #dce0e6; border-radius:6px; }
+.timer-editor b { font-size:24px; }
+.sticky-node { border:var(--canvas-stroke-width,2px) var(--canvas-stroke-style,solid) var(--canvas-stroke,transparent); }
+.shape-picker { flex-shrink:0; }
+.sheet-options[open] { max-height:290px; overflow:auto; flex-shrink:0; }
+.relation-view-node__rows { overflow-x:auto; }
+.sticky-node,.shape-node { font-size:var(--canvas-font-size,16px); }
+.sticky-node { color:var(--canvas-color,#344054); }

@@ -310,6 +310,8 @@ async function projectDatasetStateToPostgres(
       (stored: any) => {
         const format = stored instanceof Y.Map ? stored.toJSON() : stored;
         return {
+          fontFamily: typeof format.fontFamily === 'string' ? format.fontFamily.slice(0,120) : null,
+          fontSize: Number.isFinite(format.fontSize) ? Math.max(8,Math.min(96,format.fontSize)) : null,
           color: format.color,
           wrap: Boolean(format.wrap),
           underline: Boolean(format.underline),
@@ -508,6 +510,8 @@ async function projectDatasetStateToPostgres(
                 row_id: format.rowId,
                 column_id: format.columnId,
                 format: {
+                  fontFamily: format.fontFamily,
+                  fontSize: format.fontSize,
                   color: format.color,
                   wrap: format.wrap,
                   underline: format.underline,

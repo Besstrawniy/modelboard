@@ -45,7 +45,10 @@ export function useDialogFocus<T extends HTMLElement = HTMLElement>({
       document.removeEventListener('keydown', containTab, true);
       if (!wasTop) return;
       const parent = dialogs.at(-1);
-      if (previous?.isConnected && (!parent || parent.contains(previous))) previous.focus({ preventScroll: true });
+      if (previous?.isConnected && (!parent || parent.contains(previous))) {
+        const target=previous.getClientRects().length?previous:previous.closest('details')?.querySelector<HTMLElement>('summary');
+        if(target)target.focus({preventScroll:true});else if(parent)(focusable(parent)[0]??parent).focus({preventScroll:true});
+      }
       else if (parent) (focusable(parent)[0] ?? parent).focus({ preventScroll: true });
     };
   }, [open, ref]);
