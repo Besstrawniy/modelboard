@@ -25,6 +25,7 @@ import {
   Panel,
   ReactFlow,
   ReactFlowProvider,
+  useStoreApi,
   ViewportPortal,
   type Connection,
   type Edge,
@@ -223,6 +224,7 @@ function BoardInner({
   onDeleteBoard: (boardId: string) => Promise<void>;
 }) {
   const readOnly = !canEditBoard(meta.role);
+  const flowStore=useStoreApi();
   const modifiers = useCanvasModifiers();
   const ydoc = useMemo(() => new Y.Doc(), [meta.id, session.user.id]);
   const nodesMap = useMemo(() => new CanvasNodeStore(ydoc), [ydoc]);
@@ -1410,7 +1412,11 @@ function BoardInner({
   ]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    const allowed = readOnly ? changes.filter((change) => change.type === 'select') : changes;
+    // React Flow includes every incident edge when a node enters a marquee.
+    // Object selection must not implicitly open an FK connector's properties.
+    const marquee=flowStore.getState().userSelectionRect!==null;
+    const selectedChanges=marquee?changes.map(change=>change.type==='select'&&change.selected?{...change,selected:false}:change):changes;
+    const allowed = readOnly ? selectedChanges.filter((change) => change.type === 'select') : selectedChanges;
     setEdges((current) => applyEdgeChanges(allowed, current));
     const persistent = allowed.filter((change) => change.type !== 'select');
     if (!persistent.length || readOnly) return;
@@ -1422,7 +1428,7 @@ function BoardInner({
       }
     });
     undoManager.stopCapturing();
-  }, [edgesMap, readOnly, ydoc, undoManager]);
+  }, [edgesMap, readOnly, ydoc, undoManager, flowStore]);
 
   const onConnect = useCallback((connection: Connection) => {
     if (readOnly) return;
@@ -3228,7 +3234,7 @@ function BoardInner({
           />
         )}
 
-        {!readOnly && edges.filter(edge=>edge.selected).slice(0,1).map(edge=><CanvasEdgeProperties key={edge.id} edge={edge} onChange={patch=>{const current=edgesMap.get(edge.id);if(!current)return;undoManager.stopCapturing();edgesMap.set(edge.id,{...current,...patch});undoManager.stopCapturing();}}/>)}
+        {!readOnly && selectedNodeIds.length===0 && edges.filter(edge=>edge.selected).length===1 && edges.filter(edge=>edge.selected).map(edge=><CanvasEdgeProperties key={edge.id} edge={edge} onChange={patch=>{const current=edgesMap.get(edge.id);if(!current)return;undoManager.stopCapturing();edgesMap.set(edge.id,{...current,...patch});undoManager.stopCapturing();}}/>)}
         {selectedNode && (
           <InspectorPanel
             node={selectedNode}

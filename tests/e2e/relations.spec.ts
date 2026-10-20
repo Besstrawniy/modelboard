@@ -1321,3 +1321,46 @@ test('concurrent relationship creation and reversed record endpoints cannot crea
   );
   expect(list).toHaveLength(1);
 });
+
+test('marquee selects objects without selecting FK connectors or opening their properties',async({page,request},info)=>{
+ const response=await request.post(`${base}/workspaces/${workspace}/relations`,{headers:{Authorization:`Bearer ${token}`},data:{sourceDatasetId:servers.id,sourceColumnId:servers.columns[0].id,targetDatasetId:vms.id,targetColumnId:vms.columns[1].id,relationType:'FOREIGN_KEY',cardinality:'1:N'}});
+ expect(response.ok()).toBeTruthy();const relation=await response.json();
+ const doc=new Y.Doc();let provider:HocuspocusProvider|undefined;
+ try{
+  await new Promise<void>((resolve,reject)=>{
+   const timer=setTimeout(()=>reject(new Error('board sync timeout')),10000);
+   provider=new HocuspocusProvider({url:'ws://localhost:1234',name:`board:${boardId}`,document:doc,token,WebSocketPolyfill:WebSocket,
+    onSynced:({state})=>{if(state){clearTimeout(timer);resolve();}},onAuthenticationFailed:()=>{clearTimeout(timer);reject(new Error('authentication failed'));}});
+  });
+  const nodes=new CanvasNodeStore(doc);
+  doc.transact(()=>{
+   nodes.set('fk-parent',{id:'fk-parent',type:'table',position:{x:180,y:180},style:{width:400,height:220},data:{datasetId:servers.id}});
+   nodes.set('fk-child',{id:'fk-child',type:'table',position:{x:800,y:500},style:{width:400,height:220},data:{datasetId:vms.id}});
+   nodes.set('unrelated',{id:'unrelated',type:'sticky',position:{x:700,y:150},style:{width:200,height:180},data:{text:'Unrelated object'}});
+   doc.getMap('edges').set('fk-connector',{id:'fk-connector',source:'fk-parent',target:'fk-child',sourceHandle:'table:source',targetHandle:'table:target',type:'smoothstep',label:'FOREIGN_KEY',data:{relationId:relation.id,relationType:'FOREIGN_KEY',cardinality:'1:N'}});
+  });
+  const parent=page.locator('.react-flow__node[data-id="fk-parent"]'),child=page.locator('.react-flow__node[data-id="fk-child"]'),sticky=page.locator('.react-flow__node[data-id="unrelated"]');
+  await expect(parent.locator('.table-node__title')).toContainText(servers.name);await expect(child.locator('.table-node__title')).toContainText(vms.name);
+  const properties=page.getByLabel('Оформление коннектора',{exact:true}),edge=page.locator('.react-flow__edge[data-id="fk-connector"]');
+  const marquee=async(locator:ReturnType<typeof page.locator>,reverse=false)=>{
+   await page.locator('.react-flow__pane').click({position:{x:110,y:100}});
+   const box=(await locator.boundingBox())!;
+   const from={x:box.x-18,y:box.y-18},to={x:box.x+box.width+18,y:box.y+box.height+18};
+   await page.mouse.move(reverse?to.x:from.x,reverse?to.y:from.y);await page.mouse.down();
+   await page.mouse.move(box.x+box.width/2,box.y+box.height/2,{steps:4});await expect(properties).toHaveCount(0);
+   await page.mouse.move(reverse?from.x:to.x,reverse?from.y:to.y,{steps:8});
+   await expect(locator).toHaveClass(/selected/);await expect(edge).not.toHaveClass(/selected/);await expect(properties).toHaveCount(0);
+   await page.mouse.up();await expect(page.locator('.react-flow__node.selected')).toHaveCount(1);await expect(properties).toHaveCount(0);
+  };
+  await marquee(parent);await expect(child).not.toHaveClass(/selected/);
+  await marquee(child,true);await expect(parent).not.toHaveClass(/selected/);
+  await marquee(sticky);await page.keyboard.press('Delete');await expect(sticky).toHaveCount(0);await expect(page.locator('.react-flow__node-table')).toHaveCount(2);await expect(edge).toHaveCount(1);await page.keyboard.press('Control+z');await expect(sticky).toBeVisible();
+  await marquee(parent);
+  await page.screenshot({path:info.outputPath('fk-object-marquee.png')});
+  await page.locator('.react-flow__pane').click({position:{x:110,y:100}});
+  const point=await edge.locator('.react-flow__edge-interaction').evaluate((path:SVGPathElement)=>{
+   const p=path.getPointAtLength(path.getTotalLength()/2);return new DOMPoint(p.x,p.y).matrixTransform(path.getScreenCTM()!).toJSON();
+  });
+  await page.mouse.click(point.x,point.y);await expect(properties).toBeVisible();await expect(properties.getByLabel('Подпись коннектора',{exact:true})).toHaveValue('FOREIGN_KEY');await expect(page.locator('.react-flow__node.selected')).toHaveCount(0);
+ }finally{provider?.destroy();doc.destroy();}
+});
