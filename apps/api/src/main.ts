@@ -19,8 +19,8 @@ async function bootstrap() {
   });
 
   const port = Number(process.env.API_PORT ?? 3001);
-  await app.listen(port);
-  console.log(`ModelBoard API listening on http://localhost:${port}/api`);
+  await app.listen(port, process.env.API_HOST ?? '0.0.0.0');
+  console.log(`ModelBoard API listening on port ${port}/api`);
 }
 
 bootstrap();

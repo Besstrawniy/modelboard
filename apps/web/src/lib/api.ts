@@ -1,3 +1,4 @@
+import { API_URL } from './config';
 import type {
   AuthSession,
   BoardDatasetLocation,
@@ -18,7 +19,7 @@ import type {
   WorkspaceSearchResult,
 } from '@modelboard/shared';
 
-const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3001/api';
+const baseUrl = API_URL;
 
 export type DevUser = {
   id: string;

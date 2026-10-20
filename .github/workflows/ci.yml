@@ -61,3 +61,40 @@ jobs:
         with:
           name: canvas-e2e-results
           path: test-results/
+
+  server-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Configure isolated server
+        run: |
+          cat > .env.server.ci <<'ENV'
+          POSTGRES_DB=modelboard
+          POSTGRES_USER=modelboard
+          POSTGRES_PASSWORD=ci_server_password
+          JWT_SECRET=ci_server_jwt_key_only_for_isolated_tests_0123456789
+          WEB_BIND_ADDRESS=127.0.0.2
+          WEB_PORT=8080
+          WEB_ORIGIN=http://127.0.0.2:8080
+          ENV
+      - name: Build and start the server stack
+        run: docker compose --env-file .env.server.ci -f docker-compose.server.yml up -d --build --wait --wait-timeout 180
+      - run: npx playwright install --with-deps chromium
+      - name: Two participants through Nginx and WebSocket
+        run: npm run test:server
+      - name: Server diagnostics
+        if: failure()
+        run: docker compose --env-file .env.server.ci -f docker-compose.server.yml logs --no-color --tail=150
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: server-e2e-results
+          path: test-results/
+      - name: Stop isolated server
+        if: always()
+        run: docker compose --env-file .env.server.ci -f docker-compose.server.yml down -v

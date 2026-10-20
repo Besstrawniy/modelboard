@@ -13,3 +13,7 @@ test-results/
 apps/web/public/music/*
 !apps/web/public/music/playlist.json
 !apps/web/public/music/README.md
+
+# Server-specific secrets stay on the host.
+.env.server
+.env.server.ci

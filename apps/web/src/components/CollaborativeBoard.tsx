@@ -1,3 +1,4 @@
+import { COLLAB_URL } from '../lib/config';
 import { shortcutKey } from '../lib/keyboard';
 import { ColorControl } from './ColorControl';
 import { useDialogFocus } from '../lib/useDialogFocus';
@@ -431,7 +432,7 @@ function BoardInner({
   }, [refreshWorkspaceTemplates]);
 
   useEffect(() => {
-    const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
+    const collabUrl = COLLAB_URL;
     const instance = new HocuspocusProvider({
       url: collabUrl,
       name: `board:${meta.id}`,

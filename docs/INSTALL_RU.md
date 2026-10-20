@@ -1,6 +1,6 @@
 # Установка ModelBoard
 
-Эта инструкция относится к текущему MVP. Сейчас PostgreSQL запускается в Docker, а Web/API/Collaboration server — через Node.js на хостовой системе.
+Эта инструкция относится к текущему MVP. Для разработки PostgreSQL запускается в Docker, а Web/API/Collaboration server — через Node.js на хостовой системе. Для общего сервера в локальной сети/VPN есть отдельный Docker Compose: [SERVER_RU.md](SERVER_RU.md).
 
 ## 1. Требования
 
@@ -50,8 +50,8 @@ API_PORT=3001
 COLLAB_PORT=1234
 
 WEB_ORIGIN=http://localhost:5173
-VITE_API_URL=http://localhost:3001/api
-VITE_COLLAB_URL=ws://localhost:1234
+VITE_API_URL=/api
+VITE_COLLAB_URL=/collab
 ```
 
 Для сервера обязательно замените `JWT_SECRET`.
@@ -105,33 +105,17 @@ collab  -> ws://localhost:1234
 
 ## 7. Запуск на удалённом сервере
 
-Предположим, сервер имеет адрес:
+Для постоянного запуска в локальной сети или VPN используйте [серверную инструкцию](SERVER_RU.md). Она содержит Docker Compose, сохранение существующей БД, настройку общего адреса, обновление и диагностику.
 
-```text
-192.168.1.50
-```
-
-В `.env`:
+Для тестового запуска через Node.js откройте `http://IP_СЕРВЕРА:5173`. В корневом .env установите:
 
 ```env
 WEB_ORIGIN=http://192.168.1.50:5173
-VITE_API_URL=http://192.168.1.50:3001/api
-VITE_COLLAB_URL=ws://192.168.1.50:1234
+VITE_API_URL=/api
+VITE_COLLAB_URL=/collab
 ```
 
-После изменения Vite-переменных перезапустите `npm run dev`.
-
-В firewall для тестового запуска понадобятся:
-
-```text
-5173/tcp  Web
-3001/tcp  API
-1234/tcp  Collaboration WebSocket
-```
-
-Порт `5432` наружу открывать не требуется.
-
-Для постоянного публичного развёртывания текущий dev-сервер использовать не следует. Позже проект будет переведён на production Docker Compose + reverse proxy.
+Перезапустите `npm run dev`. Vite проксирует оба сервиса; для участников достаточно одного порта 5173. Старые VITE-адреса с localhost нужно заменить, иначе браузер участника будет обращаться к его собственному компьютеру.
 
 ## 8. Проверка API
 
@@ -299,12 +283,4 @@ VITE_API_URL=
 
 ### На удалённом компьютере Web работает, но realtime нет
 
-Проверьте:
-
-```env
-VITE_COLLAB_URL=ws://IP_СЕРВЕРА:1234
-```
-
-а также firewall на `1234/tcp`.
-
-Если сайт позже будет работать по HTTPS, WebSocket тоже должен перейти на `wss://`.
+Проверьте запрос WebSocket к `/collab` в браузере и журналы collab/web. Для Vite и серверного Nginx используется тот же адрес, что у страницы. Не оставляйте VITE_COLLAB_URL с localhost на компьютерах участников. Если используется HTTPS reverse proxy, ему нужно передавать WebSocket Upgrade; клиент выберет WSS автоматически.

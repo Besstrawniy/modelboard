@@ -1,3 +1,4 @@
+import { COLLAB_URL } from './config';
 import { receiveResourceMessage } from './resources';
 import { SharedRecordStore, type DatasetView, type DatasetConditionalRule } from '@modelboard/shared';
 import { HocuspocusProvider } from '@hocuspocus/provider';
@@ -78,7 +79,7 @@ export function useCollaborativeDataset(
     setSynced(false);
     setStorageError('');
 
-    const collabUrl = import.meta.env.VITE_COLLAB_URL ?? 'ws://localhost:1234';
+    const collabUrl = COLLAB_URL;
     const provider = new HocuspocusProvider({
       url: collabUrl,
       name: `dataset:${datasetId}`,
