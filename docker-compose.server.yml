@@ -21,7 +21,8 @@ services:
       target: server
     restart: unless-stopped
     init: true
-    command: ["node", "--import", "tsx", "apps/api/src/main.ts"]
+    working_dir: /app/apps/api
+    command: ["node", "--import", "tsx", "src/main.ts"]
     environment: &server_environment
       DATABASE_URL: postgresql://${POSTGRES_USER:-modelboard}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.server}@postgres:5432/${POSTGRES_DB:-modelboard}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.server}
@@ -45,7 +46,8 @@ services:
       target: server
     restart: unless-stopped
     init: true
-    command: ["node", "--import", "tsx", "apps/collab/src/server.ts"]
+    working_dir: /app/apps/collab
+    command: ["node", "--import", "tsx", "src/server.ts"]
     environment: *server_environment
     depends_on:
       api:

@@ -14,7 +14,8 @@ COPY . .
 FROM source AS server
 ENV NODE_ENV=production
 USER node
-CMD ["node", "--import", "tsx", "apps/api/src/main.ts"]
+WORKDIR /app/apps/api
+CMD ["node", "--import", "tsx", "src/main.ts"]
 
 FROM source AS web-build
 RUN npm run music:scan && npm run build --workspace @modelboard/web
