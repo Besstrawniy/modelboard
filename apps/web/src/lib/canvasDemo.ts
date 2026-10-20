@@ -1,8 +1,9 @@
+import { createId } from './uuid.ts';
 import type { Node, Edge } from '@xyflow/react';
 
 /** A small standalone board: no Dataset, imported files or API bindings. */
 export function createCanvasDemo() {
-  const prefix = crypto.randomUUID();
+  const prefix = createId();
   const nodes: Node[] = [
     {id:`${prefix}-public`,type:'frame',position:{x:0,y:0},style:{width:800,height:280},zIndex:-10,data:{title:'DMZ · входящий трафик'}},
     {id:`${prefix}-private`,type:'frame',position:{x:0,y:330},style:{width:800,height:520},zIndex:-10,data:{title:'Production · сервисы и данные'}},

@@ -73,6 +73,7 @@ jobs:
       - run: npm ci
       - name: Configure isolated server
         run: |
+          printf '127.0.0.2 modelboard.test\n' | sudo tee -a /etc/hosts
           cat > .env.server.ci <<'ENV'
           POSTGRES_DB=modelboard
           POSTGRES_USER=modelboard
@@ -82,12 +83,14 @@ jobs:
           EDITOR_PASSWORD=ci_editor_password_012345
           WEB_BIND_ADDRESS=127.0.0.2
           WEB_PORT=8080
-          WEB_ORIGIN=http://127.0.0.2:8080
+          WEB_ORIGIN=http://modelboard.test:8080
           ENV
       - name: Build and start the server stack
         run: docker compose --env-file .env.server.ci -f docker-compose.server.yml up -d --build --wait --wait-timeout 180
       - run: npx playwright install --with-deps chromium
-      - name: Two participants through Nginx and WebSocket
+      - name: Two participants through ordinary HTTP and WebSocket
+        env:
+          MODELBOARD_SERVER_URL: http://modelboard.test:8080
         run: npm run test:server
       - name: Server diagnostics
         if: failure()

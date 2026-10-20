@@ -1,3 +1,4 @@
+import { createId } from '../lib/uuid.ts';
 import { shortcutKey } from '../lib/keyboard';
 import { TextFormatControls } from './TextFormatControls';
 import { ColorControl } from './ColorControl';
@@ -1236,7 +1237,7 @@ export function DatasetSheet({
       if(hiddenColumns.some(id=>dataset.columns.slice(startColumn,startColumn+width).some(column=>column.id===id)))throw new Error('Перед вставкой покажите колонки выбранного диапазона');
       const required=Math.max(0,startRow+matrix.length-visibleRows.length);
       if(required&&(query||sort||hasColumnFilters||secondarySort.length))throw new Error('Для добавления строк при вставке сбросьте фильтры и сортировку');
-      const newRows:Array<DatasetRow>=Array.from({length:required},(_,index)=>({id:crypto.randomUUID(),ordinal:dataset.rows.length+index,values:{}}));
+      const newRows:Array<DatasetRow>=Array.from({length:required},(_,index)=>({id:createId(),ordinal:dataset.rows.length+index,values:{}}));
       const targets=[...visibleRows,...newRows],canonicalRows=[...dataset.rows,...newRows];
       const moves=new Map<string,{rowId:string;columnId:string}>();
       if(internal?.cut&&!valuesOnly)internal.cells.forEach((row,r)=>row.forEach((cell,c)=>moves.set(formulaKey(cell.rowId,cell.columnId),{rowId:targets[startRow+r].id,columnId:dataset.columns[startColumn+c].id})));
@@ -2282,7 +2283,7 @@ export function DatasetSheet({
       </div>
 
       <details className="sheet-options"><summary>Данные и сохранённые виды</summary><p>Вид сохраняет фильтры, порядок сортировки, скрытые колонки и закрепление, чтобы быстро возвращаться к нужной выборке.</p><label>Фильтр строк<input aria-label="Фильтр строк" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Оставить строки с текстом…"/></label>      {dataset&&<SpreadsheetTools dataset={dataset} readOnly={readOnly} rowId={selectedCell?.rowId} columnId={selectedCell?.columnId}
-        currentView={currentView} onApplyView={applyView} onSaveView={(name)=>{const id=currentView||crypto.randomUUID();saveView({id,name,query,filters:columnFilters,sort:[...(sort?[sort]:[]),...secondarySort],hiddenColumns,columnWidths,frozenRows,frozenColumns});setCurrentView(id);}}
+        currentView={currentView} onApplyView={applyView} onSaveView={(name)=>{const id=currentView||createId();saveView({id,name,query,filters:columnFilters,sort:[...(sort?[sort]:[]),...secondarySort],hiddenColumns,columnWidths,frozenRows,frozenColumns});setCurrentView(id);}}
         onDeleteView={(id)=>{deleteView(id);setCurrentView('');}} onSaveRule={saveRule} onDeleteRule={deleteRule}
         onHide={(id)=>{if(dataset.columns.length-hiddenColumns.length>1)setHiddenColumns(list=>[...new Set([...list,id])]);}} onShowAll={()=>setHiddenColumns([])}
         onMultiSort={(columnId,direction)=>setSecondarySort(list=>[...list.filter(item=>item.columnId!==columnId),{columnId,direction}])}/ >}

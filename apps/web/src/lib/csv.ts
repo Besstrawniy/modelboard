@@ -1,3 +1,4 @@
+import { createId } from './uuid.ts';
 import Papa from 'papaparse';
 import type {
   CreateDatasetInput,
@@ -172,7 +173,7 @@ export function buildCsvImportDraft(
   );
 
   const columns: DatasetColumn[] = headers.map((name, ordinal) => ({
-    id: crypto.randomUUID(),
+    id: createId(),
     name,
     dataType: types[ordinal],
     ordinal,
@@ -186,7 +187,7 @@ export function buildCsvImportDraft(
     });
 
     return {
-      id: crypto.randomUUID(),
+      id: createId(),
       ordinal,
       values,
     };

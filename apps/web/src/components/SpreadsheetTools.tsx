@@ -1,3 +1,4 @@
+import { createId } from '../lib/uuid.ts';
 import { Save, Trash2, Paintbrush, Eye, EyeOff, ArrowUpWideNarrow, ArrowDownWideNarrow } from 'lucide-react';
 import { useState } from 'react';
 import type { DatasetSnapshot, DatasetView, DatasetConditionalRule } from '@modelboard/shared';
@@ -26,7 +27,7 @@ export function SpreadsheetTools({dataset,readOnly,rowId,columnId,onSaveView,onD
     <select aria-label="Условие оформления" value={operator} onChange={e=>setOperator(e.target.value as any)}>{[['gt','Больше'],['lt','Меньше'],['eq','Равно'],['contains','Содержит'],['empty','Пусто'],['between','Между'],['duplicate','Дубликаты']].map(([id,label])=><option key={id} value={id}>{label}</option>)}</select>
     <input aria-label="Значение условия" value={value} onChange={e=>setValue(e.target.value)}/>{operator==='between'&&<input aria-label="Верхняя граница условия" value={value2} onChange={e=>setValue2(e.target.value)}/>}
     <input aria-label="Цвет условия" type="color" value={background} onChange={e=>setBackground(e.target.value)}/>
-    <button disabled={!columnId} onClick={()=>onSaveRule({id:crypto.randomUUID(),columnId:columnId!,operator,value,value2,background})}>Добавить правило</button>
+    <button disabled={!columnId} onClick={()=>onSaveRule({id:createId(),columnId:columnId!,operator,value,value2,background})}>Добавить правило</button>
     {dataset.rules?.map(rule=><div key={rule.id}>{dataset.columns.find(column=>column.id===rule.columnId)?.name} · {rule.operator} {rule.value}<button aria-label="Удалить правило" onClick={()=>onDeleteRule(rule.id)}>×</button></div>)}
   </section>}
  </div>;

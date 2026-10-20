@@ -1,3 +1,4 @@
+import { createId } from './uuid.ts';
 import Papa from 'papaparse';
 import {
   FILE_LIMITS,
@@ -134,7 +135,7 @@ export function buildImportedSheet(
     header,
   );
   const ds: DatasetSnapshot = {
-    id: crypto.randomUUID(),
+    id: createId(),
     workspaceId: '',
     name: sheet.name,
     kind: 'CSV',
@@ -298,7 +299,7 @@ export async function parseImportFiles(files: File[]): Promise<ParsedFiles> {
       const matrix = result.data.map((row) => row.map((v) => String(v ?? '')));
       checkMatrix(matrix);
       out.sheets.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         name: nameOf(file.name),
         matrix,
         warnings: [],
@@ -342,7 +343,7 @@ export async function parseImportFiles(files: File[]): Promise<ParsedFiles> {
           'Диаграммы, изображения внутри XLSX, макросы и оформление за пределами базовых стилей не импортируются',
         );
         out.sheets.push({
-          id: crypto.randomUUID(),
+          id: createId(),
           name: ws.name,
           matrix,
           source: ws,
@@ -364,7 +365,7 @@ export async function parseImportFiles(files: File[]): Promise<ParsedFiles> {
       if (value?.format === 'modelboard.dataset' && value.version === 1) {
         validateDatasetFile(value.dataset);
         out.sheets.push({
-          id: crypto.randomUUID(),
+          id: createId(),
           name: value.dataset.name,
           native: value.dataset,
           matrix: [
@@ -421,20 +422,20 @@ export async function parseImportFiles(files: File[]): Promise<ParsedFiles> {
               ? 'BOOLEAN'
               : 'TEXT';
         return {
-          id: crypto.randomUUID(),
+          id: createId(),
           name,
           ordinal,
           dataType,
         } as import('@modelboard/shared').DatasetColumn;
       });
       const native: DatasetSnapshot = {
-        id: crypto.randomUUID(),
+        id: createId(),
         workspaceId: '',
         name: nameOf(file.name),
         kind: 'CSV',
         columns,
         rows: records.map((r: any, ordinal: number) => ({
-          id: crypto.randomUUID(),
+          id: createId(),
           ordinal,
           values: Object.fromEntries(
             columns.map((c) => [c.id, r[c.name] ?? null]),
@@ -447,7 +448,7 @@ export async function parseImportFiles(files: File[]): Promise<ParsedFiles> {
       };
       validateDatasetFile(native);
       out.sheets.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         name: native.name,
         native,
         matrix,

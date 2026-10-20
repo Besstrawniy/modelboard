@@ -1,3 +1,4 @@
+import { createId } from '../lib/uuid.ts';
 import { COLLAB_URL } from '../lib/config';
 import { shortcutKey } from '../lib/keyboard';
 import { ColorControl } from './ColorControl';
@@ -601,7 +602,7 @@ function BoardInner({
       const translation = typeof offset === 'number' ? { x: offset, y: offset } : offset;
       const idMap = new Map<string, string>();
       for (const source of sourceNodes) {
-        idMap.set(source.id, crypto.randomUUID());
+        idMap.set(source.id, createId());
       }
 
       const clonedNodes = await Promise.all(
@@ -657,7 +658,7 @@ function BoardInner({
 
       const clonedEdges = sourceEdges.map((source) => {
         const clone = structuredClone(source);
-        clone.id = crypto.randomUUID();
+        clone.id = createId();
         clone.source =
           idMap.get(source.source) ?? source.source;
         clone.target =
@@ -863,7 +864,7 @@ function BoardInner({
     const paddingX = 70;
     const paddingTop = 78;
     const paddingBottom = 55;
-    const frameId = crypto.randomUUID();
+    const frameId = createId();
 
     const frame: Node = {
       id: frameId,
@@ -1461,7 +1462,7 @@ function BoardInner({
 
     const edge: Edge = {
       ...connection,
-      id: crypto.randomUUID(),
+      id: createId(),
       type: 'smoothstep',
       markerEnd: { type: MarkerType.ArrowClosed },
       data: { relationType: 'VISUAL' },
@@ -1483,7 +1484,7 @@ function BoardInner({
       ...pendingRelation.connection,
       sourceHandle: (nodesMap.get(pendingRelation.connection.source) as Node|undefined)?.type==='table' ? input.matchMode==='ROW_LINKS'?'table:source':`source:${input.sourceColumnId}` : pendingRelation.connection.sourceHandle,
       targetHandle: (nodesMap.get(pendingRelation.connection.target) as Node|undefined)?.type==='table' ? input.matchMode==='ROW_LINKS'?'table:target':`target:${input.targetColumnId}` : pendingRelation.connection.targetHandle,
-      id: crypto.randomUUID(),
+      id: createId(),
       type: 'smoothstep',
       label: cardinality
         ? `${relationType === 'FOREIGN_KEY' ? 'FK' : relationType}  ${cardinality}`
@@ -1582,7 +1583,7 @@ function BoardInner({
             column.id !== titleColumnId,
         )?.id;
 
-      const nodeId = crypto.randomUUID();
+      const nodeId = createId();
       const binding = await api.upsertObjectBinding(
         meta.id,
         nodeId,
@@ -2058,7 +2059,7 @@ function BoardInner({
     position?: { x: number; y: number },
   ) => {
     if (readOnly) return;
-    const id = crypto.randomUUID();
+    const id = createId();
     const center = position ?? viewportCenter();
     undoManager.stopCapturing();
     nodesMap.set(id, {
@@ -2073,7 +2074,7 @@ function BoardInner({
 
   const addNode = useCallback((type: string) => {
     if (readOnly) return;
-    const id = crypto.randomUUID();
+    const id = createId();
     const center = insertionPointRef.current ?? viewportCenter();
     insertionPointRef.current = null;
 
@@ -2135,7 +2136,7 @@ function BoardInner({
   const addDevice = useCallback((kind: DeviceKind) => {
     if (readOnly) return;
 
-    const id = crypto.randomUUID();
+    const id = createId();
     const center = viewportCenter();
     const position=canvasInsertionPosition(Array.from(nodesMap.values()),center,220,170);
 
@@ -2169,7 +2170,7 @@ function BoardInner({
     );
     if (!template) return;
 
-    const id = crypto.randomUUID();
+    const id = createId();
     const center = viewportCenter();
     const height=Math.max(170,template.defaultHeight+54);
     const position=canvasInsertionPosition(Array.from(nodesMap.values()),center,template.defaultWidth,height);
@@ -2231,7 +2232,7 @@ function BoardInner({
     const point = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false });
     const base = { pointerId: event.pointerId, target: event.currentTarget, zoom: rf.getZoom() };
     const gesture: DrawingGesture = effectiveToolMode === 'pen'
-      ? { ...base, mode: 'pen', stroke: { id: crypto.randomUUID(), points: [point], width: penWidth,
+      ? { ...base, mode: 'pen', stroke: { id: createId(), points: [point], width: penWidth,
           color: penColor, createdBy: session.user.id } }
       : { ...base, mode: 'eraser', lastPoint: point, erased: new Map(), cache: new Map() };
     drawingGestureRef.current = gesture;
@@ -2380,11 +2381,11 @@ function BoardInner({
   const placeImported=(result:ImportedFilesResult,parsed:ParsedFiles)=>{
     const start=csvDrop?.position??viewportCenter(),items:Node[]=[];
     undoManager.stopCapturing();ydoc.transact(()=>{
-      for(const ds of result.datasets){const index=items.length,id=crypto.randomUUID();const node:Node={id,type:'table',position:{x:start.x+(index%3)*660,y:start.y+Math.floor(index/3)*360},style:{width:620,height:300},data:{datasetId:ds.id}};nodesMap.set(id,node);items.push(node);}
-      for(const [index,file] of result.files.entries()){const size=parsed.images[index],width=Math.min(Math.max(size?.width??300,80),480),height=Math.max(40,Math.min(400,width*(size?.height??200)/(size?.width??300)));const order=items.length;const node:Node={id:crypto.randomUUID(),type:'image',position:{x:start.x+(order%3)*660,y:start.y+Math.floor(order/3)*460},style:{width,height},data:{assetId:file.id,name:file.name}};nodesMap.set(node.id,node);items.push(node);}
+      for(const ds of result.datasets){const index=items.length,id=createId();const node:Node={id,type:'table',position:{x:start.x+(index%3)*660,y:start.y+Math.floor(index/3)*360},style:{width:620,height:300},data:{datasetId:ds.id}};nodesMap.set(id,node);items.push(node);}
+      for(const [index,file] of result.files.entries()){const size=parsed.images[index],width=Math.min(Math.max(size?.width??300,80),480),height=Math.max(40,Math.min(400,width*(size?.height??200)/(size?.width??300)));const order=items.length;const node:Node={id:createId(),type:'image',position:{x:start.x+(order%3)*660,y:start.y+Math.floor(order/3)*460},style:{width,height},data:{assetId:file.id,name:file.name}};nodesMap.set(node.id,node);items.push(node);}
     });undoManager.stopCapturing();setCsvDrop(null);setToolMode('select');requestAnimationFrame(()=>void rf?.fitView({nodes:items,padding:.2,maxZoom:1}));
   };
-  const placeFile=(file:StoredFile)=>{if(readOnly)return;const center=viewportCenter(),id=crypto.randomUUID();undoManager.stopCapturing();nodesMap.set(id,{id,type:'image',position:center,style:{width:320,height:220},data:{assetId:file.id,name:file.name}});undoManager.stopCapturing();};
+  const placeFile=(file:StoredFile)=>{if(readOnly)return;const center=viewportCenter(),id=createId();undoManager.stopCapturing();nodesMap.set(id,{id,type:'image',position:center,style:{width:320,height:220},data:{assetId:file.id,name:file.name}});undoManager.stopCapturing();};
 
   const navigateToDatasetLocation = useCallback(
     async (

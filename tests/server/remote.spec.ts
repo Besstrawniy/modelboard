@@ -26,8 +26,12 @@ test('two independent browsers edit canvas and dataset through the built server 
     page.on('websocket',socket=>network.push(socket.url()));
   }
   const login=async(page:Page,role:string)=>{
+    // Also exercise the missing API when this test is run on localhost.
+    await page.addInitScript(() => Object.defineProperty(Crypto.prototype, 'randomUUID', {value:undefined,configurable:true}));
     await page.addInitScript(id=>localStorage.setItem('modelboard:last-board',id),board.id);
     await page.goto(baseURL!);
+    if(new URL(baseURL!).hostname==='modelboard.test') expect(await page.evaluate(()=>window.isSecureContext)).toBe(false);
+    expect(await page.evaluate(()=>typeof crypto.randomUUID)).toBe('undefined');
     await page.getByLabel('Email',{exact:true}).fill(role.toLowerCase()+'@example.local');
     await page.getByLabel('Пароль',{exact:true}).fill(role==='OWNER'?'ci_owner_password_012345':'ci_editor_password_012345');
     await page.getByRole('button',{name:'Войти',exact:true}).click();
@@ -47,6 +51,9 @@ test('two independent browsers edit canvas and dataset through the built server 
     await second.locator('.react-flow__node-shape textarea').fill('Written by editor');
     await second.locator('.react-flow__node-shape textarea').press('Control+Enter');
     await expect(first.locator('.react-flow__node-shape')).toContainText('Written by editor');
+    await second.getByTitle('Стикер',{exact:true}).click();
+    await second.locator('.react-flow__pane').click({position:{x:800,y:400}});
+    for(const page of pages)await expect(page.locator('.react-flow__node-sticky')).toHaveCount(1);
     await first.getByTitle('Данные',{exact:true}).click();
     await first.locator('.dataset-card').filter({hasText:dataset.name}).getByRole('button',{name:'Разместить таблицу на доске',exact:true}).click();
     await first.locator('.datasets-panel header button').click();
