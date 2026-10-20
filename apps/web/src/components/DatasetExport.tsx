@@ -1,5 +1,5 @@
 import { ExternalLink } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { DatasetSnapshot } from '@modelboard/shared';
 import { exportDatasetFile } from '../lib/fileFormats';
 
@@ -12,7 +12,12 @@ const formats = [
 export function DatasetExport({ dataset }: { dataset: DatasetSnapshot }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [open, setOpen] = useState(false);
   const root = useRef<HTMLSpanElement>(null), trigger = useRef<HTMLButtonElement>(null);
-  const close = () => { setOpen(false); requestAnimationFrame(() => trigger.current?.focus()); };
+  const restoreFocus=useRef(false);
+  const close = () => { restoreFocus.current=true; setOpen(false); };
+  // Restore after React has removed the menu and enabled the trigger.
+  useLayoutEffect(()=>{
+    if(!open&&!busy&&restoreFocus.current){restoreFocus.current=false;trigger.current?.focus({preventScroll:true});}
+  },[open,busy]);
   useEffect(() => {
     if (!open) return;
     root.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
