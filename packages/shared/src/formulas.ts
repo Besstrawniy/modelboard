@@ -638,7 +638,7 @@ export function compileFormula(
     );
   }
 
-  const normalized=replaceOutsideStrings(trimmed,chunk=>chunk.replace(/\[[^\]]*\]|[\p{L}_][\p{L}\p{N}_.]*/gu,name=>name.startsWith('[')?name:FORMULA_ALIASES[name.toUpperCase()]??name));
+  const normalized=replaceOutsideStrings(trimmed,chunk=>chunk.replace(/\[[^\]]*\]|[\p{L}_][\p{L}\p{N}_.]*|;/gu,name=>name===';'?',':name.startsWith('[')?name:FORMULA_ALIASES[name.toUpperCase()]??name));
   const a1Resolved = replaceOutsideStrings(normalized,(chunk)=>chunk.replace(
     /(?<![A-Za-z0-9_])(\$?)([A-Za-z]+)(\$?)([1-9]\d*)(?![A-Za-z0-9_])/g,
     (match,colLock:string,label:string,rowLock:string,row:string,offset:number)=>{

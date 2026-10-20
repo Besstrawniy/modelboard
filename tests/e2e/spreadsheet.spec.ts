@@ -1,6 +1,8 @@
 import { test,expect,type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
+import ExcelJS from 'exceljs';
+import { readFile } from 'node:fs/promises';
 const workspace='20000000-0000-0000-0000-000000000001';
 let boardId:string,datasetId:string,token:string,name:string,columns:any[],rows:any[];
 const pool=new pg.Pool({connectionString:process.env.DATABASE_URL??'postgresql://modelboard:modelboard@localhost:5432/modelboard'});
@@ -202,5 +204,13 @@ test('shared cell draft, Russian formulas, layout independent find and direct ex
  const exportButton=sheet(page).getByRole('button',{name:'Экспорт таблицы',exact:true});await expect(exportButton).toHaveCSS('background-color','rgb(255, 255, 255)');
  await exportButton.click();await expect(sheet(page).getByRole('menuitem')).toHaveCount(3);await expect(sheet(page).getByRole('menuitem').first()).toBeFocused();
  await page.keyboard.press('Escape');await expect(exportButton).toBeFocused();await expect(sheet(page)).toBeVisible();
+ await exportButton.click();const download=page.waitForEvent('download');await sheet(page).getByRole('menuitem',{name:'Excel (.xlsx)',exact:true}).click();
+ const path=info.outputPath('russian-formulas.xlsx');await (await download).saveAs(path);
+ const workbook=new ExcelJS.Workbook();await workbook.xlsx.load((await readFile(path)) as any);
+ expect(workbook.worksheets[0].getCell('D2').formula).toBe('IF(TRUE,SUM(B2:B4),0)');
+ expect(workbook.worksheets[0].getCell('D3').formula).toBe('SUMIF(B2:B4,">10")');
+ await expect(exportButton).toBeFocused();
+ await sheet(page).getByTitle('Закрыть (Esc)').click();await page.getByTitle('Открыть таблицу',{exact:true}).first().click();
+ await expect(cell(page,0,3)).toHaveValue('60');await expect(cell(page,1,3)).toHaveValue('50');await expect(cell(page,0,0)).toHaveValue('Живой черновик');
  await expect.poll(async()=>String((await pool.query('SELECT values FROM dataset_rows WHERE id=$1',[rows[0].id])).rows[0]?.values?.[columns[0].id])).toBe('Живой черновик');
 });

@@ -3987,3 +3987,6 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 
 .canvas-inline-editor { field-sizing:content; max-height:100%; overflow:auto; }
 .shape-node .canvas-inline-text,.shape-node .canvas-inline-editor { padding:12px; text-align:center; line-height:1.4; }
+
+.color-control__sample { border:1px solid #0002; box-sizing:border-box; }
+.dataset-export > button { border:1px solid #dce0e6; border-radius:5px; display:grid; place-items:center; }

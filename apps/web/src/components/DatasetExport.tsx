@@ -12,7 +12,7 @@ const formats = [
 export function DatasetExport({ dataset }: { dataset: DatasetSnapshot }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [open, setOpen] = useState(false);
   const root = useRef<HTMLSpanElement>(null), trigger = useRef<HTMLButtonElement>(null);
-  const close = () => { setOpen(false); trigger.current?.focus(); };
+  const close = () => { setOpen(false); requestAnimationFrame(() => trigger.current?.focus()); };
   useEffect(() => {
     if (!open) return;
     root.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();

@@ -488,7 +488,6 @@ export function DatasetSheet({
   const [findIndex,setFindIndex]=useState(0);
   const findInputRef=useRef<HTMLInputElement>(null);
   const [formulaEditing,setFormulaEditing]=useState(false);
-  const formulaTarget=useRef<{rowId:string;columnId:string}|null>(null);
   const [sort, setSort] = useState<SortState>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [columnFilters, setColumnFilters] =
@@ -817,7 +816,6 @@ export function DatasetSheet({
     const row=dataset?.rows.find(item=>item.id===rowId),formula=formulaByCell.get(formulaKey(rowId,columnId));
     const original=previous?.rowId===rowId&&previous.columnId===columnId?previous.original:formula?formatFormula(formula.expression,dataset?.columns??[],dataset?.rows??[]):String(row?.values[columnId]??'');
     const draft={rowId,columnId,text,original};cellDraftRef.current=draft;setCellDraft(draft);setFormulaInput(text);setFormulaError('');
-    formulaTarget.current={rowId,columnId};
   };
   const updateFormulaDraft=(text:string)=>{
     const target=cellDraftRef.current??selectedCell;
@@ -2274,7 +2272,7 @@ export function DatasetSheet({
           <input
             aria-label="Формула или значение ячейки"
             value={formulaInput}
-            onFocus={()=>{formulaTarget.current=selectedCell;setFormulaEditing(true);}}
+            onFocus={()=>setFormulaEditing(true)}
             onBlur={()=>{setFormulaEditing(false);commitCellDraft();}}
             disabled={!selectedCell || readOnly}
             placeholder="Формула: =B2*C2, =SUM(B2:B10) или =[price]*[quantity]"

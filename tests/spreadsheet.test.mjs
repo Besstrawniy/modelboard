@@ -104,3 +104,9 @@ test('Russian functions, aliases and literals calculate and store portable Engli
  const named=[{...columns[0],name:'СУММ'}];
  assert.equal(formatFormula(compileFormula('=[СУММ]',named,rows),named,rows),'=[СУММ]');
 });
+
+test('localized separators normalize for XLSX while quoted and column punctuation stays literal',()=>{
+ const named=[{...columns[0],name:'price;net'}];
+ const expression=compileFormula('=ЕСЛИ(ИСТИНА;[price;net];"a;b")',named,rows);
+ assert.equal(formatFormula(expression,named,rows),'=IF(TRUE,[price;net],"a;b")');
+});
