@@ -257,3 +257,21 @@ test('square sticky, complete text controls, smooth color preview and first-clic
  await page.getByTitle('Текст',{exact:true}).click();await page.locator('.react-flow__pane').click({position:{x:850,y:200}});
  const freeText=page.locator('.react-flow__node-text .canvas-inline-text');await expect(freeText).toBeVisible();await inspector.getByRole('button',{name:'Жирный',exact:true}).click();await expect(freeText).toHaveCSS('font-weight','700');await inspector.getByRole('button',{name:'Жирный',exact:true}).click();await expect(freeText).toHaveCSS('font-weight','400');
 });
+
+test('physical shortcuts across layouts and transparent inline shape editing',async({page},info)=>{
+ await page.locator('.react-flow__pane').dispatchEvent('keydown',{key:'ы',code:'KeyS'});
+ await page.locator('.react-flow__pane').click({position:{x:500,y:350}});
+ const shape=page.locator('.react-flow__node-shape');await expect(shape).toHaveCount(1);
+ const inspector=page.locator('.inspector-panel');await expect(inspector).toBeVisible();
+ for(const sample of await inspector.locator('.color-control__sample').all()){
+  const box=await sample.boundingBox();expect(box!.height).toBeGreaterThanOrEqual(4);expect(box!.width).toBeGreaterThanOrEqual(19);
+ }
+ await shape.locator('.canvas-inline-text').dblclick();const editor=shape.locator('textarea');
+ await expect(editor).toHaveCSS('background-color','rgba(0, 0, 0, 0)');await expect(editor).toHaveCSS('border-top-width','0px');
+ await editor.fill('Русский текст ы р я');await expect(shape).toHaveCount(1);await expect(editor).toBeFocused();
+ await page.screenshot({path:info.outputPath('transparent-inline-shape.png')});
+ await editor.press('Control+Enter');await expect(shape).toContainText('Русский текст ы р я');
+ await page.locator('.react-flow__pane').click({position:{x:100,y:100}});
+ await page.locator('.react-flow__pane').dispatchEvent('keydown',{key:'я',code:'KeyZ',ctrlKey:true});await expect(shape).not.toContainText('Русский текст ы р я');
+ await page.locator('.react-flow__pane').dispatchEvent('keydown',{key:'н',code:'KeyY',ctrlKey:true});await expect(shape).toContainText('Русский текст ы р я');
+});

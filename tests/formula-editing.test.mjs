@@ -16,3 +16,10 @@ test('formula suggestions follow the token being typed and provide useful syntax
  assert.equal(formulaSuggestions('=A1+AVE')[0][0],'AVERAGE');
  assert.deepEqual(formulaSuggestions('=SUM(A1:A4)'),[]);
 });
+test('Russian formula suggestions include translated syntax and nested functions',()=>{
+ assert.equal(formulaSuggestions('=су')[0][0],'СУММ');
+ assert.equal(formulaSuggestions('=ЕС')[0][0],'ЕСЛИ');
+ assert.match(formulaSuggestions('=ЕС')[0][1],/^ЕСЛИ\(/);
+ assert.equal(formulaSuggestions('=ЕСЛИ(A1;СУММЕС')[0][0],'СУММЕСЛИ');
+ assert.equal(new Set(formulaSuggestions('=СР').map(item=>item[0])).size,formulaSuggestions('=СР').length);
+});

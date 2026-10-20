@@ -1,10 +1,16 @@
-export const FORMULA_HELP = [
- ['SUM','SUM(A1:A10)','Сумма диапазона'],['AVERAGE','AVERAGE(A1:A10)','Среднее значение'],['MIN','MIN(A1:A10)','Минимум'],['MAX','MAX(A1:A10)','Максимум'],['COUNT','COUNT(A1:A10)','Количество чисел'],['COUNTA','COUNTA(A1:A10)','Заполненные ячейки'],['IF','IF(A1>0, "Да", "Нет")','Условие'],['IFERROR','IFERROR(A1/B1, 0)','Значение при ошибке'],['ROUND','ROUND(A1, 2)','Округление'],['COUNTIF','COUNTIF(A1:A10, ">0")','Количество по условию'],['SUMIF','SUMIF(A1:A10, ">0", B1:B10)','Сумма по условию'],['CONCAT','CONCAT(A1, " ", B1)','Объединение текста'],['XLOOKUP','XLOOKUP(A1, B1:B10, C1:C10)','Поиск значения'],
-] as const;
-export function formulaSuggestions(text: string) {
- if(!text.startsWith('='))return [];
- const prefix=text.match(/(?:^=|[+\-*/(,;]\s*)([A-Z]+)$/i)?.[1]?.toUpperCase();
- return prefix ? FORMULA_HELP.filter(([name])=>name.startsWith(prefix)).slice(0,5) : [];
+import { FORMULA_FUNCTIONS } from './formulas.ts';
+export const FORMULA_HELP = FORMULA_FUNCTIONS.map(([name,,description,example])=>[name,example,description] as const);
+export function formulaSuggestions(text: string): Array<readonly [string,string,string]> {
+ if(!text.trimStart().startsWith('='))return [];
+ const prefix=text.match(/(?:^=\s*|[+\-*/(,;]\s*)([A-ZА-ЯЁ]+)$/i)?.[1]?.toUpperCase();
+ if(!prefix)return [];
+ const russian=/[А-ЯЁ]/.test(prefix),seen=new Set<string>();
+ return FORMULA_FUNCTIONS.flatMap(([name,ru,description,example])=>{
+   const label=russian?ru:name;
+   if(!label.startsWith(prefix)||seen.has(label))return [];
+   seen.add(label);
+   return [[label,russian?example.replace(name,ru).replace(/"(?:[^"]|"")*"|,/g,token=>token===','?';':token):example,description] as const];
+ }).slice(0,5);
 }
 export type FormulaReference={startRow:number;endRow:number;startColumn:number;endColumn:number;color:string};
 export function formulaReferences(text:string,rowCount:number,columnCount:number):FormulaReference[]{

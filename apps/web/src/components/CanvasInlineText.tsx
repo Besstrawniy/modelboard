@@ -19,7 +19,7 @@ export function CanvasInlineText({ id, field = 'text', value, placeholder = '', 
     if (!cancelled.current && draft !== startValue.current) updateNodeData(id, { [field]: draft });
     setEditing(false);
   };
-  if (editing && !readOnly) return <textarea ref={input} className={`canvas-inline-editor nodrag nowheel ${className}`}
+  if (editing && !readOnly) return <textarea rows={1} ref={input} className={`canvas-inline-editor nodrag nowheel ${className}`}
     aria-label={placeholder || 'Текст объекта'} value={draft}
     onChange={(event) => setDraft(event.target.value)} onBlur={finish}
     onKeyDown={(event) => {

@@ -5,6 +5,22 @@ import type {
   DatasetRow,
 } from './index.js';
 
+/** Public names used by both the parser and the editor suggestions. */
+export const FORMULA_FUNCTIONS = [
+ ['SUM','СУММ','Сумма','SUM(A1:A10)'],['AVERAGE','СРЗНАЧ','Среднее значение','AVERAGE(A1:A10)'],['AVG','СРЗНАЧ','Среднее значение','AVG(A1:A10)'],
+ ['MIN','МИН','Минимум','MIN(A1:A10)'],['MAX','МАКС','Максимум','MAX(A1:A10)'],['COUNT','СЧЁТ','Количество чисел','COUNT(A1:A10)'],['COUNTA','СЧЁТЗ','Заполненные ячейки','COUNTA(A1:A10)'],['COUNTBLANK','СЧИТАТЬПУСТОТЫ','Пустые ячейки','COUNTBLANK(A1:A10)'],
+ ['COUNTIF','СЧЁТЕСЛИ','Количество по условию','COUNTIF(A1:A10, ">0")'],['SUMIF','СУММЕСЛИ','Сумма по условию','SUMIF(A1:A10, ">0", B1:B10)'],['AVERAGEIF','СРЗНАЧЕСЛИ','Среднее по условию','AVERAGEIF(A1:A10, ">0", B1:B10)'],
+ ['IF','ЕСЛИ','Условие','IF(A1>0, "Да", "Нет")'],['IFERROR','ЕСЛИОШИБКА','Значение при ошибке','IFERROR(A1/B1, 0)'],['AND','И','Все условия истинны','AND(A1>0, B1>0)'],['OR','ИЛИ','Хотя бы одно условие','OR(A1>0, B1>0)'],['NOT','НЕ','Отрицание','NOT(A1>0)'],
+ ['ROUND','ОКРУГЛ','Округление','ROUND(A1, 2)'],['ROUNDUP','ОКРУГЛВВЕРХ','Округление вверх','ROUNDUP(A1, 2)'],['ROUNDDOWN','ОКРУГЛВНИЗ','Округление вниз','ROUNDDOWN(A1, 2)'],['ABS','ABS','Модуль числа','ABS(A1)'],['INT','ЦЕЛОЕ','Целая часть','INT(A1)'],['MOD','ОСТАТ','Остаток деления','MOD(A1, 2)'],['POWER','СТЕПЕНЬ','Возведение в степень','POWER(A1, 2)'],['SQRT','КОРЕНЬ','Квадратный корень','SQRT(A1)'],
+ ['CONCAT','СЦЕП','Объединение текста','CONCAT(A1, " ", B1)'],['CONCATENATE','СЦЕПИТЬ','Объединение текста','CONCATENATE(A1, B1)'],['TEXTJOIN','ОБЪЕДИНИТЬ','Текст с разделителем','TEXTJOIN(", ", TRUE, A1:A10)'],['LEN','ДЛСТР','Длина текста','LEN(A1)'],['LOWER','СТРОЧН','Нижний регистр','LOWER(A1)'],['UPPER','ПРОПИСН','Верхний регистр','UPPER(A1)'],['TRIM','СЖПРОБЕЛЫ','Удаление лишних пробелов','TRIM(A1)'],['LEFT','ЛЕВСИМВ','Начало текста','LEFT(A1, 3)'],['RIGHT','ПРАВСИМВ','Конец текста','RIGHT(A1, 3)'],['MID','ПСТР','Часть текста','MID(A1, 2, 3)'],
+ ['DATE','ДАТА','Дата из частей','DATE(2026, 10, 20)'],['YEAR','ГОД','Год даты','YEAR(A1)'],['MONTH','МЕСЯЦ','Месяц даты','MONTH(A1)'],['DAY','ДЕНЬ','День даты','DAY(A1)'],
+ ['INDEX','ИНДЕКС','Значение по позиции','INDEX(A1:C10, 2, 1)'],['MATCH','ПОИСКПОЗ','Позиция значения','MATCH(A1, B1:B10, 0)'],['VLOOKUP','ВПР','Поиск по колонке','VLOOKUP(A1, B1:C10, 2, FALSE)'],['HLOOKUP','ГПР','Поиск по строке','HLOOKUP(A1, A2:C3, 2, FALSE)'],['XLOOKUP','ПРОСМОТРX','Поиск значения','XLOOKUP(A1, B1:B10, C1:C10)'],
+] as const;
+const FORMULA_ALIASES: Record<string,string> = {ИСТИНА:'TRUE',ЛОЖЬ:'FALSE',СУМ:'SUM',СУМЕСЛИ:'SUMIF',СЧЕТ:'COUNT',СЧЕТЗ:'COUNTA',СЧЕТЕСЛИ:'COUNTIF','ПРОСМОТРХ':'XLOOKUP'};
+for(const [name,russian] of FORMULA_FUNCTIONS){FORMULA_ALIASES[name]=name;FORMULA_ALIASES[russian.toUpperCase()]=name;}
+FORMULA_ALIASES['СРЗНАЧ']='AVERAGE';
+export function canonicalFormulaName(name:string){return FORMULA_ALIASES[name.toUpperCase()]??name.toUpperCase();}
+
 type Token =
   | { type: 'number'; value: number }
   | { type: 'string'; value: string }
@@ -292,11 +308,11 @@ function tokenize(source: string): Token[] {
 
     const identifier = source
       .slice(index)
-      .match(/^[A-Za-z_][A-Za-z0-9_]*/);
+      .match(/^[A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_.]*/);
     if (identifier) {
       tokens.push({
         type: 'identifier',
-        value: identifier[0].toUpperCase(),
+        value: canonicalFormulaName(identifier[0]),
       });
       index += identifier[0].length;
       continue;
@@ -622,7 +638,8 @@ export function compileFormula(
     );
   }
 
-  const a1Resolved = replaceOutsideStrings(trimmed,(chunk)=>chunk.replace(
+  const normalized=replaceOutsideStrings(trimmed,chunk=>chunk.replace(/\[[^\]]*\]|[\p{L}_][\p{L}\p{N}_.]*/gu,name=>name.startsWith('[')?name:FORMULA_ALIASES[name.toUpperCase()]??name));
+  const a1Resolved = replaceOutsideStrings(normalized,(chunk)=>chunk.replace(
     /(?<![A-Za-z0-9_])(\$?)([A-Za-z]+)(\$?)([1-9]\d*)(?![A-Za-z0-9_])/g,
     (match,colLock:string,label:string,rowLock:string,row:string,offset:number)=>{
       if(chunk.slice(offset+match.length).trimStart().startsWith('('))return match;

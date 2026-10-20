@@ -1,4 +1,4 @@
-import { ExternalLink } from 'lucide-react';
+import { PanelTopOpen } from 'lucide-react';
 import { useStore } from '@xyflow/react';
 import type { CSSProperties } from 'react';
 import { DatasetConnections } from './DatasetConnections';
@@ -33,7 +33,7 @@ export function TableNode({ id,data,selected }:NodeProps<any>) {
   <Handle id="table:bottom" type="source" position={Position.Bottom} isConnectable={!readOnly} className="canvas-port"/>
   <CanvasNodeResizer minWidth={360} minHeight={180} isVisible={selected}/>
   <div className="table-node__title"><span className="table-node__kind">DATASET</span><strong>{view.view?.labelOverride||dataset.name}</strong><DatasetConnections dataset={dataset}/><DatasetRename id={dataset.id} name={dataset.name} token={sessionToken} readOnly={readOnly}/><span className="dataset-status">{pendingChanges?'saving':status}</span>
-    <button className="nodrag" title="Открыть таблицу" onClick={()=>openDatasetSheet(dataset.id)} aria-label="Открыть таблицу"><ExternalLink size={15}/></button>
+    <button className="nodrag" title="Открыть таблицу" onClick={()=>openDatasetSheet(dataset.id)} aria-label="Открыть таблицу"><PanelTopOpen size={15}/></button>
   </div>
   {storageError&&<div className="sheet-storage-error" role="alert">{storageError}</div>}
   <div className="table-view-controls nodrag nowheel">

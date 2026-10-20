@@ -88,3 +88,19 @@ test('number formatting is non-destructive and locale-aware', () => {
   assert.match(fmt(10, { numberFormat: 'USD', decimalPlaces: 0 }), /\$/);
   assert.equal(fmt('00123', { numberFormat: 'NUMBER', decimalPlaces: 2 }), '00123');
 });
+test('Russian functions, aliases and literals calculate and store portable English names',()=>{
+ for(const [source,expected] of [
+  ['=сумм(A1:A3)',12],['=СУМ(A1:A3)',12],['=СУММЕСЛИ(A1:A3;">2")',10],
+  ['=СУМЕСЛИ(A1:A3;">2")',10],['=ЕСЛИ(И(ИСТИНА;НЕ(ЛОЖЬ));СРЗНАЧ(A1:A3);0)',4],
+  ['=ОКРУГЛ(2.345;2)',2.35],['=СЧЁТЕСЛИ(A1:A3;">2")',2],
+ ]){
+  const expression=compileFormula(source,columns,rows);
+  assert.doesNotMatch(expression,/[А-Яа-яЁё]/);
+  const result=evaluateDatasetFormulas(rows,columns,[{rowId:ids.r1,columnId:ids.c,expression}]);
+  assert.equal(result.get(formulaKey(ids.r1,ids.c)),expected,source);
+ }
+ const expression=compileFormula('=ЕСЛИ(ИСТИНА;"СУММ и ЕСЛИ";"ЛОЖЬ")',columns,rows);
+ assert.match(expression,/"СУММ и ЕСЛИ"/);
+ const named=[{...columns[0],name:'СУММ'}];
+ assert.equal(formatFormula(compileFormula('=[СУММ]',named,rows),named,rows),'=[СУММ]');
+});

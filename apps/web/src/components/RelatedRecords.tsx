@@ -1,7 +1,7 @@
 import { datasetRecordLabel } from '../lib/datasetRecordLabel';
 import { relatedRows } from '@modelboard/shared';
 import {
-  ExternalLink,
+  PanelTopOpen,
   ArrowLeftRight,
   Database,
   GitBranchPlus,
@@ -335,7 +335,7 @@ function RelatedRelationSection({
         </p>
       ) : (
         <div className="related-records">
-          {matches.map(row=><button className="related-record related-record--link" key={row.id} title="Открыть запись" onClick={()=>openDatasetSheet(otherDataset!.id,row.id)}>{datasetRecordLabel(row,otherDataset!)}<ExternalLink size={13}/></button>)}
+          {matches.map(row=><button className="related-record related-record--link" key={row.id} title="Открыть запись" onClick={()=>openDatasetSheet(otherDataset!.id,row.id)}>{datasetRecordLabel(row,otherDataset!)}<PanelTopOpen size={13}/></button>)}
 
 
 

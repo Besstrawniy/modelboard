@@ -6,7 +6,7 @@ import {
 } from '@modelboard/shared';
 import {
   Database,
-  ExternalLink,
+  PanelTopOpen,
   LayoutDashboard,
   Link2,
   Table2,
@@ -20,7 +20,7 @@ import type {
   ObjectBindingRecord,
 } from '@modelboard/shared';
 import type { Node } from '@xyflow/react';
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { memo, useEffect, useMemo, useState, useRef } from 'react';
 import { api } from '../lib/api';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
 import { RelatedRecords } from './RelatedRecords';
@@ -75,7 +75,7 @@ function suggestedPresentationFields(
   return { title, subtitle };
 }
 
-export function InspectorPanel({
+function InspectorPanelContent({
   node,
   boardId,
   workspaceId,
@@ -876,7 +876,7 @@ export function InspectorPanel({
                             {current ? ' · текущий объект' : ''}
                           </small>
                         </span>
-                        <ExternalLink size={12} />
+                        <PanelTopOpen size={12} />
                       </button>
                     );
                   })}
@@ -888,3 +888,9 @@ export function InspectorPanel({
     </aside>
   );
 }
+
+// Geometry is previewed by React Flow. The inspector only reads identity and data.
+export const InspectorPanel=memo(InspectorPanelContent,(previous,next)=>
+  previous.node.id===next.node.id&&previous.node.type===next.node.type&&previous.node.data===next.node.data&&
+  previous.boardId===next.boardId&&previous.workspaceId===next.workspaceId&&previous.token===next.token&&
+  previous.readOnly===next.readOnly&&previous.onClose===next.onClose&&previous.onUpdateNodeData===next.onUpdateNodeData);

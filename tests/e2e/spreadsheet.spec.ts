@@ -180,3 +180,27 @@ test('range paste cancel and cut keep data atomic; horizontal handle fills relat
  await page.keyboard.press('Control+z');await expect(cell(page,3,0)).toHaveValue('Item 1');await expect(cell(page,6,0)).toHaveValue('Item 7');
  await cell(page,0,1).fill('=B2');await cell(page,0,1).press('Enter');await cell(page,0,1).click();const handle=sheet(page).locator('.dataset-sheet__fill-handle');const from=await handle.boundingBox(),to=await cell(page,0,2).boundingBox();await page.mouse.move(from!.x+3,from!.y+3);await page.mouse.down();await page.mouse.move(to!.x+15,to!.y+15,{steps:6});await page.mouse.up();await expect(cell(page,0,2)).toHaveValue('3');
 });
+
+test('shared cell draft, Russian formulas, layout independent find and direct export menu',async({page},info)=>{
+ const formula=sheet(page).getByRole('textbox',{name:'Формула или значение ячейки'});
+ await cell(page,0,0).click();await formula.fill('Живой черновик');await expect(cell(page,0,0)).toHaveValue('Живой черновик');
+ await cell(page,1,0).click();await expect(cell(page,0,0)).toHaveValue('Живой черновик');
+ await cell(page,1,0).fill('Из ячейки');await expect(formula).toHaveValue('Из ячейки');
+ await formula.click();await expect(cell(page,1,0)).toHaveValue('Из ячейки');await formula.fill('Отмена');await formula.press('Escape');
+ await expect(cell(page,1,0)).toHaveValue('Item 2');await expect(formula).toHaveValue('Item 2');
+ await cell(page,0,3).click();await formula.fill('=СУ');
+ const suggestions=sheet(page).getByRole('listbox',{name:'Подсказки формул'});
+ await expect(suggestions).toContainText('СУММ');
+ const boxes=await suggestions.getByRole('option').evaluateAll(elements=>elements.map(el=>{const b=el.getBoundingClientRect();return {y:b.y,bottom:b.bottom,height:b.height};}));
+ for(let i=0;i<boxes.length;i++){expect(boxes[i].height).toBeGreaterThanOrEqual(50);if(i)expect(boxes[i].y).toBeGreaterThanOrEqual(boxes[i-1].bottom);}
+ await page.screenshot({path:info.outputPath('russian-formula-suggestions.png')});
+ await formula.fill('=ЕСЛИ(ИСТИНА;СУММ(B1:B3);0)');await expect(cell(page,0,3)).toHaveValue('=ЕСЛИ(ИСТИНА;СУММ(B1:B3);0)');
+ await cell(page,1,3).click();await expect(cell(page,0,3)).toHaveValue('60');
+ await cell(page,1,3).fill('=СУММЕСЛИ(B1:B3;">10")');await expect(formula).toHaveValue('=СУММЕСЛИ(B1:B3;">10")');await cell(page,1,3).press('Enter');await expect(cell(page,1,3)).toHaveValue('50');
+ await cell(page,2,0).dispatchEvent('keydown',{key:'а',code:'KeyF',ctrlKey:true});
+ await expect(sheet(page).getByRole('search',{name:'Поиск в таблице'})).toBeVisible();await sheet(page).getByRole('button',{name:'Закрыть поиск в таблице'}).click();
+ const exportButton=sheet(page).getByRole('button',{name:'Экспорт таблицы',exact:true});await expect(exportButton).toHaveCSS('background-color','rgb(255, 255, 255)');
+ await exportButton.click();await expect(sheet(page).getByRole('menuitem')).toHaveCount(3);await expect(sheet(page).getByRole('menuitem').first()).toBeFocused();
+ await page.keyboard.press('Escape');await expect(exportButton).toBeFocused();await expect(sheet(page)).toBeVisible();
+ await expect.poll(async()=>String((await pool.query('SELECT values FROM dataset_rows WHERE id=$1',[rows[0].id])).rows[0]?.values?.[columns[0].id])).toBe('Живой черновик');
+});

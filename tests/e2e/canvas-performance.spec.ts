@@ -68,4 +68,23 @@ test('100 objects, history, navigation and read-only role', async ({page,browser
   expect(await page.locator('.react-flow__viewport').getAttribute('style')).not.toBe(viewportBefore);
   expect(frameTimes.average).toBeLessThan(50);
   await page.keyboard.press('v');
+  await page.getByTitle('Фигура',{exact:true}).click();
+  await page.locator('.react-flow__pane').click({position:{x:450,y:300}});
+  const shape=page.locator('.react-flow__node-shape');
+  const inspector=page.locator('.inspector-panel');await expect(inspector).toBeVisible();
+  const before=await shape.getAttribute('style'),box=await shape.boundingBox();
+  await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);
+  const dragTiming=page.evaluate(async()=>{
+    const frames:number[]=[];let previous=performance.now();
+    for(let i=0;i<30;i++)await new Promise<void>(resolve=>requestAnimationFrame(time=>{frames.push(time-previous);previous=time;resolve();}));
+    return {average:frames.reduce((a,b)=>a+b,0)/frames.length,max:Math.max(...frames)};
+  });
+  await page.mouse.down();await page.mouse.move(box!.x+box!.width/2+140,box!.y+box!.height/2+80,{steps:30});await page.mouse.up();
+  const withInspector=await dragTiming;
+  console.log('129-object-inspector-drag-timing',JSON.stringify(withInspector));
+  expect(withInspector.average).toBeLessThan(50);
+  expect(await shape.getAttribute('style')).not.toBe(before);await expect(inspector).toBeVisible();
+  await inspector.getByLabel('Размер текста',{exact:true}).fill('24');
+  await expect(shape.locator('.canvas-inline-text')).toHaveCSS('font-size','24px');
+  await page.screenshot({path:test.info().outputPath('inspector-drag.png')});
 });

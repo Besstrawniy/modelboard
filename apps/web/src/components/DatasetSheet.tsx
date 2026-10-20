@@ -1,3 +1,4 @@
+import { shortcutKey } from '../lib/keyboard';
 import { TextFormatControls } from './TextFormatControls';
 import { ColorControl } from './ColorControl';
 import { formulaSuggestions, formulaReferences, formulaReferenceStyle } from '../lib/formulaEditing';
@@ -247,6 +248,7 @@ export function SheetCell({
   formulaActive = false,
   formulaText,
   format,
+  draft, onDraftChange, onDraftCommit, onDraftCancel,
 }: {
   row: DatasetRow;
   column: DatasetColumn;
@@ -260,16 +262,23 @@ export function SheetCell({
   formulaActive?: boolean;
   formulaText?: string;
   format?: DatasetCellFormat;
+  draft?:string|null;
+  onDraftChange?:(text:string|null)=>void;
+  onDraftCommit?:()=>boolean;
+  onDraftCancel?:()=>void;
 }) {
   const raw = row.values[column.id];
-  const [editDraft, setEditDraft] = useState<string | null>(null);
+  const [localDraft,setLocalDraft]=useState<string|null>(null);
+  const editDraft=onDraftChange?draft??null:localDraft;
+  const setEditDraft=(text:string|null)=>{if(onDraftChange)onDraftChange(text);else setLocalDraft(text);};
   const [editError,setEditError]=useState('');
   const original=useRef('');
   const cancelled=useRef(false);
 
   useEffect(()=>{if(editDraft===null)original.current=formulaText??(raw===null||raw===undefined?'':String(raw));},[raw,formulaText,editDraft]);
+  useEffect(()=>{if(editDraft===null)setEditError('');},[editDraft]);
 
-  if (column.dataType === 'BOOLEAN' && !formulaActive) {
+  if (column.dataType === 'BOOLEAN' && !formulaActive && editDraft===null) {
     return (
       <select
         className="dataset-sheet__cell-editor"
@@ -360,7 +369,12 @@ export function SheetCell({
         onFocus?.();
       }}
       onDoubleClick={() => {if(!readOnly){cancelled.current=false;setEditDraft(original.current);}}}
-      onBlur={() => {
+      onBlur={event => {
+        if(onDraftChange){
+          if(event.relatedTarget instanceof Element&&event.relatedTarget.closest('.dataset-sheet__formula-input-wrap'))return;
+          if(onDraftCommit?.()===false)setEditError('Исправьте значение или нажмите Esc');else setEditError('');
+          return;
+        }
         if(cancelled.current){setEditDraft(null);return;}
         try{if(editDraft!==null&&editDraft!==original.current)onChange(normalizeInput(editDraft,column));setEditDraft(null);setEditError('');}
         catch(error){setEditError(error instanceof Error?error.message:String(error));}
@@ -369,10 +383,11 @@ export function SheetCell({
         if(editDraft===null && event.shiftKey && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();onNavigate?.(({ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'} as const)[event.key as 'ArrowUp'],true);return;}
         if(editDraft===null&&!readOnly&&event.key.length===1&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();cancelled.current=false;setEditDraft(event.key);setEditError('');return;}
         if(event.key==='F2'){event.preventDefault();if(!readOnly){cancelled.current=false;setEditDraft(original.current);}return;}
-        if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelled.current=true;setEditDraft(null);setEditError('');return;}
+        if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelled.current=true;if(onDraftCancel)onDraftCancel();else setEditDraft(null);setEditError('');return;}
 
         if (event.key === 'Enter' || event.key === 'Tab') {
           event.preventDefault();
+          if(onDraftCommit?.()===false){setEditError('Исправьте значение или нажмите Esc');return;}
           if(!onNavigate)event.currentTarget.blur();
           onNavigate?.(
             event.key === 'Tab'
@@ -503,6 +518,9 @@ export function DatasetSheet({
     columnId: string;
   } | null>(null);
   const [formulaInput, setFormulaInput] = useState('');
+  type CellDraft={rowId:string;columnId:string;text:string;original:string};
+  const [cellDraft,setCellDraft]=useState<CellDraft|null>(null);
+  const cellDraftRef=useRef<CellDraft|null>(null);
   const [formulaError, setFormulaError] = useState('');
   const [selectionRange, setSelectionRange] =
     useState<CellSelectionRange | null>(null);
@@ -538,7 +556,7 @@ export function DatasetSheet({
     if (findOpen) { setFindOpen(false); return; }
     if (clipboardRef.current?.cut) { clipboardRef.current=null;setClipboardMessage('');return; }
     if (cellMenu) { setCellMenu(null); return; }
-    onClose();
+    if(commitCellDraft())onClose();
   } });
 
   const deleteModal = useDialogFocus({ open: Boolean(deleteColumnTarget), onClose: () => { if (!columnBusy) setDeleteColumnTarget(null); } });
@@ -776,75 +794,43 @@ export function DatasetSheet({
         )
       : undefined;
 
-  useEffect(() => {
-    if(document.activeElement?.closest('.dataset-sheet__formula-input-wrap') && formulaTarget.current?.rowId===selectedCell?.rowId && formulaTarget.current?.columnId===selectedCell?.columnId)return;
-    if (!selectedCell || !selectedColumn || !selectedRow) {
-      setFormulaInput('');
-      setFormulaError('');
-      return;
-    }
-
-    setFormulaInput(
-      selectedFormula
-        ? formatFormula(
-            selectedFormula.expression,
-            dataset?.columns ?? [],
-            dataset?.rows ?? [],
-          )
-        : String(
-            selectedRow.values[selectedColumn.id] ?? '',
-          ),
-    );
-    setFormulaError('');
-  }, [
-    dataset?.columns,
-    selectedCell?.columnId,
-    selectedCell?.rowId,
-    selectedColumn?.id,
-    selectedFormula?.expression,
-    selectedRow?.id,
-    selectedRow?.values,
-  ]);
-
-  const commitFormulaBar = () => {
-    if (
-      readOnly ||
-      !selectedCell ||
-      !selectedColumn
-    ) {
-      return;
-    }
-
-    setFormulaError('');
-
-    try {
-      const target=formulaTarget.current??selectedCell;
-      const targetColumn=dataset?.columns.find(c=>c.id===target.columnId);
-      if(!targetColumn)return;
-      const trimmed = formulaInput.trim();
-
-      if (trimmed.startsWith('=')) {
-        const canonical = compileFormula(
-          trimmed,
-          dataset?.columns ?? [],
-          dataset?.rows ?? [],
-        );
-        setFormula(
-          target.rowId,
-          target.columnId,
-          canonical,
-        );
-      } else {
-        setCell(target.rowId,target.columnId,normalizeInput(formulaInput,targetColumn));
-      }
-    } catch (error) {
-      setFormulaError(
-        error instanceof Error
-          ? error.message
-          : String(error),
-      );
-    }
+  const cancelCellDraft=()=>{
+    cellDraftRef.current=null;setCellDraft(null);setFormulaError('');setFormulaEditing(false);
   };
+  const commitCellDraft=()=>{
+    const draft=cellDraftRef.current;
+    if(!draft||readOnly||!dataset)return true;
+    const column=dataset.columns.find(item=>item.id===draft.columnId);
+    if(!column||!dataset.rows.some(row=>row.id===draft.rowId)){cancelCellDraft();return true;}
+    try{
+      const expression=draft.text.trim().startsWith('=')?compileFormula(draft.text,dataset.columns,dataset.rows):null;
+      const value=expression===null?normalizeInput(draft.text,column):null;
+      cellDraftRef.current=null;setCellDraft(null);setFormulaError('');
+      if(draft.text!==draft.original){if(expression!==null)setFormula(draft.rowId,draft.columnId,expression);else setCell(draft.rowId,draft.columnId,value);}
+      return true;
+    }catch(error){setFormulaError(error instanceof Error?error.message:String(error));return false;}
+  };
+  const updateCellDraft=(rowId:string,columnId:string,text:string|null)=>{
+    if(text===null){cancelCellDraft();return;}
+    const previous=cellDraftRef.current;
+    if(previous&&(previous.rowId!==rowId||previous.columnId!==columnId)&&!commitCellDraft())return;
+    const row=dataset?.rows.find(item=>item.id===rowId),formula=formulaByCell.get(formulaKey(rowId,columnId));
+    const original=previous?.rowId===rowId&&previous.columnId===columnId?previous.original:formula?formatFormula(formula.expression,dataset?.columns??[],dataset?.rows??[]):String(row?.values[columnId]??'');
+    const draft={rowId,columnId,text,original};cellDraftRef.current=draft;setCellDraft(draft);setFormulaInput(text);setFormulaError('');
+    formulaTarget.current={rowId,columnId};
+  };
+  const updateFormulaDraft=(text:string)=>{
+    const target=cellDraftRef.current??selectedCell;
+    if(target)updateCellDraft(target.rowId,target.columnId,text);
+  };
+  useEffect(()=>{
+    const draft=cellDraftRef.current;
+    if(draft&&draft.rowId===selectedCell?.rowId&&draft.columnId===selectedCell?.columnId){setFormulaInput(draft.text);return;}
+    if(draft&&!commitCellDraft())return;
+    setFormulaInput(selectedFormula?formatFormula(selectedFormula.expression,dataset?.columns??[],dataset?.rows??[]):String(selectedRow?.values[selectedColumn?.id??'']??''));
+    setFormulaError('');
+  },[selectedCell?.rowId,selectedCell?.columnId,selectedFormula?.expression,selectedRow?.values,dataset?.columns,cellDraft]);
+  const commitFormulaBar=()=>{commitCellDraft();};
 
   useEffect(() => {
     if (query || sort || hasColumnFilters) {
@@ -873,6 +859,8 @@ export function DatasetSheet({
     columnId: string,
   ) => {
     if (event.button !== 0) return;
+    const draft=cellDraftRef.current;
+    if(draft&&(draft.rowId!==rowId||draft.columnId!==columnId)&&!commitCellDraft()){event.preventDefault();return;}
 
     // Double click should focus the actual cell editor, not start dragging.
     if (event.detail >= 2) {
@@ -1114,7 +1102,7 @@ export function DatasetSheet({
     direction: 'up' | 'down' | 'left' | 'right',
     extend = false,
   ) => {
-    if (!dataset || !selectedCell) return;
+    if (!dataset || !selectedCell || !commitCellDraft()) return;
 
     const columns=dataset.columns.filter(column=>!hiddenColumns.includes(column.id));
     const rowIndex = visibleRows.findIndex(
@@ -1480,9 +1468,9 @@ export function DatasetSheet({
     const onDatasetKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest('[role="dialog"]') !== sheetRef.current) return;
-      if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='f'){event.preventDefault();setFindOpen(true);requestAnimationFrame(()=>{findInputRef.current?.focus();findInputRef.current?.select();});return;}
+      if((event.ctrlKey||event.metaKey)&&shortcutKey(event)==='f'){event.preventDefault();setFindOpen(true);requestAnimationFrame(()=>{findInputRef.current?.focus();findInputRef.current?.select();});return;}
       const mod = event.ctrlKey || event.metaKey;
-      const key = event.key.toLowerCase();
+      const key = shortcutKey(event);
       const cellNavigation = target?.classList.contains('dataset-sheet__cell-editor') && target.dataset.editing !== 'true';
       const typing = !cellNavigation && (
         target?.tagName === 'INPUT' ||
@@ -1636,7 +1624,7 @@ export function DatasetSheet({
     });
   };
 
-  const activeReferences=useMemo(()=>formulaEditing?formulaReferences(formulaInput,dataset?.rows.length??0,dataset?.columns.length??0):[],[formulaEditing,formulaInput,dataset?.rows.length,dataset?.columns.length]);
+  const activeReferences=useMemo(()=>(formulaEditing||cellDraft?.text.trimStart().startsWith('='))?formulaReferences(formulaInput,dataset?.rows.length??0,dataset?.columns.length??0):[],[formulaEditing,cellDraft,formulaInput,dataset?.rows.length,dataset?.columns.length]);
   const findResults=useMemo(()=>{
     const cells:Array<{rowId:string;columnId:string}>=[];
     if(!findOpen||!dataset||!findText)return {cells,error:''};
@@ -2002,7 +1990,7 @@ export function DatasetSheet({
 
         <button
           className="icon-button"
-          onClick={onClose}
+          onClick={()=>{if(commitCellDraft())onClose();}}
           title="Закрыть (Esc)"
         >
           <X size={19} />
@@ -2287,22 +2275,22 @@ export function DatasetSheet({
             aria-label="Формула или значение ячейки"
             value={formulaInput}
             onFocus={()=>{formulaTarget.current=selectedCell;setFormulaEditing(true);}}
-            onBlur={()=>setFormulaEditing(false)}
+            onBlur={()=>{setFormulaEditing(false);commitCellDraft();}}
             disabled={!selectedCell || readOnly}
             placeholder="Формула: =B2*C2, =SUM(B2:B10) или =[price]*[quantity]"
             onChange={(event) =>
-              setFormulaInput(event.target.value)
+              updateFormulaDraft(event.target.value)
             }
             onKeyDown={(event) => {
-              if(event.key==='Tab'&&formulaSuggestions(formulaInput).length){event.preventDefault();const name=formulaSuggestions(formulaInput)[0][0];setFormulaInput(text=>text.replace(/[A-Z]+$/i,`${name}(`));return;}
-              if(event.key==='Escape'){event.preventDefault();event.stopPropagation();setFormulaEditing(false);event.currentTarget.blur();return;}
+              if(event.key==='Tab'&&formulaSuggestions(formulaInput).length){event.preventDefault();const name=formulaSuggestions(formulaInput)[0][0];updateFormulaDraft(formulaInput.replace(/[A-ZА-ЯЁ]+$/i,`${name}(`));return;}
+              if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelCellDraft();event.currentTarget.blur();return;}
               if (event.key === 'Enter') {
                 event.preventDefault();
                 commitFormulaBar();
               }
             }}
           />
-          {formulaEditing&&formulaSuggestions(formulaInput).length>0&&<div className="formula-suggestions" role="listbox" aria-label="Подсказки формул">{formulaSuggestions(formulaInput).map(([name,example,description])=><button key={name} role="option" aria-selected="false" onMouseDown={event=>event.preventDefault()} onClick={()=>setFormulaInput(text=>text.replace(/[A-Z]+$/i,`${name}(`))}><strong>{name}</strong><span>{description}</span><small>={example}</small></button>)}</div>}
+          {formulaEditing&&formulaSuggestions(formulaInput).length>0&&<div className="formula-suggestions" role="listbox" aria-label="Подсказки формул">{formulaSuggestions(formulaInput).map(([name,example,description])=><button key={name} role="option" aria-selected="false" onMouseDown={event=>event.preventDefault()} onClick={()=>updateFormulaDraft(formulaInput.replace(/[A-ZА-ЯЁ]+$/i,`${name}(`))}><strong>{name}</strong><span>{description}</span><small>={example}</small></button>)}</div>}
           {!readOnly && selectedCell && (
             <button
               onClick={commitFormulaBar}
@@ -2729,6 +2717,10 @@ export function DatasetSheet({
                           row={row}
                           column={column}
                           readOnly={readOnly}
+                          draft={cellDraft?.rowId===row.id&&cellDraft.columnId===column.id?cellDraft.text:null}
+                          onDraftChange={text=>updateCellDraft(row.id,column.id,text)}
+                          onDraftCommit={commitCellDraft}
+                          onDraftCancel={cancelCellDraft}
                           formulaActive={Boolean(formula)}
                           formulaText={formula ? formatFormula(formula.expression,dataset.columns,dataset.rows):undefined}
                           format={{rowId:row.id,columnId:column.id,...formatByCell.get(key),...sheetConditionalFormat(row,column.id,dataset.rules??[],dataset.rows)}}

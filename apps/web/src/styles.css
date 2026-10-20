@@ -3593,7 +3593,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .react-flow__node > :first-child { transform: rotate(var(--canvas-rotation, 0deg)); transform-origin: center; }
 .canvas-inline-text { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.4em; width: 100%; color: var(--canvas-color, inherit); font-size: var(--canvas-font-size, inherit); }
 .canvas-inline-text:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
-.canvas-inline-editor { width: 100%; min-height: 3em; resize: none; border: 1px solid #818cf8; background: rgba(255,255,255,.9); color: var(--canvas-color, inherit); font: inherit; font-size: var(--canvas-font-size, inherit); line-height: 1.4; outline: none; }
+.canvas-inline-editor { width: 100%; min-height: 3em; resize: none; border: 0; box-shadow: none; background: transparent; padding: 0; border-radius: 0; color: var(--canvas-color, inherit); font: inherit; font-size: var(--canvas-font-size, inherit); line-height: 1.4; outline: none; }
 .shape-node { background: var(--canvas-fill, white); border-color: var(--canvas-stroke, #7d8794); }
 .shape-node .canvas-inline-text { text-align: center; padding: 12px; }
 .shape-node--ellipse { border-radius: 50%; }
@@ -3888,7 +3888,7 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 .text-format-controls button { flex:0 0 28px; }
 .color-control { position:relative; display:inline-flex!important; flex:0 0 28px; flex-direction:column!important; justify-content:center; align-items:center; width:28px; height:29px; border:1px solid #dce0e6; border-radius:5px; cursor:pointer; margin:0!important; padding:3px!important; }
 .color-control__symbol { font:600 17px Georgia,serif; line-height:17px; display:flex; }
-.color-control__sample { height:3px; width:19px; margin-top:2px; border-radius:1px; }
+.color-control__sample { display:block; flex:0 0 4px; min-height:4px; height:4px; width:20px; margin-top:1px; border-radius:1px; }
 .color-control input[type=color] { position:absolute; inset:0; width:100%!important; height:100%!important; opacity:0; cursor:pointer; padding:0; }
 .color-control:focus-within { outline:2px solid #5865da; outline-offset:1px; }
 .canvas-inline-text,.canvas-inline-editor { font-weight:var(--canvas-font-weight,inherit); font-style:var(--canvas-font-style,inherit); text-decoration:var(--canvas-text-decoration,inherit); }
@@ -3973,3 +3973,17 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 .dataset-sheet__identity > div { flex-direction:row; }
 .dataset-sheet__identity small { margin-top:2px; }
 .dataset-rename button { border:1px solid #dce0e6; border-radius:5px; background:#fff; color:#59677c; cursor:pointer; display:inline-flex; align-items:center; }
+
+/* Shared controls retain their geometry inside compact inspectors and toolbars. */
+.color-control__symbol { flex:0 0 16px; min-height:16px; }
+.dataset-sheet__formula-input-wrap .formula-suggestions { width:min(460px,75vw); max-height:320px; overflow:auto; }
+.dataset-sheet__formula-input-wrap .formula-suggestions button { display:grid; position:static; grid-template-columns:minmax(110px,auto) 1fr; grid-template-rows:auto auto; gap:3px 12px; width:100%; height:auto; min-height:55px; flex-shrink:0; padding:9px 10px; border:0; border-radius:4px; text-align:left; white-space:normal; line-height:1.4; background:#fff; color:#26324a; }
+.dataset-sheet__formula-input-wrap .formula-suggestions button:is(:hover,:focus-visible) { background:#eef0ff; outline:2px solid #a5b4fc; outline-offset:-2px; }
+.formula-suggestions strong,.formula-suggestions span,.formula-suggestions small { position:static; height:auto; overflow-wrap:anywhere; }
+.formula-suggestions small { grid-column:1/-1; font:11px/1.4 monospace; }
+.dataset-export > button,.dataset-connections > header button,.relation-dialog__header > button { background:#fff; }
+.dataset-export__menu button { width:100%; min-height:34px; text-align:left; background:#fff; border:0; border-radius:4px; }
+.dataset-export__menu button:is(:hover,:focus-visible) { background:#eef0ff; outline:2px solid #a5b4fc; outline-offset:-2px; }
+
+.canvas-inline-editor { field-sizing:content; max-height:100%; overflow:auto; }
+.shape-node .canvas-inline-text,.shape-node .canvas-inline-editor { padding:12px; text-align:center; line-height:1.4; }

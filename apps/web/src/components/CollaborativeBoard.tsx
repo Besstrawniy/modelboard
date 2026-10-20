@@ -1,3 +1,4 @@
+import { shortcutKey } from '../lib/keyboard';
 import { ColorControl } from './ColorControl';
 import { useDialogFocus } from '../lib/useDialogFocus';
 import { CanvasEdgeProperties } from './CanvasEdgeProperties';
@@ -1114,7 +1115,7 @@ function BoardInner({
       if (typing || modalOpen) return;
 
       const mod = event.ctrlKey || event.metaKey;
-      const key = event.key.toLowerCase();
+      const key = shortcutKey(event);
 
       if (event.code === 'Space' && !mod && !event.altKey) {
         if (target?.closest('button')) return;
@@ -2444,7 +2445,7 @@ function BoardInner({
     rf,
   ]);
 
-  const showRelationOnCanvas=(relation:DatasetRelation)=>{
+  const showRelationOnCanvas=useCallback((relation:DatasetRelation)=>{
     if(readOnly)return;
     const center=viewportCenter(),items:Node[]=[];
     undoManager.stopCapturing();ydoc.transact(()=>{
@@ -2455,8 +2456,9 @@ function BoardInner({
       const id=`er-relation:${relation.id}`;edgesMap.set(id,{id,type:'smoothstep',source:items[0].id,target:items[1].id,sourceHandle:relation.matchMode==='ROW_LINKS'?'table:source':`source:${relation.sourceColumnId}`,targetHandle:relation.matchMode==='ROW_LINKS'?'table:target':`target:${relation.targetColumnId}`,markerEnd:{type:MarkerType.ArrowClosed},label:`${relation.name||relation.relationType} ${relation.cardinality??''}`,data:{relationId:relation.id,relationType:relation.relationType,cardinality:relation.cardinality}});
     });undoManager.stopCapturing();
     setDatasetsOpen(false);setSelectedNodeId(null);setToolMode('select');requestAnimationFrame(()=>void rf?.fitView({nodes:items,padding:.25,duration:300}));
-  };
+  },[readOnly,viewportCenter,undoManager,ydoc,nodesMap,edgesMap,rf]);
 
+  const closeInspector=useCallback(()=>setSelectedNodeId(null),[]);
   const selectedNode = selectedNodeId
     ? nodes.find((node) => node.id === selectedNodeId) ?? null
     : null;
@@ -3234,7 +3236,7 @@ function BoardInner({
             workspaceId={meta.workspaceId}
             token={session.token}
             readOnly={readOnly}
-            onClose={() => setSelectedNodeId(null)}
+            onClose={closeInspector}
             onUpdateNodeData={updateNodeData}
           />
         )}

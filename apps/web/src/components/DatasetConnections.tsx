@@ -1,5 +1,5 @@
 import { useDialogFocus } from '../lib/useDialogFocus';
-import { Network, ExternalLink, Unlink, Link, X } from 'lucide-react';
+import { Network, PanelTopOpen, Unlink, Link, X } from 'lucide-react';
 import { datasetRecordLabel as rowName } from '../lib/datasetRecordLabel';
 import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
@@ -93,7 +93,7 @@ function ConnectionRecords({
           openDatasetSheet(otherId);
         }}
       >
-        <ExternalLink size={16}/>
+        <PanelTopOpen size={16}/>
       </button>
       {!readOnly && (
         <button title="Показать связь на доске" aria-label="Показать связь на доске"

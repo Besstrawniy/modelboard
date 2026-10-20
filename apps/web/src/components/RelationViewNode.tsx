@@ -3,7 +3,7 @@ import { useStore } from '@xyflow/react';
 import type { CSSProperties } from 'react';
 import { relatedRows } from '@modelboard/shared';
 import { CanvasNodeResizer } from './CanvasNodeResizer';
-import { ExternalLink, Link2 } from 'lucide-react';
+import { PanelTopOpen, Link2 } from 'lucide-react';
 import type { DatasetRow, RelationViewNodeData } from '@modelboard/shared';
 import { type NodeProps } from '@xyflow/react';
 import { useEffect, useMemo, useState } from 'react';
@@ -192,7 +192,7 @@ export function RelationViewNode({ id, data, selected }: NodeProps<any>) {
                     </span>
                   ))}
                 </div>
-                <ExternalLink size={12} />
+                <PanelTopOpen size={12} />
               </button>
             );
           })
