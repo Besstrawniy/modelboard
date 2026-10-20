@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import jwt from 'jsonwebtoken';
-import WebSocket from 'ws';
 
 test('server requires credentials, blocks demo tokens, and serves the favicon', async ({ request, page, baseURL }) => {
   expect(await (await request.get('/api/auth/config')).json()).toEqual({mode:'password'});
@@ -19,9 +18,10 @@ test('server requires credentials, blocks demo tokens, and serves the favicon', 
   const url = baseURL!.replace(/^http/,'ws')+'/collab';
   const authResult = await new Promise<string>((resolve,reject) => {
     const socket = new WebSocket(url);
-    const timeout = setTimeout(() => { socket.terminate(); reject(new Error('Authentication response timed out')); }, 8000);
+    socket.binaryType = 'arraybuffer';
+    const timeout = setTimeout(() => { socket.close(); reject(new Error('Authentication response timed out')); }, 8000);
     const finish = (result:string) => { clearTimeout(timeout); socket.close(); resolve(result); };
-    socket.on('open', () => {
+    socket.addEventListener('open', () => {
       // y-protocols: document name, auth message(2), token subtype(0), token string.
       const string = (value:string) => {
         const bytes=Buffer.from(value), prefix:number[]=[]; let size=bytes.length;
@@ -30,14 +30,14 @@ test('server requires credentials, blocks demo tokens, and serves the favicon', 
       };
       socket.send(Buffer.concat([string('board:30000000-0000-0000-0000-000000000001'),Buffer.from([2,0]),string(oldToken)]));
     });
-    socket.on('message', data => {
-      const bytes=Buffer.from(data as Buffer);let index=0;
+    socket.addEventListener('message', event => {
+      const bytes=Buffer.from(event.data as ArrayBuffer);let index=0;
       const uint=()=>{let result=0,shift=0,value=0;do{value=bytes[index++];result|=(value&127)<<shift;shift+=7;}while(value&128);return result;};
       const length=uint();index+=length;
       if(uint()===2) finish(uint()===1?'denied':'authenticated');
     });
-    socket.on('close', () => finish('closed'));
-    socket.on('error', reject);
+    socket.addEventListener('close', () => finish('closed'));
+    socket.addEventListener('error', () => { clearTimeout(timeout); reject(new Error('WebSocket connection failed')); });
   });
   expect(['denied','closed']).toContain(authResult);
   const editor = await request.post('/api/auth/login',{data:{
