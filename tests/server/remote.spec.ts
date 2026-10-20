@@ -3,9 +3,9 @@ import { randomUUID } from 'node:crypto';
 
 const workspace='20000000-0000-0000-0000-000000000001';
 test('two independent browsers edit canvas and dataset through the built server address',async({browser,request,baseURL},info)=>{
-  const users=await (await request.get('/api/auth/dev-users')).json();
-  const owner=users.find((user:any)=>user.role==='OWNER');
-  const token=(await (await request.post('/api/auth/dev-login',{data:{userId:owner.id}})).json()).token;
+  const response=await request.post('/api/auth/login',{data:{email:'owner@example.local',password:'ci_owner_password_012345'}});
+  expect(response.ok()).toBeTruthy();
+  const token=(await response.json()).token;
   const headers={Authorization:'Bearer '+token};
   const boardResponse=await request.post('/api/workspaces/'+workspace+'/boards',{headers,data:{name:'Remote access '+Date.now()}});
   expect(boardResponse.ok()).toBeTruthy();
@@ -28,7 +28,9 @@ test('two independent browsers edit canvas and dataset through the built server 
   const login=async(page:Page,role:string)=>{
     await page.addInitScript(id=>localStorage.setItem('modelboard:last-board',id),board.id);
     await page.goto(baseURL!);
-    await page.getByRole('button').filter({hasText:role}).click();
+    await page.getByLabel('Email',{exact:true}).fill(role.toLowerCase()+'@example.local');
+    await page.getByLabel('Пароль',{exact:true}).fill(role==='OWNER'?'ci_owner_password_012345':'ci_editor_password_012345');
+    await page.getByRole('button',{name:'Войти',exact:true}).click();
     await expect(page.locator('.connection-status')).toHaveText('connected');
   };
   try{

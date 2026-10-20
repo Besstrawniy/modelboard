@@ -34,6 +34,7 @@ async function json<T>(url: string, options?: RequestInit): Promise<T> {
     const detail = await response.text().catch(() => '');
     let message='';
     try{const parsed=JSON.parse(detail);message=Array.isArray(parsed.message)?parsed.message.join('; '):typeof parsed.message==='string'?parsed.message:'';}catch{/* Non-JSON response, e.g. an unavailable proxy. */}
+    if(response.status===429)message='Слишком много попыток входа. Подождите минуту и повторите.';
     if(!message||message==='Internal server error')message='Не удалось выполнить операцию на сервере.';
     if(message==='Forbidden resource')message='Недостаточно прав для этой операции.';
     throw new Error(message);
@@ -47,6 +48,10 @@ const authHeaders = (token: string) => ({
 
 export type StoredFile = {id:string;name:string;mime:string;size:number;createdAt?:string};
 export const api = {
+  authConfiguration: () => json<{mode:'demo'|'password'}>('/auth/config'),
+  login: (email:string,password:string) => json<AuthSession>('/auth/login', {
+    method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({email,password}),
+  }),
   files:(workspaceId:string,token:string)=>json<StoredFile[]>(`/workspaces/${workspaceId}/files`,{headers:authHeaders(token)}),
   fileBlob:async(id:string,token:string)=>{const response=await fetch(`${baseUrl}/files/${id}/content`,{headers:authHeaders(token)});if(!response.ok)throw new Error('Файл недоступен');return response.blob();},
   importFiles:(workspaceId:string,token:string,body:{datasets:import('@modelboard/shared').DatasetSnapshot[];files:import('@modelboard/shared').FileAssetInput[]})=>json<{datasets:Array<{id:string;name:string}>;files:StoredFile[]}>(`/workspaces/${workspaceId}/files/import`,{method:'POST',headers:{...authHeaders(token),'content-type':'application/json'},body:JSON.stringify(body)}),

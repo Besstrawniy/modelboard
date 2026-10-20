@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import jwt from 'jsonwebtoken';
+import { serverJwtSecret } from '@modelboard/shared/server-auth';
 import { query } from '@modelboard/db';
 import type { WorkspaceRole } from '@modelboard/shared';
 
@@ -16,7 +17,7 @@ export type JwtUser = {
 
 export type AuthedRequest = Request & { user: JwtUser };
 
-const secret = () => process.env.JWT_SECRET ?? 'change-me-in-production';
+const secret = () => serverJwtSecret();
 
 export function signUser(user: JwtUser) {
   return jwt.sign(user, secret(), { expiresIn: '12h' });

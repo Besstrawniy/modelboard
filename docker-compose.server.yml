@@ -26,6 +26,11 @@ services:
     environment: &server_environment
       DATABASE_URL: postgresql://${POSTGRES_USER:-modelboard}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.server}@postgres:5432/${POSTGRES_DB:-modelboard}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.server}
+      AUTH_MODE: password
+      OWNER_PASSWORD: ${OWNER_PASSWORD:?Set OWNER_PASSWORD in .env.server (at least 12 characters)}
+      EDITOR_PASSWORD: ${EDITOR_PASSWORD:-}
+      COMMENTER_PASSWORD: ${COMMENTER_PASSWORD:-}
+      VIEWER_PASSWORD: ${VIEWER_PASSWORD:-}
       API_HOST: 0.0.0.0
       API_PORT: "3001"
       COLLAB_PORT: "1234"

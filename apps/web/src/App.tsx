@@ -15,17 +15,28 @@ export default function App() {
   const [meta, setMeta] = useState<BoardMeta | null>(null);
   const [boards, setBoards] = useState<BoardMeta[]>([]);
   const [error, setError] = useState('');
+  const [authMode, setAuthMode] = useState<'demo'|'password'|null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api.devUsers()
-      .then(setUsers)
+    api.authConfiguration()
+      .then(async config => {
+        setAuthMode(config.mode);
+        if (config.mode === 'demo') setUsers(await api.devUsers());
+      })
       .catch((err) => setError(String(err)));
   }, []);
 
-  const login = async (userId: string) => {
+  const login = async (userId?: string) => {
+    if (busy || !authMode) return;
+    setBusy(true);
     try {
       setError('');
-      const next = await api.devLogin(userId);
+      const next = authMode === 'password'
+        ? await api.login(email, password)
+        : await api.devLogin(userId!);
       const demoBoard = await api.board(DEMO_BOARD_ID, next.token);
       const workspaceBoards = await api.boards(
         demoBoard.workspaceId,
@@ -44,12 +55,15 @@ export default function App() {
           ? demoBoard
           : await api.board(preferred.id, next.token);
 
+      setPassword('');
       setSession(next);
       setBoards(workspaceBoards.length ? workspaceBoards : [demoBoard]);
       setMeta(selected);
       localStorage.setItem(LAST_BOARD_KEY, selected.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -129,22 +143,37 @@ export default function App() {
             <span className="brand-mark">M</span>
             ModelBoard
           </div>
-          <h1>Collaborative canvas for data + diagrams</h1>
-          <p>Choose a seeded identity to test the v0.1 permission model.</p>
-          <div className="demo-users">
-            {users.map((user) => (
-              <button key={user.id} onClick={() => login(user.id)}>
-                <span>{user.displayName}</span>
-                <small>{user.role}</small>
-              </button>
-            ))}
-          </div>
-          {error && <pre className="error-box">{error}</pre>}
-          <p className="muted small">
-            Open Owner and Editor in separate windows to verify realtime
-            editing. Commenter can add comments but cannot mutate the board;
-            Viewer is fully read-only.
-          </p>
+          <h1>Доска для совместной работы</h1>
+          {authMode === 'password' && (
+            <>
+              <p>Войдите в свою учётную запись.</p>
+              <form className="login-form" onSubmit={event => { event.preventDefault(); void login(); }}>
+                <label htmlFor="login-email">Email</label>
+                <input id="login-email" type="email" autoComplete="username" required maxLength={254}
+                  value={email} onChange={event => setEmail(event.target.value)} disabled={busy} />
+                <label htmlFor="login-password">Пароль</label>
+                <input id="login-password" type="password" autoComplete="current-password" required maxLength={1024}
+                  value={password} onChange={event => setPassword(event.target.value)} disabled={busy} />
+                <button type="submit" disabled={busy}>{busy ? 'Вход…' : 'Войти'}</button>
+              </form>
+              <p className="muted small">Данные для входа предоставляет администратор.</p>
+            </>
+          )}
+          {authMode === 'demo' && (
+            <>
+              <p>Демонстрационный режим: выберите пользователя.</p>
+              <div className="demo-users">
+                {users.map(user => (
+                  <button key={user.id} disabled={busy} onClick={() => void login(user.id)}>
+                    <span>{user.displayName}</span>
+                    <small>{user.role}</small>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {!authMode && !error && <p role="status">Загрузка…</p>}
+          {error && <p className="error-box" role="alert">{error}</p>}
         </section>
       </main>
     );

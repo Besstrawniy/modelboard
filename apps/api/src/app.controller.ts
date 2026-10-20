@@ -13,8 +13,10 @@ import {
   Query,
   Req,
   UseGuards,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { usesPasswordAuth, configuredAccount } from '@modelboard/shared/server-auth';
 import {
   pool,
   query,
@@ -56,8 +58,29 @@ export class AppController {
     return { ok: true, service: 'modelboard-api' };
   }
 
+  @Get('auth/config')
+  authConfiguration() {
+    return { mode: usesPasswordAuth() ? 'password' : 'demo' };
+  }
+
+  @Post('auth/login')
+  async passwordLogin(@Body() body: { email?: unknown; password?: unknown }) {
+    const account = configuredAccount(body?.email, body?.password);
+    if (!account) throw new UnauthorizedException('Неверный email или пароль');
+    const result = await query<{ id: string; email: string; display_name: string }>(
+      'SELECT id, email, display_name FROM users WHERE id = $1', [account.id],
+    );
+    const user = result.rows[0];
+    if (!user) throw new UnauthorizedException('Неверный email или пароль');
+    return {
+      token: signUser({ sub: user.id, email: user.email, displayName: user.display_name }),
+      user: { id: user.id, email: user.email, displayName: user.display_name },
+    };
+  }
+
   @Get('auth/dev-users')
   async devUsers() {
+    if (usesPasswordAuth()) throw new NotFoundException();
     const result = await query<{
       id: string;
       email: string;
@@ -82,6 +105,7 @@ export class AppController {
 
   @Post('auth/dev-login')
   async devLogin(@Body() body: { userId?: string }) {
+    if (usesPasswordAuth()) throw new NotFoundException();
     const result = await query<{
       id: string;
       email: string;

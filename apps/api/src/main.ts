@@ -1,10 +1,12 @@
 import 'reflect-metadata';
+import { validateAuthConfiguration } from '@modelboard/shared/server-auth';
 import { json } from 'express';
 import { NestFactory } from '@nestjs/core';
 import { runMigrations } from '@modelboard/db';
 import { AppModule } from './app.module.js';
 
 async function bootstrap() {
+  validateAuthConfiguration();
   await runMigrations();
 
   const app = await NestFactory.create(AppModule, {

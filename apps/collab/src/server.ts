@@ -4,6 +4,7 @@ import { Server } from '@hocuspocus/server';
 import { Database } from '@hocuspocus/extension-database';
 import { Logger } from '@hocuspocus/extension-logger';
 import jwt from 'jsonwebtoken';
+import { serverJwtSecret } from '@modelboard/shared/server-auth';
 import * as Y from 'yjs';
 import {
   pool,
@@ -19,7 +20,7 @@ import {
   type WorkspaceRole,
 } from '@modelboard/shared';
 
-const jwtSecret = process.env.JWT_SECRET ?? 'change-me-in-production';
+const jwtSecret = serverJwtSecret();
 const port = Number(process.env.COLLAB_PORT ?? 1234);
 const deletedDatasets = new Set<string>(),
   deletedRelations = new Set<string>();
