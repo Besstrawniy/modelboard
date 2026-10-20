@@ -732,6 +732,11 @@ test('table relationships link records without keys, append atomically, navigate
     name: 'Связи таблицы',
     exact: true,
   });
+  const closeConnections=panel.getByRole('button',{name:'Закрыть связи',exact:true});
+  await expect(closeConnections).toHaveCSS('border-top-width','0px');
+  await expect(closeConnections).toHaveCSS('background-color','rgb(255, 255, 255)');
+  await closeConnections.hover();await expect(closeConnections).toHaveCSS('background-color','rgb(240, 242, 245)');
+  await page.screenshot({path:test.info().outputPath('connections-close-hover.png')});
   await panel.getByLabel('Связать с таблицей').selectOption(vms.id);
   await panel.getByRole('button', { name: 'Настроить новую связь' }).click();
   const dialog = page.getByRole('dialog', {

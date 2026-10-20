@@ -230,7 +230,7 @@ export function DatasetConnections({
             >
               <header>
                 <h3>Связи: {dataset.name}</h3>
-                <button title="Закрыть связи" aria-label="Закрыть связи"
+                <button className="icon-button" title="Закрыть связи" aria-label="Закрыть связи"
                   onClick={() => {
                     setOpen(false);
                     setCreate(false);

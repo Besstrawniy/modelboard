@@ -268,6 +268,15 @@ test('physical shortcuts across layouts and transparent inline shape editing',as
  }
  await shape.locator('.canvas-inline-text').dblclick();const editor=shape.locator('textarea');
  await expect(editor).toHaveCSS('background-color','rgba(0, 0, 0, 0)');await expect(editor).toHaveCSS('border-top-width','0px');
+ const originalBounds=await shape.boundingBox();
+ await editor.fill('');await expect(editor).toHaveAttribute('rows','3');
+ const lineHeight=await editor.evaluate(element=>parseFloat(getComputedStyle(element).lineHeight));
+ expect((await editor.boundingBox())!.height).toBeGreaterThanOrEqual(lineHeight*3+23);
+ await page.screenshot({path:info.outputPath('shape-empty-three-lines.png')});
+ await editor.fill('Верхняя');await editor.press('Enter');await editor.pressSequentially('Средняя');await editor.press('Enter');await editor.pressSequentially('Нижняя');
+ await expect(editor).toHaveValue('Верхняя\nСредняя\nНижняя');
+ const multilineBounds=await shape.boundingBox();expect(multilineBounds!.height).toBeCloseTo(originalBounds!.height,0);expect(multilineBounds!.width).toBeCloseTo(originalBounds!.width,0);
+ await page.screenshot({path:info.outputPath('shape-three-lines.png')});
  await editor.fill('Русский текст ы р я');await expect(shape).toHaveCount(1);await expect(editor).toBeFocused();
  await page.screenshot({path:info.outputPath('transparent-inline-shape.png')});
  await editor.press('Control+Enter');await expect(shape).toContainText('Русский текст ы р я');

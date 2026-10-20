@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useBoardActions } from './BoardContext';
 
 /** A single transaction per edit; draft typing cannot swallow canvas hotkeys or overwrite remote edits. */
-export function CanvasInlineText({ id, field = 'text', value, placeholder = '', className = '', multiline = true }: {
-  id: string; field?: string; value: string; placeholder?: string; className?: string; multiline?: boolean;
+export function CanvasInlineText({ id, field = 'text', value, placeholder = '', className = '', multiline = true, minimumRows = 1 }: {
+  id: string; field?: string; value: string; placeholder?: string; className?: string; multiline?: boolean; minimumRows?: number;
 }) {
   const { readOnly, updateNodeData } = useBoardActions();
   const [editing, setEditing] = useState(false);
@@ -19,7 +19,7 @@ export function CanvasInlineText({ id, field = 'text', value, placeholder = '', 
     if (!cancelled.current && draft !== startValue.current) updateNodeData(id, { [field]: draft });
     setEditing(false);
   };
-  if (editing && !readOnly) return <textarea rows={1} ref={input} className={`canvas-inline-editor nodrag nowheel ${className}`}
+  if (editing && !readOnly) return <textarea rows={minimumRows} ref={input} className={`canvas-inline-editor nodrag nowheel ${className}`}
     aria-label={placeholder || 'Текст объекта'} value={draft}
     onChange={(event) => setDraft(event.target.value)} onBlur={finish}
     onKeyDown={(event) => {

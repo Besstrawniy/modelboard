@@ -45,7 +45,7 @@ import type {
   DatasetFormula,
   DatasetRow,
 } from '@modelboard/shared';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useCollaborativeDataset } from '../lib/useCollaborativeDataset';
 import { useBoardActions } from './BoardContext';
 import { displayCellValue } from '../lib/cellFormatting';
@@ -248,7 +248,7 @@ export function SheetCell({
   formulaActive = false,
   formulaText,
   format,
-  draft, onDraftChange, onDraftCommit, onDraftCancel,
+  draft, onDraftChange, onDraftCommit, onDraftCancel, onFormulaKeyDown, formulaAutocomplete,
 }: {
   row: DatasetRow;
   column: DatasetColumn;
@@ -266,6 +266,8 @@ export function SheetCell({
   onDraftChange?:(text:string|null)=>void;
   onDraftCommit?:()=>boolean;
   onDraftCancel?:()=>void;
+  onFormulaKeyDown?:(event: React.KeyboardEvent)=>boolean;
+  formulaAutocomplete?:{controls:string;activeDescendant:string};
 }) {
   const raw = row.values[column.id];
   const [localDraft,setLocalDraft]=useState<string|null>(null);
@@ -338,6 +340,9 @@ export function SheetCell({
       rows={1}
       wrap={format?.wrap ? "soft" : "off"}
       data-editing={editDraft !== null}
+      aria-autocomplete={formulaAutocomplete?"list":undefined}
+      aria-controls={formulaAutocomplete?.controls}
+      aria-activedescendant={formulaAutocomplete?.activeDescendant}
       className="dataset-sheet__cell-editor"
       style={{
         fontFamily:format?.fontFamily||undefined,fontSize:format?.fontSize?`${format.fontSize}px`:undefined,
@@ -380,6 +385,7 @@ export function SheetCell({
         catch(error){setEditError(error instanceof Error?error.message:String(error));}
       }}
       onKeyDown={(event) => {
+        if(editDraft!==null&&onFormulaKeyDown?.(event))return;
         if(editDraft===null && event.shiftKey && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();onNavigate?.(({ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'} as const)[event.key as 'ArrowUp'],true);return;}
         if(editDraft===null&&!readOnly&&event.key.length===1&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();cancelled.current=false;setEditDraft(event.key);setEditError('');return;}
         if(event.key==='F2'){event.preventDefault();if(!readOnly){cancelled.current=false;setEditDraft(original.current);}return;}
@@ -488,6 +494,8 @@ export function DatasetSheet({
   const [findIndex,setFindIndex]=useState(0);
   const findInputRef=useRef<HTMLInputElement>(null);
   const [formulaEditing,setFormulaEditing]=useState(false);
+  const [suggestionIndex,setSuggestionIndex]=useState(0);
+  const suggestionId=useId();
   const [sort, setSort] = useState<SortState>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [columnFilters, setColumnFilters] =
@@ -829,6 +837,27 @@ export function DatasetSheet({
     setFormulaError('');
   },[selectedCell?.rowId,selectedCell?.columnId,selectedFormula?.expression,selectedRow?.values,dataset?.columns,cellDraft]);
   const commitFormulaBar=()=>{commitCellDraft();};
+  const suggestions=useMemo(()=>formulaSuggestions(formulaInput),[formulaInput]);
+  const suggestionsOpen=Boolean((formulaEditing||cellDraft?.text.trimStart().startsWith('='))&&suggestions.length);
+  const activeSuggestion=Math.min(suggestionIndex,Math.max(0,suggestions.length-1));
+  useEffect(()=>setSuggestionIndex(0),[formulaInput]);
+  const acceptSuggestion=(index:number)=>{
+    const name=suggestions[index]?.[0];
+    if(name)updateFormulaDraft(formulaInput.replace(/[A-ZА-ЯЁ]+$/i,`${name}(`));
+  };
+  const handleFormulaSuggestionKey=(event: React.KeyboardEvent)=>{
+    if(!suggestionsOpen||event.nativeEvent.isComposing||event.ctrlKey||event.metaKey||event.altKey)return false;
+    if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+      event.preventDefault();event.stopPropagation();
+      setSuggestionIndex((activeSuggestion+(event.key==='ArrowDown'?1:-1)+suggestions.length)%suggestions.length);
+      return true;
+    }
+    if(event.key==='Enter'||event.key==='Tab'&&!event.shiftKey){
+      event.preventDefault();event.stopPropagation();acceptSuggestion(activeSuggestion);return true;
+    }
+    return false;
+  };
+
 
   useEffect(() => {
     if (query || sort || hasColumnFilters) {
@@ -2272,6 +2301,9 @@ export function DatasetSheet({
           <input
             aria-label="Формула или значение ячейки"
             value={formulaInput}
+            aria-autocomplete="list"
+            aria-controls={suggestionsOpen?suggestionId:undefined}
+            aria-activedescendant={suggestionsOpen?`${suggestionId}-${activeSuggestion}`:undefined}
             onFocus={()=>setFormulaEditing(true)}
             onBlur={()=>{setFormulaEditing(false);commitCellDraft();}}
             disabled={!selectedCell || readOnly}
@@ -2280,7 +2312,7 @@ export function DatasetSheet({
               updateFormulaDraft(event.target.value)
             }
             onKeyDown={(event) => {
-              if(event.key==='Tab'&&formulaSuggestions(formulaInput).length){event.preventDefault();const name=formulaSuggestions(formulaInput)[0][0];updateFormulaDraft(formulaInput.replace(/[A-ZА-ЯЁ]+$/i,`${name}(`));return;}
+              if(handleFormulaSuggestionKey(event))return;
               if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelCellDraft();event.currentTarget.blur();return;}
               if (event.key === 'Enter') {
                 event.preventDefault();
@@ -2288,7 +2320,19 @@ export function DatasetSheet({
               }
             }}
           />
-          {formulaEditing&&formulaSuggestions(formulaInput).length>0&&<div className="formula-suggestions" role="listbox" aria-label="Подсказки формул">{formulaSuggestions(formulaInput).map(([name,example,description])=><button key={name} role="option" aria-selected="false" onMouseDown={event=>event.preventDefault()} onClick={()=>updateFormulaDraft(formulaInput.replace(/[A-ZА-ЯЁ]+$/i,`${name}(`))}><strong>{name}</strong><span>{description}</span><small>={example}</small></button>)}</div>}
+          {suggestionsOpen&&<div className="formula-suggestions">
+            <div className="formula-suggestions__list" id={suggestionId} role="listbox" aria-label="Подсказки формул">
+              {suggestions.map(([name],index)=><button key={name} id={`${suggestionId}-${index}`} role="option" tabIndex={-1}
+                aria-selected={index===activeSuggestion} aria-describedby={index===activeSuggestion?`${suggestionId}-help`:undefined}
+                onMouseEnter={()=>setSuggestionIndex(index)} onMouseDown={event=>event.preventDefault()} onClick={()=>acceptSuggestion(index)}>
+                <i aria-hidden="true">ƒx</i><span>{name}</span>
+              </button>)}
+            </div>
+            <div className="formula-suggestions__help" id={`${suggestionId}-help`}>
+              <span>{suggestions[activeSuggestion][2]}</span>
+              <code>={suggestions[activeSuggestion][1]}</code>
+            </div>
+          </div>}
           {!readOnly && selectedCell && (
             <button
               onClick={commitFormulaBar}
@@ -2719,6 +2763,8 @@ export function DatasetSheet({
                           onDraftChange={text=>updateCellDraft(row.id,column.id,text)}
                           onDraftCommit={commitCellDraft}
                           onDraftCancel={cancelCellDraft}
+                          onFormulaKeyDown={handleFormulaSuggestionKey}
+                          formulaAutocomplete={suggestionsOpen&&cellDraft?.rowId===row.id&&cellDraft.columnId===column.id?{controls:suggestionId,activeDescendant:`${suggestionId}-${activeSuggestion}`}:undefined}
                           formulaActive={Boolean(formula)}
                           formulaText={formula ? formatFormula(formula.expression,dataset.columns,dataset.rows):undefined}
                           format={{rowId:row.id,columnId:column.id,...formatByCell.get(key),...sheetConditionalFormat(row,column.id,dataset.rules??[],dataset.rows)}}

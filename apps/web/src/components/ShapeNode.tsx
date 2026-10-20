@@ -42,7 +42,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<any>) {
           <BoundData binding={binding}/>
         </div>
       ) : (
-        <CanvasInlineText id={id} value={String(shape.text ?? '')} placeholder="Объект" />
+        <CanvasInlineText minimumRows={3} id={id} value={String(shape.text ?? '')} placeholder="Объект" />
       )}
 
 

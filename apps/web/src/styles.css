@@ -3918,10 +3918,6 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 .dataset-sheet__formula-bar { padding:6px 12px; min-height:40px; flex-shrink:0; }
 .dataset-sheet__formula-hint { display:none; }
 .dataset-sheet__formula-input-wrap { position:relative; }
-.formula-suggestions { position:absolute; top:100%; left:0; min-width:300px; z-index:50; padding:5px; background:white; border:1px solid #d8deea; box-shadow:0 8px 24px #18243426; border-radius:6px; }
-.formula-suggestions button { display:grid; grid-template-columns:80px 1fr; text-align:left; padding:6px; width:100%; border:0; background:white; }
-.formula-suggestions button:hover { background:#eef0ff; }
-.formula-suggestions small { grid-column:1/-1; color:#7b8292; }
 .sheet-summary { display:flex; gap:8px; align-items:center; min-height:30px; padding:3px 12px; }
 .sheet-summary button { display:inline-flex; border:0; background:transparent; padding:3px; }
 .sheet-find { display:flex; align-items:center; gap:7px; padding:6px 12px; border-bottom:1px solid #e3e7ef; }
@@ -3976,11 +3972,6 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 
 /* Shared controls retain their geometry inside compact inspectors and toolbars. */
 .color-control__symbol { flex:0 0 16px; min-height:16px; }
-.dataset-sheet__formula-input-wrap .formula-suggestions { width:min(460px,75vw); max-height:320px; overflow:auto; }
-.dataset-sheet__formula-input-wrap .formula-suggestions button { display:grid; position:static; grid-template-columns:minmax(110px,auto) 1fr; grid-template-rows:auto auto; gap:3px 12px; width:100%; height:auto; min-height:55px; flex-shrink:0; padding:9px 10px; border:0; border-radius:4px; text-align:left; white-space:normal; line-height:1.4; background:#fff; color:#26324a; }
-.dataset-sheet__formula-input-wrap .formula-suggestions button:is(:hover,:focus-visible) { background:#eef0ff; outline:2px solid #a5b4fc; outline-offset:-2px; }
-.formula-suggestions strong,.formula-suggestions span,.formula-suggestions small { position:static; height:auto; overflow-wrap:anywhere; }
-.formula-suggestions small { grid-column:1/-1; font:11px/1.4 monospace; }
 .dataset-export > button,.dataset-connections > header button,.relation-dialog__header > button { background:#fff; }
 .dataset-export__menu button { width:100%; min-height:34px; text-align:left; background:#fff; border:0; border-radius:4px; }
 .dataset-export__menu button:is(:hover,:focus-visible) { background:#eef0ff; outline:2px solid #a5b4fc; outline-offset:-2px; }
@@ -3990,3 +3981,17 @@ textarea.dataset-sheet__cell-editor { resize:none; display:block; line-height:16
 
 .color-control__sample { border:1px solid #0002; box-sizing:border-box; }
 .dataset-export > button { border:1px solid #dce0e6; border-radius:5px; display:grid; place-items:center; }
+
+/* Compact completion list with one description beside the selected function. */
+.dataset-sheet__formula-input-wrap .formula-suggestions { position:absolute; top:calc(100% + 2px); left:0; z-index:50; display:flex; align-items:flex-start; gap:4px; max-width:calc(100vw - 220px); font:12px/1.35 Inter,Arial,sans-serif; }
+.formula-suggestions__list { flex:0 0 auto; min-width:170px; max-width:230px; max-height:210px; overflow:auto; padding:2px; background:#fff; border:1px solid #cfd5df; border-radius:3px; box-shadow:0 3px 10px #1824341a; }
+.dataset-sheet__formula-input-wrap .formula-suggestions__list button { position:static; display:flex; align-items:center; justify-content:flex-start; gap:7px; width:100%; height:26px; min-height:26px; margin:0; padding:3px 7px; border:0; border-radius:1px; background:#fff; color:#26324a; font:12px/1.35 Inter,Arial,sans-serif; text-align:left; white-space:nowrap; outline:0; }
+.dataset-sheet__formula-input-wrap .formula-suggestions__list button[aria-selected=true] { background:#286ad4; color:#fff; }
+.formula-suggestions__list i { width:18px; flex-shrink:0; font:italic 15px Georgia,serif; text-align:center; }
+.formula-suggestions__help { max-width:270px; padding:6px 9px; background:#fff; color:#344054; border:1px solid #cfd5df; border-radius:3px; box-shadow:0 3px 10px #1824341a; }
+.formula-suggestions__help code { display:block; margin-top:4px; color:#667085; font:11px/1.4 monospace; overflow-wrap:anywhere; }
+.dataset-connections > header .icon-button { margin:0; padding:0; width:36px; height:36px; border:0; border-radius:8px; background:#fff; }
+.dataset-connections > header .icon-button:hover:not(:disabled),.relation-dialog__header > .icon-button:hover:not(:disabled) { background:#f0f2f5; }
+.shape-node { height:100%; }
+.shape-node .canvas-inline-editor { field-sizing:content; height:calc(4.2em + 24px); min-height:min(100%,calc(4.2em + 24px)); max-height:100%; }
+@media(max-width:700px) { .dataset-sheet__formula-input-wrap .formula-suggestions { flex-wrap:wrap; max-width:calc(100vw - 60px); } .formula-suggestions__help { max-width:230px; } }

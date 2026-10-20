@@ -194,8 +194,17 @@ test('shared cell draft, Russian formulas, layout independent find and direct ex
  const suggestions=sheet(page).getByRole('listbox',{name:'Подсказки формул'});
  await expect(suggestions).toContainText('СУММ');
  const boxes=await suggestions.getByRole('option').evaluateAll(elements=>elements.map(el=>{const b=el.getBoundingClientRect();return {y:b.y,bottom:b.bottom,height:b.height};}));
- for(let i=0;i<boxes.length;i++){expect(boxes[i].height).toBeGreaterThanOrEqual(50);if(i)expect(boxes[i].y).toBeGreaterThanOrEqual(boxes[i-1].bottom);}
+ for(let i=0;i<boxes.length;i++){expect(boxes[i].height).toBeGreaterThanOrEqual(24);expect(boxes[i].height).toBeLessThanOrEqual(28);if(i)expect(boxes[i].y).toBeGreaterThanOrEqual(boxes[i-1].bottom);}
+ await expect(suggestions.getByRole('option').first()).toHaveAttribute('aria-selected','true');
+ await formula.press('ArrowDown');await expect(suggestions.getByRole('option').nth(1)).toHaveAttribute('aria-selected','true');
+ await expect(sheet(page).locator('.formula-suggestions__help')).toContainText('Сумма по условию');
+ const listBox=await suggestions.boundingBox(),helpBox=await sheet(page).locator('.formula-suggestions__help').boundingBox();
+ expect(listBox!.width).toBeLessThanOrEqual(230);expect(helpBox!.x).toBeGreaterThanOrEqual(listBox!.x+listBox!.width);
  await page.screenshot({path:info.outputPath('russian-formula-suggestions.png')});
+ await formula.press('Enter');await expect(formula).toHaveValue('=СУММЕСЛИ(');await expect(formula).toBeFocused();
+ await formula.fill('=СУ');await formula.press('ArrowDown');await formula.press('ArrowUp');await formula.press('Tab');await expect(formula).toHaveValue('=СУММ(');
+ await cell(page,0,3).click();await cell(page,0,3).fill('=СУ');await cell(page,0,3).press('ArrowDown');await cell(page,0,3).press('Tab');await expect(formula).toHaveValue('=СУММЕСЛИ(');await expect(cell(page,0,3)).toBeFocused();
+
  await formula.fill('=ЕСЛИ(ИСТИНА;СУММ(B1:B3);0)');await expect(cell(page,0,3)).toHaveValue('=ЕСЛИ(ИСТИНА;СУММ(B1:B3);0)');
  await cell(page,1,3).click();await expect(cell(page,0,3)).toHaveValue('60');
  await cell(page,1,3).fill('=СУММЕСЛИ(B1:B3;">10")');await expect(formula).toHaveValue('=СУММЕСЛИ(B1:B3;">10")');await cell(page,1,3).press('Enter');await expect(cell(page,1,3)).toHaveValue('50');
