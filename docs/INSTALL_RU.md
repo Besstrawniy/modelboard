@@ -30,7 +30,7 @@ git clone https://github.com/Besstrawniy/modelboard.git
 cd modelboard
 ```
 
-Репозиторий private, поэтому GitHub может запросить авторизацию.
+Если репозиторий закрытый, GitHub запросит авторизацию при клонировании.
 
 ## 3. Переменные окружения
 
