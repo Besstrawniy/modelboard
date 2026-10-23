@@ -941,6 +941,7 @@ export function DatasetSheet({
     const writes:any[]=[];
     const sequences = new Map<number, ReturnType<typeof createSheetAutofill>>();
     const height=drag.sourceEnd-drag.sourceStart+1,width=drag.sourceEndColumn-drag.sourceStartColumn+1;
+    try {
     for(let r=drag.sourceStart;r<=drag.targetEnd;r++)for(let c=drag.sourceStartColumn;c<=drag.targetColumn;c++){
       if(r<=drag.sourceEnd&&c<=drag.sourceEndColumn)continue;
       const sourceR=drag.sourceStart+(r-drag.sourceStart)%height,sourceC=drag.sourceStartColumn+(c-drag.sourceStartColumn)%width;
@@ -962,7 +963,8 @@ export function DatasetSheet({
       writes.push({rowId:row.id,columnId:column.id,value:typed,formulaExpression:null,format});
     }
     if(!writes.length)return;
-    try{applyCellBatch(writes);setSelectionRange({startRowId:visibleRows[drag.sourceStart].id,endRowId:visibleRows[drag.targetEnd].id,startColumnId:dataset.columns[drag.sourceStartColumn].id,endColumnId:dataset.columns[drag.targetColumn].id});}
+    applyCellBatch(writes);setSelectionRange({startRowId:visibleRows[drag.sourceStart].id,endRowId:visibleRows[drag.targetEnd].id,startColumnId:dataset.columns[drag.sourceStartColumn].id,endColumnId:dataset.columns[drag.targetColumn].id});
+    }
     catch(error){setRowError((error as Error).message);}
   };
 
