@@ -8,7 +8,7 @@ import { DatasetExport } from './DatasetExport';
 import { DatasetConnections } from './DatasetConnections';
 import { DatasetRename } from './DatasetRename';
 import { SpreadsheetTools } from './SpreadsheetTools';
-import { parseSheetInput, parseSheetTsv, sheetTsv, matchesSheetFilter, sheetConditionalFormat, sheetSelectionSummary } from '../lib/spreadsheetModel';
+import { createSheetAutofill, parseSheetInput, parseSheetTsv, sheetTsv, matchesSheetFilter, sheetConditionalFormat, sheetSelectionSummary } from '../lib/spreadsheetModel';
 import {
   ArrowDown,
   ArrowUp,
@@ -939,6 +939,7 @@ export function DatasetSheet({
     if(!dataset)return;
     const horizontal=drag.targetColumn>drag.sourceEndColumn;
     const writes:any[]=[];
+    const sequences = new Map<number, ReturnType<typeof createSheetAutofill>>();
     const height=drag.sourceEnd-drag.sourceStart+1,width=drag.sourceEndColumn-drag.sourceStartColumn+1;
     for(let r=drag.sourceStart;r<=drag.targetEnd;r++)for(let c=drag.sourceStartColumn;c<=drag.targetColumn;c++){
       if(r<=drag.sourceEnd&&c<=drag.sourceEndColumn)continue;
@@ -948,12 +949,15 @@ export function DatasetSheet({
       const expression=formulaByCell.get(formulaKey(sourceRow.id,sourceColumn.id))?.expression;
       const format=formatByCell.get(formulaKey(sourceRow.id,sourceColumn.id))??null;
       if(expression){writes.push({rowId:row.id,columnId:column.id,formulaExpression:translateFormulaForCopy(expression,sourceRow.id,sourceColumn.id,row.id,column.id,dataset.rows,dataset.columns),format});continue;}
-      const series=horizontal?dataset.columns.slice(drag.sourceStartColumn,drag.sourceEndColumn+1).map(col=>sourceRow.values[col.id]):visibleRows.slice(drag.sourceStart,drag.sourceEnd+1).map(item=>item.values[sourceColumn.id]);
-      const numeric=series.length>=2&&series.every(value=>typeof value==='number'&&Number.isFinite(value));
-      const step=numeric?Number(series[1])-Number(series[0]):0;
-      const arithmetic=numeric&&series.slice(2).every((v,i)=>Math.abs(Number(v)-Number(series[i+1])-step)<1e-9);
-      const offset=horizontal?c-drag.sourceEndColumn:r-drag.sourceEnd;
-      const value=arithmetic?Number(series.at(-1))+step*offset:sourceRow.values[sourceColumn.id]??null;
+      const lane = horizontal ? sourceR : sourceC;
+      if (!sequences.has(lane)) {
+        const cells = horizontal
+          ? dataset.columns.slice(drag.sourceStartColumn, drag.sourceEndColumn + 1).map(col => ({ row: sourceRow, column: col }))
+          : visibleRows.slice(drag.sourceStart, drag.sourceEnd + 1).map(item => ({ row: item, column: sourceColumn }));
+        sequences.set(lane, createSheetAutofill(cells.map(cell => cell.row.values[cell.column.id]),
+          !cells.some(cell => formulaByCell.has(formulaKey(cell.row.id, cell.column.id)))));
+      }
+      const value = sequences.get(lane)!(horizontal ? c - drag.sourceStartColumn : r - drag.sourceStart);
       const typed=value===null?null:parseSheetInput(String(value),column);
       writes.push({rowId:row.id,columnId:column.id,value:typed,formulaExpression:null,format});
     }
@@ -2351,7 +2355,7 @@ export function DatasetSheet({
         ) : (
           <div className="dataset-sheet__formula-hint">
             Shift-клик расширяет выделение до прямоугольного диапазона.
-            Для одной колонки маркер в углу включает autofill.
+            Выделите два или больше чисел и потяните маркер в углу вниз или вправо, чтобы продолжить последовательность. Одна ячейка копируется.
           </div>
         )}
       </div>

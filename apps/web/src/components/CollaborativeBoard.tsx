@@ -1,3 +1,4 @@
+import { DEFAULT_EDGE_STYLE, edgeWithDefaults } from '../lib/canvasEdges';
 import { createId } from '../lib/uuid.ts';
 import { COLLAB_URL } from '../lib/config';
 import { shortcutKey } from '../lib/keyboard';
@@ -40,7 +41,7 @@ import '@xyflow/react/dist/style.css';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
-import { ChevronDown, Layers3, ClipboardPaste, Copy, Database, Eraser, Frame as FrameIcon, Grid3X3, Hand, LayoutDashboard, HelpCircle, Maximize2, MessageSquare, MousePointer2, Network, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronDown, Layers3, ClipboardPaste, Copy, Database, Eraser, Frame as FrameIcon, Grid3X3, Hand, LayoutDashboard, HelpCircle, Maximize2, MessageSquare, MousePointer2, MoveUpRight, Server, PenLine, Pencil, Plus, Redo2, Search, Shapes, StickyNote, Trash2, Type, Undo2, UploadCloud, X, ZoomIn, ZoomOut } from 'lucide-react';
 import {
   CanvasNodeStore,
   DEMO_BOARD_ID,
@@ -491,7 +492,7 @@ function BoardInner({
         Array.from(stored.values()).map((node: Node) => ({ ...node, style: { ...node.style, '--canvas-rotation': `${Number(node.data.rotation ?? 0)}deg`, '--canvas-fill': node.data.fill, '--canvas-stroke': typeof node.data.stroke === 'string' ? node.data.stroke : undefined, '--canvas-color': node.data.color, '--canvas-font-size': node.data.fontSize ? `${node.data.fontSize}px` : undefined, '--canvas-font-family': node.data.fontFamily, '--canvas-font-weight': node.data.bold === undefined ? undefined : node.data.bold ? 700 : 400, '--canvas-font-style': node.data.italic === undefined ? undefined : node.data.italic ? 'italic' : 'normal', '--canvas-text-decoration': node.data.underline === undefined ? undefined : node.data.underline ? 'underline' : 'none', '--canvas-stroke-width': `${Number(node.data.strokeWidth ?? 2)}px`, '--canvas-stroke-style': node.data.strokeDash === 'dashed' ? 'dashed' : 'solid', opacity: Number(node.data.opacity ?? 100) / 100 } })) as Node[], current, previewsRef.current,
       ));
     };
-    const syncEdges = () => setEdges((current) => { const selected = new Set(current.filter((edge) => edge.selected).map((edge) => edge.id)); return Array.from(edgesMap.values()).map((edge: Edge) => ({...edge,selected:selected.has(edge.id)})); });
+    const syncEdges = () => setEdges((current) => { const selected = new Set(current.filter((edge) => edge.selected).map((edge) => edge.id)); return Array.from(edgesMap.values()).map((edge: Edge) => ({...edgeWithDefaults(edge),selected:selected.has(edge.id)})); });
     const syncStrokes = syncNodes;
     nodesMap.observe(syncNodes);
     edgesMap.observe(syncEdges);
@@ -1465,6 +1466,7 @@ function BoardInner({
       id: createId(),
       type: 'smoothstep',
       markerEnd: { type: MarkerType.ArrowClosed },
+      style: { ...DEFAULT_EDGE_STYLE },
       data: { relationType: 'VISUAL' },
     };
     undoManager.stopCapturing();
@@ -2744,6 +2746,7 @@ function BoardInner({
         </header>
 
         <ReactFlow
+          connectionLineStyle={DEFAULT_EDGE_STYLE}
           className={`canvas-flow canvas-flow--${effectiveToolMode}`}
           nodes={nodes.filter((node) => !erasedStrokeIds.has(node.id))}
           edges={edges}
@@ -2933,7 +2936,7 @@ function BoardInner({
               </button>
               <button title="Файлы и импорт/экспорт" onClick={()=>setFilesOpen(value=>!value)}><UploadCloud size={19}/></button>
               <button onClick={() => setDatasetsOpen(true)} title="Данные"><Database size={19} /></button>
-              <button onClick={() => setDevicesOpen(true)} title="Инфраструктура"><Network size={19} /></button>
+              <button onClick={() => setDevicesOpen(true)} title="Инфраструктура"><Server size={19} /></button>
               <button disabled={readOnly} className={toolMode === 'sticky' ? 'is-active' : ''} onClick={() => activateTool('sticky')} title="Стикер"><StickyNote size={19} /></button>
 <button className={toolMode === 'text' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('text')} title="Текст"><Type size={19} /></button>
 <div className="shape-picker">
@@ -2941,7 +2944,7 @@ function BoardInner({
 <button disabled={readOnly} className="shape-picker__arrow" title="Выбрать фигуру" aria-label="Выбрать фигуру" aria-expanded={shapeMenu} onClick={(event) => {event.stopPropagation();setShapeMenu(value => !value);}}><ChevronDown size={12}/></button>
 
 </div>
-              <button className={toolMode === 'connector' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('connector')} title="Коннектор (C)"><Network size={19} /></button>
+              <button className={toolMode === 'connector' ? 'is-active' : ''} disabled={readOnly} onClick={() => activateTool('connector')} title="Коннектор (C)"><MoveUpRight size={19} /></button>
               <button disabled={readOnly} onClick={() => addNode('frame')} title="Frame / секция"><FrameIcon size={19} /></button>
               <div className="toolbar-separator" />
               <button onClick={() => setCommentsOpen(true)} title="Комментарии"><MessageSquare size={19} /></button>

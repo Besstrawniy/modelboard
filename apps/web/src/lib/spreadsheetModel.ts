@@ -1,5 +1,43 @@
 import type { DatasetCellFormat, DatasetCellValue, DatasetColumn, DatasetConditionalRule, DatasetRow } from '@modelboard/shared';
 
+/** Infer a numeric progression once per row/column; otherwise repeat the seed. */
+export function createSheetAutofill(series: Array<DatasetCellValue | undefined>, allowSeries = true) {
+  const repeat = (index: number): DatasetCellValue => series[index % series.length] ?? null;
+  if (!allowSeries || series.length < 2) return repeat;
+  const numbers = series.map(value => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+    if (typeof value !== 'string' || !/^[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)$/.test(value.trim())) return NaN;
+    return Number(value.trim().replace(',', '.'));
+  });
+  if (!numbers.every(Number.isFinite)) return repeat;
+  if (numbers.some(value => Number.isInteger(value) && !Number.isSafeInteger(value))) return repeat;
+  const step = numbers[1] - numbers[0];
+  if (!Number.isFinite(step)) return repeat;
+  if (!numbers.slice(2).every((value, index) => Math.abs(value - numbers[index + 1] - step) <= Math.max(1, Math.abs(step)) * 1e-9)) return repeat;
+  const textSeries = series.every(value => typeof value === 'string');
+  const strings = series.map(value => String(value).trim());
+  const precision = Math.max(...strings.map(value => {
+    const [mantissa, exponent = '0'] = value.toLowerCase().replace(',', '.').split('e');
+    return Math.max(0, (mantissa.split('.')[1]?.length ?? 0) - Number(exponent));
+  }));
+  const places = Math.min(100, precision);
+  const padded = textSeries && strings.every(value => /^[+-]?\d+$/.test(value)) && strings.some(value => /^[+-]?0\d/.test(value));
+  const width = padded ? Math.max(...strings.map(value => value.replace(/^[+-]/, '').length)) : 0;
+  const comma = textSeries && strings.some(value => value.includes(',')) && strings.every(value => !value.includes('.'));
+  const plus = textSeries && strings.every(value => value.startsWith('+'));
+  return (index: number): DatasetCellValue => {
+    if (index < series.length) return series[index] ?? null;
+    const raw = numbers[numbers.length - 1] + step * (index - series.length + 1);
+    if (!Number.isFinite(raw)) throw new Error('Значение последовательности выходит за допустимый диапазон');
+    const value = precision > 100 ? Number(raw.toPrecision(15)) : Number(raw.toFixed(places));
+    if (!textSeries) return value;
+    let text = Math.abs(value).toFixed(places);
+    if (padded) text = text.padStart(width, '0');
+    if (comma) text = text.replace('.', ',');
+    return `${value < 0 ? '-' : plus ? '+' : ''}${text}`;
+  };
+}
+
 export function parseSheetInput(value:string,column:DatasetColumn):DatasetCellValue {
   if(value==='')return null;
   if(column.dataType==='TEXT')return value;

@@ -223,3 +223,35 @@ test('shared cell draft, Russian formulas, layout independent find and direct ex
  await expect(cell(page,0,3)).toHaveValue('60');await expect(cell(page,1,3)).toHaveValue('50');await expect(cell(page,0,0)).toHaveValue('Живой черновик');
  await expect.poll(async()=>String((await pool.query('SELECT values FROM dataset_rows WHERE id=$1',[rows[0].id])).rows[0]?.values?.[columns[0].id])).toBe('Живой черновик');
 });
+
+test('autofill infers numeric and text-number series vertically and horizontally with undo',async({page})=>{
+ const extend=async(row:number,column:number)=>{
+  const handle=sheet(page).locator('.dataset-sheet__fill-handle');
+  const from=await handle.boundingBox(),to=await cell(page,row,column).boundingBox();
+  await page.mouse.move(from!.x+3,from!.y+3);await page.mouse.down();
+  await page.mouse.move(to!.x+10,to!.y+10,{steps:8});await page.mouse.up();
+ };
+ for(const column of [0,1]){
+  for(let row=0;row<3;row++){
+   await cell(page,row,column).fill(column===0?String(row+1).padStart(3,'0'):String(row+1));
+   await cell(page,row,column).press('Enter');
+  }
+  await cell(page,0,column).click();
+  await page.keyboard.press('Shift+ArrowDown');await page.keyboard.press('Shift+ArrowDown');
+  await extend(5,column);
+  for(let row=3;row<6;row++)await expect(cell(page,row,column)).toHaveValue(column===0?String(row+1).padStart(3,'0'):String(row+1));
+  await sheet(page).getByTitle('Отменить изменение Dataset (Ctrl+Z)').click();
+  await expect(cell(page,3,column)).toHaveValue(column===0?'Item 4':'40');
+  await sheet(page).getByTitle('Повторить изменение Dataset (Ctrl+Y)').click();
+  await expect(cell(page,5,column)).toHaveValue(column===0?'006':'6');
+ }
+ for(let column=0;column<3;column++){
+  await cell(page,7,column).fill(String((column+1)*10));await cell(page,7,column).press('Enter');
+ }
+ await cell(page,7,0).click();
+ await page.keyboard.press('Shift+ArrowRight');await page.keyboard.press('Shift+ArrowRight');
+ await extend(7,3);
+ await expect(cell(page,7,3)).toHaveValue('40');
+ await sheet(page).getByTitle('Отменить изменение Dataset (Ctrl+Z)').click();
+ await expect(cell(page,7,3)).toHaveValue('');
+});
